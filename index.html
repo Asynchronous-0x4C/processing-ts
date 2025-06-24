@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/processing-ts.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Processing-ts Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="/src/main.ts"></script>
+</head>
+
+<body>
+
+  <div class="container">
+    <header>
+      <h1>Processing Live Demo</h1>
+      <p>ブラウザ上でProcessingのスケッチを試せます。</p>
+    </header>
+
+    <main>
+      <div class="column">
+        <div class="card">
+          <div class="card-header">
+            <label for="sample-select" class="card-title">サンプルを選択</label>
+            <div class="tooltip-container">
+              <svg class="tooltip-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span class="tooltip-text">用意されたサンプルコードを現在アクティブなタブに読み込みます。</span>
+            </div>
+          </div>
+          <select id="sample-select"></select>
+        </div>
+
+        <div class="card editor-card">
+          <div class="editor-card-header card-header">
+            <h2 class="card-title">コードエディター</h2>
+            <div id="run-stop-buttons">
+              <button id="run-button" title="実行" class="icon-button">
+                <svg fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
+                    clip-rule="evenodd"></path>
+                </svg>
+              </button>
+              <button id="stop-button" title="停止" class="icon-button">
+                <svg fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z"
+                    clip-rule="evenodd"></path>
+                </svg>
+              </button>
+            </div>
+            <div class="tooltip-container">
+              <svg class="tooltip-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span class="tooltip-text">現在のタブのコードを実行または停止します。実行中はキャンバスが青く光ります。</span>
+            </div>
+          </div>
+          <div class="editor-card-body">
+            <div id="tabs-container">
+              <button id="add-tab-button" title="新しいタブを追加">+</button>
+            </div>
+            <div class="editor-wrapper">
+              <div class="editor-container">
+                <pre id="highlighting" aria-hidden="true"><code></code></pre>
+                <textarea id="code-editor" spellcheck="false"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="column">
+        <div id="upload-box" class="card">
+          <div class="card-header">
+            <h2 class="card-title">スケッチをアップロード</h2>
+            <div class="tooltip-container">
+              <svg class="tooltip-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span class="tooltip-text">ローカルの.pdeファイルをエディターに読み込みます。複数のファイルを選択でき、それぞれが新しいタブとして開かれます。</span>
+            </div>
+          </div>
+          <button id="show-upload-ui-button" class="button button-primary">
+            アップロードを開始
+          </button>
+          <div id="upload-ui" class="hidden">
+            <input type="file" id="file-input" accept=".pde" multiple class="hidden">
+            <label for="file-input" class="button button-secondary">ファイルを選択</label>
+            <div id="file-list" style="font-size: 0.875rem; color: var(--slate-accent);"></div>
+            <select id="main-sketch-select" disabled>
+              <option>メインのスケッチを選択...</option>
+            </select>
+            <button id="upload-button" disabled class="button button-success">
+              アップロード
+            </button>
+          </div>
+        </div>
+
+        <div id="canvas-box" class="card canvas-card">
+          <div class="card-header canvas-card-header">
+            <h2 class="card-title">Canvas</h2>
+            <button id="window-mode-button" class="icon-button" title="ウィンドウモードに切り替え">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="canvas-container">
+            <canvas id="sketch-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="canvas-window" class="hidden">
+    <div class="window-title-bar">
+      <h3>Canvas</h3>
+      <button id="box-mode-button" class="icon-button" title="ボックスモードに戻す">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 8V4m0 0h4M4 4l5 5m11-1v4m0 0h-4m4-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 1v-4m0 0h-4m4 4l-5-5"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="window-content"></div>
+    <div class="window-resize-handle"></div>
+  </div>
+</body>
+
+</html>

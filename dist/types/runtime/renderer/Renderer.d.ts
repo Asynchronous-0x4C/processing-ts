@@ -1,0 +1,58 @@
+import { Application, ColorSource, Container, Graphics, StrokeStyle, TextStyle } from "pixi.js";
+import { PImage } from "../PImage";
+import { IOBase } from "../util/sketchio/IOBase";
+export declare abstract class Renderer {
+    app: Application | null;
+    graphics: Graphics | null;
+    text_container: Container | null;
+    abstract canvas: HTMLCanvasElement | OffscreenCanvas;
+    target_element: HTMLDivElement | null;
+    abstract __io__: IOBase;
+    text_style: TextStyle | null;
+    stroke_style: StrokeStyle | null;
+    font_size: number;
+    font_family: string;
+    text_align: "left" | "center" | "right" | "justify";
+    rect_mode: number;
+    ellipse_mode: number;
+    fill_enabled: boolean;
+    stroke_enabled: boolean;
+    fill_color: ColorSource;
+    stroke_color: ColorSource;
+    current_cursor: string;
+    initialized: boolean;
+    init(width: number, height: number): Promise<void>;
+    background(r: number, g: number, b: number, a: number): void;
+    fill(r: number, g: number, b: number, a: number): void;
+    noFill(): void;
+    stroke(r: number, g: number, b: number, a: number): void;
+    noStroke(): void;
+    strokeWeight(weight: number): void;
+    rectMode(mode: number): void;
+    textAlign(align: number): void;
+    textSize(size: number): void;
+    rect(x: number, y: number, width: number, height: number): void;
+    ellipse(x: number, y: number, width: number, height: number): void;
+    arc(x: number, y: number, width: number, height: number, start: number, stop: number): void;
+    triangle(x1: number, y1: number, x2: number, y2: number, x3: number, y3: number): void;
+    line(x1: number, y1: number, x2: number, y2: number): void;
+    text(text: string, x: number, y: number, w?: number, h?: number): void;
+    image(image: PImage, x: number, y: number, w?: number, h?: number): void;
+    translate(x: number, y: number): void;
+    setCursor(...args: any[]): void;
+    showCursor(): void;
+    hideCursor(): void;
+    invoke(name: string, ...args: any[]): Promise<void>;
+    __begin__(): void;
+    __end__(): number;
+    __stop__(): void;
+    abstract setCursorStyle(arg: string | {
+        image: PImage;
+        x: number;
+        y: number;
+    }): void;
+    abstract getMaximumSize(): {
+        width: number;
+        height: number;
+    };
+}
