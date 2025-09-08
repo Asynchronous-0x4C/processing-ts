@@ -13,7 +13,10 @@ export declare class PVector {
     mult(scalar: number): PVector;
     div(scalar: number): PVector;
     mag(): number;
+    magSq(): number;
+    setMag(len: number): PVector;
     normalize(): PVector;
     copy(): PVector;
     set(...args: PVector[] | number[]): PVector;
+    limit(max: number): PVector;
 }

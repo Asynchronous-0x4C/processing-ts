@@ -1,4 +1,6 @@
-import { SketchManager } from "./lib/index";
+import { SketchManager } from "./export";
+import { applySyntaxHighlighting } from "./highlight";
+import sample_data from "./scripts/samples.json";
 
 const manager: SketchManager = new SketchManager({
   keep_aspect_ratio: true
@@ -26,8 +28,9 @@ const uploadButton = document.getElementById('upload-button')! as HTMLButtonElem
 const windowModeButton = document.getElementById('window-mode-button')!;
 const boxModeButton = document.getElementById('box-mode-button')!;
 const canvasWindow = document.getElementById('canvas-window')!;
-const windowTitleBar = canvasWindow.querySelector('.window-title-bar')!;
-const windowResizeHandle = canvasWindow.querySelector('.window-resize-handle')!;
+const windowTitleBar = canvasWindow.querySelector('.window-title-bar')!as HTMLElement;
+const windowResizeHandle = canvasWindow.querySelector('.window-resize-handle')!as HTMLElement;
+const clearConsoleButton = document.getElementById('clear-console-button')!;
 
 // --- State Management ---
 let tabs: { id: number, name: string, code: string }[] = [];
@@ -38,39 +41,13 @@ let uploadedFiles: { name: string, content: string | ArrayBuffer }[] = [];
 let isWindowMode = false;
 let windowPos = { x: 100, y: 100 }, windowSize = { w: 500, h: 500 };
 
-// --- Sample Codes ---
-const samples = {
-  'circle': { name: '円の描画', code: `void setup() {\n  size(400, 400);\n  background(220);\n}\n\nvoid draw() {\n  ellipse(200, 200, 100, 100);\n}` },
-  'interactive-lines': { name: 'インタラクティブな線', code: `void setup() {\n  size(400, 400);\n  background(0);\n  stroke(255, 100);\n}\n\nvoid draw() {\n  line(mouseX, mouseY, 200, 200);\n}` },
-  'bouncing-ball': { name: '跳ねるボール', code: `float x = 200;\nfloat y = 200;\nfloat xspeed = 3;\nfloat yspeed = 4;\n\nvoid setup() {\n  size(400, 400);\n  background(50);\n}\n\nvoid draw() {\n  background(50, 50);\n  \n  noStroke();\n  fill(255, 100, 100);\n  ellipse(x, y, 30, 30);\n\n  x += xspeed;\n  y += yspeed;\n\n  if (x > width - 15 || x < 15) {\n    xspeed *= -1;\n  }\n  if (y > height - 15 || y < 15) {\n    yspeed *= -1;\n  }\n}` }
-};
-
-// --- Syntax Highlighting ---
-function applySyntaxHighlighting(code: string) {
-  const keywords = `\\b(function|let|const|var|if|else|for|while|return|new|true|false)\\b`;
-  const p5functions = `\\b(setup|draw|size|background|fill|noFill|stroke|noStroke|ellipse|rect|line|point|text|mouseX|mouseY|width|height)\\b`;
-  const numbers = `\\b-?\\d+(\\.\\d+)?\\b`;
-  const strings = `("|').*?("|')`;
-  const comments = `\\/\\/.*`;
-
-  let highlightedCode = escapeHtml(code);
-
-  highlightedCode = highlightedCode.replace(new RegExp(comments, 'g'), match => `<span class="token-comment">${match}</span>`);
-  highlightedCode = highlightedCode.replace(new RegExp(keywords, 'g'), match => `<span class="token-keyword">${match}</span>`);
-  highlightedCode = highlightedCode.replace(new RegExp(p5functions, 'g'), match => `<span class="token-function">${match}</span>`);
-  highlightedCode = highlightedCode.replace(new RegExp(strings, 'g'), match => `<span class="token-string">${match}</span>`);
-  highlightedCode = highlightedCode.replace(new RegExp(numbers, 'g'), match => `<span class="token-number">${match}</span>`);
-
-  highlightingCode.innerHTML = highlightedCode;
-}
-
-function escapeHtml(text: string) {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+function getLast<T>(array:ArrayLike<T>):T{
+  return array[array.length-1];
 }
 
 function updateEditorContent(content: string) {
   codeEditor.value = content;
-  applySyntaxHighlighting(content);
+  applySyntaxHighlighting(content,highlightingCode);
 }
 
 // --- Tab Management ---
@@ -89,16 +66,17 @@ function renderTabs() {
     const nameEl = document.createElement('span');
     nameEl.className = 'tab-name';
     nameEl.textContent = tab.name;
-    nameEl.setAttribute('contenteditable', 'false');
+    nameEl.setAttribute('contenteditable', 'true');
+    nameEl.setAttribute('spellcheck', 'false');
 
-    nameEl.addEventListener('dblclick', () => {
-      nameEl.setAttribute('contenteditable', 'true');
-      nameEl.focus();
-    });
-    nameEl.addEventListener('blur', () => {
-      nameEl.setAttribute('contenteditable', 'false');
-      tab.name = nameEl.textContent!;
-    });
+    // nameEl.addEventListener('dblclick', () => {
+    //   nameEl.setAttribute('contenteditable', 'true');
+    //   nameEl.focus();
+    // });
+    // nameEl.addEventListener('blur', () => {
+    //   nameEl.setAttribute('contenteditable', 'false');
+    //   tab.name = nameEl.textContent!;
+    // });
     nameEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -128,10 +106,28 @@ function switchTab(id: number) {
   }
 }
 
-function addTab(name = `Untitled-${tabs.length + 1}`, code: string = `// New sketch\n\nvoid setup() {\n  size(400, 400);\n}\n\nvoid draw() {\n  background(220);\n}`) {
+function addTab(name = `Untitled_${tabs.length + 1}`, code: string="") {
   const newTab = { id: nextTabId++, name, code };
   tabs.push(newTab);
   switchTab(newTab.id);
+}
+
+async function loadTabs(path:string){
+  const props=await fetch(new URL(path+"sketch.properties",document.baseURI)).then(r=>r.text());
+  const main_file=props.match(/\n*(?<!#\s*)main\s*=\s*(.+\.pde)/)![1].replace(".pde","").trim();
+  let m;
+  const files=(m=props.match(/\n*(?<!#\s*)sketches\s*=((\s*\w+.pde)+)/))!=null?m[1].split(/[\s,]+/).map(s=>s.trim()).filter(s=>s!==""):[main_file+".pde"];
+
+  const contents=await Promise.all(files.map(async(name)=>{
+    return {name:name.replace(".pde","").trim(),content:await fetch(new URL(path+name,document.baseURI)).then(r=>r.text())}
+  }));
+
+  tabs=[{id:nextTabId++,name:main_file,code:contents.filter(c=>c.name==main_file)[0].content}];
+  const sub=contents.filter(c=>c.name!==main_file);
+  sub.forEach(c=>{
+    tabs.push({id:nextTabId++,name:c.name,code:c.content});
+  });
+  switchTab(tabs[0].id);
 }
 
 function closeTab(id: number) {
@@ -140,7 +136,7 @@ function closeTab(id: number) {
     tabs.splice(tabIndex, 1);
 
     if (tabs.length === 0) {
-      addTab();
+      addTab("sketch",`// New sketch\n\nvoid setup() {\n  size(400, 400);\n}\n\nvoid draw() {\n  background(220);\n}`);
     } else if (currentTabId === id) {
       const newActiveIndex = Math.max(0, tabIndex - 1);
       switchTab(tabs[newActiveIndex].id);
@@ -166,11 +162,18 @@ function updateControlState() {
 }
 
 function initializeSampleSelector() {
-  Object.keys(samples).forEach(key => {
-    const option = document.createElement('option');
-    option.value = key;
-    option.textContent = samples[key as keyof typeof samples].name;
-    sampleSelect.appendChild(option);
+  Object.entries(sample_data).forEach((entry) => {
+    const group = document.createElement('optgroup');
+    group.label = entry[0];
+    entry[1].forEach(e=>{
+      const option = document.createElement('option');
+      option.value = `./samples/${entry[0]}/${e}/`;
+      option.textContent = e.replace(/_(\w)/g,(match,p1)=>p1.toUpperCase());
+      option.textContent = option.textContent.charAt(0).toUpperCase() + option.textContent.slice(1);
+      if(e==="sketch")option.selected=true;
+      group.appendChild(option);
+    });
+    sampleSelect.appendChild(group);
   });
 }
 
@@ -216,7 +219,7 @@ function resetUploadUI() {
   uploadedFiles = [];
 }
 
-function setWindowMode(enabled) {
+function setWindowMode(enabled:boolean) {
   isWindowMode = enabled;
   const canvasBox = document.getElementById('canvas-box')!;
   const canvasWindow = document.getElementById('canvas-window')!;
@@ -245,7 +248,7 @@ function setWindowMode(enabled) {
 
 function dispatchCanvasResize(canvas: HTMLCanvasElement) {
   // This properly resizes the canvas drawing buffer and lets the library know.
-  if(isWindowMode){
+  if (isWindowMode) {
     const rect = canvas.parentElement!.getBoundingClientRect();
     const style = window.getComputedStyle(canvas.parentElement!);
     const paddingTop = parseInt(style.getPropertyValue('padding-top'));
@@ -260,44 +263,41 @@ function dispatchCanvasResize(canvas: HTMLCanvasElement) {
   manager.resize();
 }
 
-function makeDraggable(windowEl, titleBar) {
-  let offsetX, offsetY;
-  const move = (e) => {
-    e.preventDefault();
+function makeDraggable(windowEl:HTMLElement, titleBar:HTMLElement) {
+  let offsetX:number, offsetY:number;
+  const move = (e:PointerEvent) => {
+    if(!e.buttons)return;
+    titleBar.setPointerCapture(e.pointerId);
+    titleBar.draggable=false;
     windowPos.x = e.clientX - offsetX;
     windowPos.y = e.clientY - offsetY;
     windowEl.style.left = `${windowPos.x}px`;
     windowEl.style.top = `${windowPos.y}px`;
-  };
-  const stopMove = () => {
-    document.body.classList.remove('dragging');
-    document.removeEventListener('pointermove', move);
-    document.removeEventListener('pointerup', stopMove);
+    e.preventDefault();
   };
   titleBar.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     offsetX = e.clientX - windowEl.offsetLeft;
     offsetY = e.clientY - windowEl.offsetTop;
-    document.body.classList.add('dragging');
-    document.addEventListener('pointermove', move);
-    document.addEventListener('pointerup', stopMove);
   });
+  titleBar.addEventListener('pointermove', move);
 }
 
-function makeResizable(windowEl, resizeHandle) {
-  let startX, startY, startWidth, startHeight;
-  const resize = (e) => {
-    e.preventDefault();
+function makeResizable(windowEl:HTMLElement, resizeHandle:HTMLElement) {
+  let startX:number, startY:number, startWidth:number, startHeight:number;
+  const resize = (e:PointerEvent) => {
+    if(!e.buttons)return;
+    resizeHandle.setPointerCapture(e.pointerId);
+    resizeHandle.draggable=false;
+    const aspect = manager.getAspectRatio();
     windowSize.w = startWidth + e.clientX - startX;
-    windowSize.h = startHeight + e.clientY - startY;
+    windowSize.h = aspect!==0?windowSize.w/aspect+windowTitleBar.getBoundingClientRect().height:startHeight + e.clientY - startY;
     windowEl.style.width = `${windowSize.w}px`;
     windowEl.style.height = `${windowSize.h}px`;
+    e.preventDefault();
   };
   const stopResize = () => {
-    document.body.classList.remove('dragging');
-    document.removeEventListener('pointermove', resize);
-    document.removeEventListener('pointerup', stopResize);
-    dispatchCanvasResize(windowEl.querySelector('canvas'));
+    dispatchCanvasResize(windowEl.querySelector('canvas')!);
   };
   resizeHandle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -305,10 +305,47 @@ function makeResizable(windowEl, resizeHandle) {
     startY = e.clientY;
     startWidth = parseInt(document.defaultView!.getComputedStyle(windowEl).width, 10);
     startHeight = parseInt(document.defaultView!.getComputedStyle(windowEl).height, 10);
-    document.body.classList.add('dragging');
-    document.addEventListener('pointermove', resize);
-    document.addEventListener('pointerup', stopResize);
   });
+  resizeHandle.addEventListener('pointermove', resize);
+  resizeHandle.addEventListener('pointerup', stopResize);
+}
+
+function clearConsole() {
+  const consoleOutput = document.getElementById('console-output');
+  if (consoleOutput) consoleOutput.innerHTML = '';
+}
+
+function logToConsole(type:"info"|"log"|"error",...args:any[]) {
+  const consoleOutput = document.getElementById('console-output');
+  if (!consoleOutput) return;
+  const last_output=getLast(consoleOutput.childNodes)as HTMLElement;
+  const message = args.map(arg => {
+    if (typeof arg === 'object' && arg !== null) {
+      try { return JSON.stringify(arg, null, 0); } catch (e) { return '[Unserializable Object]'; }
+    }
+    return String(arg);
+  }).join(' ');
+  if(last_output&&last_output.classList.item(0)==type&&getLast(last_output.getElementsByClassName("message")).textContent==message){
+    const counter=getLast(last_output.querySelectorAll("span"));
+    if(counter.innerText==""){
+      counter.style.display="inline";
+      counter.innerText="2";
+    }else{
+      counter.innerText=`${Number(counter.innerText)+1}`;
+    }
+  }else{
+    const container=document.createElement('div');
+    container.classList.add(type);
+    const counter=document.createElement('span');
+    counter.style.display="none";
+    const entry = document.createElement('div');
+    entry.classList.add("message");
+    entry.textContent = message;
+    container.appendChild(counter);
+    container.appendChild(entry);
+    consoleOutput.appendChild(container);
+  }
+  consoleOutput.scrollTop = consoleOutput.scrollHeight;
 }
 
 // --- Event Listeners ---
@@ -316,7 +353,7 @@ codeEditor.addEventListener('input', () => {
   const activeTab = getActiveTab();
   if (activeTab) {
     activeTab.code = codeEditor.value;
-    applySyntaxHighlighting(activeTab.code);
+    applySyntaxHighlighting(activeTab.code,highlightingCode);
   }
 });
 
@@ -337,19 +374,18 @@ tabsContainer.addEventListener('pointerdown', (e) => {
   }
 });
 
+tabsContainer.addEventListener('wheel',e=>{
+  if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
+  const maxScrollLeft = tabsContainer.scrollWidth - tabsContainer.clientWidth;
+  if (maxScrollLeft<=0)return;
+  e.preventDefault();
+  tabsContainer.scrollLeft += e.deltaY;
+});
+
 addTabButton.addEventListener('pointerdown', () => addTab());
 
-sampleSelect.addEventListener('change', () => {
-  const selectedKey = sampleSelect.value;
-  const sample = samples[selectedKey as keyof typeof samples];
-  clearTab();
-  const activeTab = getActiveTab();
-  if (sample && activeTab) {
-    activeTab.code = sample.code;
-    activeTab.name = sample.name;
-    updateEditorContent(activeTab.code);
-    renderTabs();
-  }
+sampleSelect.addEventListener('change',async () => {
+  loadTabs(sampleSelect.value);
 });
 
 runButton.addEventListener('pointerdown', () => {
@@ -359,7 +395,7 @@ runButton.addEventListener('pointerdown', () => {
   console.log("実行ボタンが押されました。");
   isRunning = true;
   updateControlState();
-  manager.runSketch(manager.loadSketchString(tabs.map(t => t.code).join("\n"), tabs[0].name));
+  manager.runSketch(manager.loadSketchString(tabs.map(t => t.code).join("\n"), tabs[0].name, undefined));
 });
 
 stopButton.addEventListener('pointerdown', () => {
@@ -368,9 +404,9 @@ stopButton.addEventListener('pointerdown', () => {
   isRunning = false;
   updateControlState();
   manager.stopSketch();
-  const ctx = sketchCanvas.getContext('2d');
-  ctx?.clearRect(0, 0, sketchCanvas.width, sketchCanvas.height);
 });
+
+clearConsoleButton.addEventListener('pointerdown', clearConsole);
 
 showUploadUiButton.addEventListener('pointerdown', () => {
   showUploadUiButton.classList.add('hidden');
@@ -390,9 +426,9 @@ mainSketchSelect.addEventListener('change', () => {
 uploadButton.addEventListener('pointerdown', () => {
   if (uploadedFiles.length > 0) {
     clearTab();
-    let main_file;
+    let main_file:{name:string;content:string|ArrayBuffer;};
     uploadedFiles = uploadedFiles.filter(f => { if (f.name === mainSketchSelect.value) { main_file = f; return false; } return true; });
-    uploadedFiles.unshift(main_file);
+    uploadedFiles.unshift(main_file!);
     uploadedFiles.forEach(file => {
       addTab(file.name.replace(".pde", ""), file.content as string);
     });
@@ -409,10 +445,13 @@ document.addEventListener('pointerdown', (event) => {
   }
 });
 
+manager.addEventListener("log",(args:any[])=>{logToConsole("log",args)});
+manager.addEventListener("error",(args:any[])=>{logToConsole("error",args)});
+
 makeDraggable(canvasWindow, windowTitleBar);
 makeResizable(canvasWindow, windowResizeHandle);
 
 initializeSampleSelector();
-addTab('円の描画', samples['circle'].code);
+addTab("sketch",`// New sketch\n\nvoid setup() {\n  size(400, 400);\n}\n\nvoid draw() {\n  background(220);\n}`);
 updateControlState();
 setWindowMode(false);

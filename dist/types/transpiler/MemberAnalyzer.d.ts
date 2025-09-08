@@ -6,6 +6,7 @@ export declare class MemberAnalyzer extends Transpiler {
     arg_list: {
         name: string;
         type: string;
+        rest?: boolean;
     }[];
     constructor(main_sketch: string);
     visitActiveProcessingSketch: (ctx: ActiveProcessingSketchContext) => string;

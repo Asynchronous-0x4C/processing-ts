@@ -5,24 +5,37 @@ import { PSurface } from "./PSurface";
 import { JSONObject } from "./data/JSONObject";
 import { KeyEvent } from "./event/KeyEvent";
 import { MouseEvent } from "./event/MouseEvent";
-import { Renderer } from "./renderer/Renderer";
 import { base_uri } from "./worker/worker_data";
 import { IOBase } from "./util/sketchio/IOBase";
 import { JSONArray } from "./data/JSONArray";
+import { XHRIO } from "./util/sketchio/XHRIO";
+import { Application } from "pixi.js";
+import { PFont } from "./PFont";
 
-const date=new Date();
+export interface PAppletSettings{
+  canvas: HTMLCanvasElement,
+  base_path: string,
+  max_size:{ width: number; height: number; }
+}
 
 export class PApplet extends PConstants{
   g:PGraphics;
   surface:PSurface=new PSurface(this);
   __io__:IOBase|null=null;
   __fullscreen__:boolean=false;
+  __log_listener__:(args:any[])=>void=()=>{};
+  __date__=new Date();
+  __start_milli_seconds__=performance.now();
+  __loop__=true;
+  __app__:Application;
 
   private __exit_code__=0;
 
   max_size:{width:number,height:number}={width:0,height:0};
   width:number=0;
   height:number=0;
+  pmouseX:number=0;
+  pmouseY:number=0;
   mouseX:number=0;
   mouseY:number=0;
   mousePressed:boolean=false;
@@ -36,13 +49,14 @@ export class PApplet extends PConstants{
 
   __initialized__=false;
 
-  constructor(renderer:Renderer){
+  constructor(settings?:PAppletSettings){
     super();
-    if(renderer!=null){
-      this.max_size=renderer.getMaximumSize();
-      this.__io__=renderer.__io__;
+    if(settings){
+      this.max_size=settings.max_size;
+      this.__io__=new XHRIO(settings.base_path);
     }
-    this.g=new PGraphics(renderer);
+    this.__app__=new Application();
+    this.g=new PGraphics(this,settings?.canvas);
   }
 
   __set_preload__(buffer:{path:string, content:ArrayBuffer}[]){
@@ -53,7 +67,9 @@ export class PApplet extends PConstants{
 
   async setup(){}
 
-  async draw(){}
+  async draw(){
+    this.noLoop();
+  }
 
   async size(width:number,height:number){
     if(this.__initialized__){
@@ -86,8 +102,12 @@ export class PApplet extends PConstants{
     this.__frameRate__=framerate;
   }
 
-  background(...color:number[]){
-    this.g.background(...color);
+  background(c1:number|PImage,c2?:number,c3?:number,c4?:number){
+    this.g.background(c1,c2,c3,c4);
+  }
+
+  colorMode(mode:number,...max:number[]){
+    this.g.colorMode(mode,...max);
   }
 
   fill(...color:number[]){
@@ -114,6 +134,10 @@ export class PApplet extends PConstants{
     this.g.rectMode(mode);
   }
 
+  ellipseMode(mode:number){
+    this.g.ellipseMode(mode);
+  }
+
   textAlign(align:number){
     this.g.textAlign(align);
   }
@@ -122,12 +146,40 @@ export class PApplet extends PConstants{
     this.g.textSize(size);
   }
 
+  textWidth(str:string):number{
+    return this.g.textWidth(str);
+  }
+
+  createFont(name:string,size:number){
+    return this.g.createFont(name,size);
+  }
+
+  textFont(font:PFont){
+    this.g.textFont(font);
+  }
+
+  imageMode(mode:number){
+    this.g.imageMode(mode);
+  }
+
+  point(x:number,y:number){
+    this.g.point(x,y);
+  }
+
   rect(x:number,y:number,width:number,height:number){
     this.g.rect(x,y,width,height);
   }
 
+  quad(x1:number,y1:number,x2:number,y2:number,x3:number,y3:number,x4:number,y4:number){
+    this.g.quad(x1,y1,x2,y2,x3,y3,x4,y4);
+  }
+
   ellipse(x:number,y:number,width:number,height:number){
     this.g.ellipse(x,y,width,height);
+  }
+
+  circle(x:number,y:number,r:number){
+    this.g.circle(x,y,r);
   }
 
   arc(x:number,y:number,width:number,height:number,start:number,stop:number){
@@ -154,7 +206,57 @@ export class PApplet extends PConstants{
     this.g.translate(x,y);
   }
 
+  rotate(angle:number){
+    this.g.rotate(angle);
+  }
+
+  scale(x:number,y?:number){
+    this.g.scale(x,y);
+  }
+
+  push(){
+    this.g.push();
+  }
+
+  pop(){
+    this.g.pop();
+  }
+
+  pushStyle(){
+    this.g.pushStyle();
+  }
+
+  popStyle(){
+    this.g.popStyle();
+  }
+
+  pushMatrix(){
+    this.g.pushMatrix();
+  }
+
+  popMatrix(){
+    this.g.popMatrix();
+  }
+
+  resetMatrix(){
+    this.g.resetMatrix();
+  }
+
+  beginShape(mode?:number){
+    this.g.beginShape(mode);
+  }
+
+  vertex(x:number,y:number){
+    this.g.vertex(x,y);
+  }
+
+  endShape(mode?:number){
+    this.g.endShape(mode);
+  }
+
   _keyPressed(e:KeyEvent){}
+
+  _keyTyped(e:KeyEvent){}
 
   _keyReleased(e:KeyEvent){}
 
@@ -168,32 +270,155 @@ export class PApplet extends PConstants{
 
   _windowResized(){}
 
+  color(...color:number[]):number{
+    let result=0xffffffff;
+    color=color.map(c=>Math.max(Math.min(c,255),0));
+    if(color.length==1){
+      result=0xff000000|color[0]<<16|color[0]<<8|color[0];
+    }else if(color.length==2){
+      result=color[1]<<24|color[0]<<16|color[0]<<8|color[0];
+    }else if(color.length==3){
+      result=0xff000000|color[2]<<16|color[1]<<8|color[0];
+    }else if(color.length==4){
+      result=color[3]<<24|color[2]<<16|color[1]<<8|color[0];
+    }else{
+      throw new Error("Invalid color length: "+color.length);
+    }
+    return result;
+  }
+
+  red(c:number){
+    return c&0xff;
+  }
+
+  green(c:number){
+    return (c>>8)&0xff;
+  }
+
+  blue(c:number){
+    return (c>>16)&0xff;
+  }
+
+  alpha(c:number){
+    return c>>>24;
+  }
+
+  lerpColor(c1:number,c2:number,amt:number){
+    amt=this.constrain(amt,0,1);
+    const c1_arr=[c1&0xff,(c1>>8)&0xff,(c1>>16)&0xff,c1>>>24];
+    const c2_arr=[c2&0xff,(c2>>8)&0xff,(c2>>16)&0xff,c2>>>24];
+    return this.color(this.lerp(c1_arr[0],c2_arr[0],amt),this.lerp(c1_arr[1],c2_arr[1],amt),this.lerp(c1_arr[2],c2_arr[2],amt),this.lerp(c1_arr[3],c2_arr[3],amt));
+  }
+
+  join(list:string[],separator:string){
+    return list.join(separator);
+  }
+
+  matchAll(str:string,regexp:string){
+    return str.matchAll(new RegExp(regexp,"g"));
+  }
+
+  match(str:string,regexp:string){
+    return str.match(new RegExp(regexp));
+  }
+
+  nf(num:number|number[],left?:number,right?:number):string[]|string{
+    if(typeof num === "number"){
+      if(!left)return num.toString();
+      if(right){
+        return num.toFixed(right);
+      }else{
+        const l=Math.max(0,left-Math.floor(num).toString().length);
+        return new Array(l).fill("0").join("").concat(num.toFixed());
+      }
+    }else{
+      if(!left)return num.map(n=>n.toString());
+      if(right){
+        return num.map(n=>n.toFixed(right));
+      }else{
+        return num.map(n=>{
+          const l=Math.max(0,left-Math.floor(n).toString().length);
+          return new Array(l).fill("0").join("").concat(n.toFixed());
+        });
+      }
+    }
+  }
+
+  nfc(num:number|number[],right?:number):string|string[]{
+    if(typeof num === "number"){
+      if(right){
+        return new Intl.NumberFormat("en-US",{minimumFractionDigits:right}).format(num);
+      }else{
+        return new Intl.NumberFormat("en-US").format(num);
+      }
+    }else{
+      if(right){
+        return num.map(n=>new Intl.NumberFormat("en-US",{minimumFractionDigits:right}).format(n));
+      }else{
+        return num.map(n=>new Intl.NumberFormat("en-US").format(n));
+      }
+    }
+  }
+
+  nfp(num:number|number[],left:number,right?:number):string|string[]{
+    if(typeof num === "number"){
+      if(right){
+        return new Intl.NumberFormat(undefined,{minimumIntegerDigits:left,minimumFractionDigits:right,signDisplay:"always"}).format(num);
+      }else{
+        return new Intl.NumberFormat(undefined,{minimumIntegerDigits:left,signDisplay:"always"}).format(num);
+      }
+    }else{
+      if(right){
+        return num.map(n=>new Intl.NumberFormat(undefined,{minimumIntegerDigits:left,minimumFractionDigits:right,signDisplay:"always"}).format(n));
+      }else{
+        return num.map(n=>new Intl.NumberFormat(undefined,{minimumIntegerDigits:left,signDisplay:"always"}).format(n));
+      }
+    }
+  }
+
+  nfs(num:number|number[],left:number,right?:number):string|string[]{
+    const result=this.nfp(num,left,right);
+    if(typeof result === "string"){
+      return result.replace("+"," ");
+    }else{
+      return result.map(r=>r.replace("+"," "));
+    }
+  }
+
+  trim(str:string|string[]){
+    if(typeof str==="string"){
+      return str.trim();
+    }else{
+      return str.map(s=>s.trim());
+    }
+  }
+
   year(){
-    return date.getFullYear();
+    return this.__date__.getFullYear();
   }
 
   month(){
-    return date.getMonth()+1;
+    return this.__date__.getMonth()+1;
   }
 
   day(){
-    return date.getDate();
+    return this.__date__.getDate();
   }
 
   hour(){
-    return date.getHours();
+    return this.__date__.getHours();
   }
 
   minute(){
-    return date.getMinutes();
+    return this.__date__.getMinutes();
   }
 
   second(){
-    return date.getSeconds();
+    return this.__date__.getSeconds();
   }
 
   millis(){
-    return date.getMilliseconds();
+    return Math.round(performance.now()-this.__start_milli_seconds__);
   }
 
   radians(degrees:number){
@@ -204,23 +429,60 @@ export class PApplet extends PConstants{
     return radians * (180 / Math.PI);
   }
 
+  abs=Math.abs;
+
+  floor=Math.floor;
+
+  ceil=Math.ceil;
+
+  min=Math.min;
+
+  max=Math.max;
+
+  sqrt=Math.sqrt;
+
+  pow=Math.pow;
+
   constrain(x:number,min:number,max:number){
     if(x<min)return min;
     if(x>max)return max;
     return x;
   }
 
+  map(value:number,start1:number,stop1:number,start2:number,stop2:number){
+    const range1=stop1-start1;
+    const range2=stop2-start2;
+    const position=(value-start1)/range1;
+    return start2+position*range2;
+  }
+
+  norm(value:number,start:number,stop:number){
+    return this.map(value,start,stop,0,1);
+  }
+  
+  dist(x1:number,y1:number,x2:number,y2:number){
+    return Math.sqrt((x1-x2)**2+(y1-y2)**2);
+  }
+
+  exp=Math.exp;
+
+  sin=Math.sin;
+
+  cos=Math.cos;
+
+  tan=Math.tan;
+
+  asin=Math.asin;
+
+  acos=Math.acos;
+
+  atan=Math.atan;
+
+  atan2=Math.atan2;
+
   random(min:number,max:number){
     if(max==undefined)max=min,min=0;
     return Math.random()*(max-min)+min;
-  }
-
-  abs(x:number){
-    return Math.abs(x);
-  }
-
-  floor(x:number){
-    return Math.floor(x);
   }
 
   noise(x: number, y: number = 0, z: number = 0): number {
@@ -232,26 +494,26 @@ export class PApplet extends PConstants{
     y -= Math.floor(y);
     z -= Math.floor(z);
 
-    const u = this.fade(x);
-    const v = this.fade(y);
-    const w = this.fade(z);
+    const u = this.__fade__(x);
+    const v = this.__fade__(y);
+    const w = this.__fade__(z);
 
-    const A = this.permutation[X] + Y;
-    const AA = this.permutation[A] + Z;
-    const AB = this.permutation[A + 1] + Z;
-    const B = this.permutation[X + 1] + Y;
-    const BA = this.permutation[B] + Z;
-    const BB = this.permutation[B + 1] + Z;
+    const A = this.__permutation__[X] + Y;
+    const AA = this.__permutation__[A] + Z;
+    const AB = this.__permutation__[A + 1] + Z;
+    const B = this.__permutation__[X + 1] + Y;
+    const BA = this.__permutation__[B] + Z;
+    const BB = this.__permutation__[B + 1] + Z;
 
     return this.lerp(
       this.lerp(
-        this.lerp(this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z), u),
-        this.lerp(this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z), u),
+        this.lerp(this.__grad__(this.__permutation__[AA], x, y, z), this.__grad__(this.__permutation__[BA], x - 1, y, z), u),
+        this.lerp(this.__grad__(this.__permutation__[AB], x, y - 1, z), this.__grad__(this.__permutation__[BB], x - 1, y - 1, z), u),
         v
       ),
       this.lerp(
-        this.lerp(this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1), u),
-        this.lerp(this.grad(this.permutation[AB + 1], x, y - 1, z - 1), this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1), u),
+        this.lerp(this.__grad__(this.__permutation__[AA + 1], x, y, z - 1), this.__grad__(this.__permutation__[BA + 1], x - 1, y, z - 1), u),
+        this.lerp(this.__grad__(this.__permutation__[AB + 1], x, y - 1, z - 1), this.__grad__(this.__permutation__[BB + 1], x - 1, y - 1, z - 1), u),
         v
       ),
       w
@@ -275,7 +537,7 @@ export class PApplet extends PConstants{
   }
 
   println(...args:any[]){
-    console.log(...args);
+    this.__log_listener__(args)
   }
 
   loadStrings(path:string){
@@ -293,7 +555,7 @@ export class PApplet extends PConstants{
   }
 
   loadImage(path:string){
-    const img=new PImage();
+    const img=new PImage(this);
     const result=this.__io__!.load_as_blob(path,`image/${path.split(".").pop()?.toLowerCase()??"png"}`);
     if(result!=null){
       img.load_from_blob(result);
@@ -302,28 +564,44 @@ export class PApplet extends PConstants{
     return null;
   }
 
+  createImage(width:number,height:number,format:number):PImage{
+    return new PImage(this,{pixels:[],width,height,format});
+  }
+
+  createGraphics(width:number,height:number,renderer:string):PGraphics{
+    return new PGraphics(this,{x:width,y:height});
+  }
+
   loadJSONObject(path:string){
-    const result=this.__io__!.load_as_string(base_uri+path);
+    const result=this.__io__!.load_as_string(path);
     if(result!=null){
       return JSONObject.parse(result);
     }
     return null;
   }
 
-  saveJSONObject(path:string,data:JSONObject){
+  saveJSONObject(data:JSONObject,path:string){
     this.__io__?.save_string(path,data.toString());
   }
 
   loadJSONArray(path:string){
-    const result=this.__io__!.load_as_string(base_uri+path);
+    const result=this.__io__!.load_as_string(path);
     if(result!=null){
       return JSONArray.parse(result);
     }
     return null;
   }
 
-  saveJSONArray(path:string,data:JSONArray){
+  saveJSONArray(data:JSONArray,path:string){
     this.__io__?.save_string(path,data.toString());
+  }
+
+  loop(){
+    this.__loop__=true;
+  }
+
+  noLoop(){
+    this.__loop__=false;
   }
 
   exit(){
@@ -332,6 +610,7 @@ export class PApplet extends PConstants{
 
   __begin__(){
     this.g.__begin__();
+    this.__date__=new Date();
   }
 
   __end__(){
@@ -340,26 +619,27 @@ export class PApplet extends PConstants{
   }
 
   __stop__(){
+    this.colorMode(this.RGB,255,255,255,255);
     this.g.background(255);
     this.g.__stop__();
   }
 
-  private fade(t: number): number {
+  private __fade__(t: number): number {
     return t * t * t * (t * (t * 6 - 15) + 10);
   }
 
-  private lerp(a: number, b: number, t: number): number {
-    return a + t * (b - a);
+  lerp(start: number, stop: number, amt: number): number {
+    return start + amt * (stop - start);
   }
 
-  private grad(hash: number, x: number, y: number, z: number): number {
+  private __grad__(hash: number, x: number, y: number, z: number): number {
     const h = hash & 15;
     const u = h < 8 ? x : y;
     const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
     return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
   }
 
-  private permutation = (() => {
+  private __permutation__ = (() => {
     const p = new Uint8Array(512);
     const perm = [
       151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69,

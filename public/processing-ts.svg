@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="800" height="800" viewBox="0 0 800 800" fill="none">
-  <path d="M400 500C700 500 700 100 400 100" stroke="#0468FF" stroke-width="150"></path>
-  <path d="M400 200L100 600" stroke="#1F34AB" stroke-width="150"></path>
-  <path d="M100 300L200 500" stroke="#85AEFF" stroke-width="150"></path>
-  <path fill="#ED225D" stroke-miterlimit="10" d="M682 123 767.33 97.24 784.09 148.8 699.11 177.79 751.86 252.59 707.39 284.84 651.86 211.36 597.78 282.91 554.6 250.02 607.35 177.79 521.71 146.88 538.49 95.28 624.47 122.99V34.05H682.01Z"></path>
+  <path d="M425 575C725 575 725 175 425 175" stroke="#0468FF" stroke-width="150"></path>
+  <path d="M425 275 125 675" stroke="#1F34AB" stroke-width="150"></path>
+  <path d="M125 375 225 575" stroke="#85AEFF" stroke-width="150"></path>
+  <path fill="#ED225D" stroke-miterlimit="10" d="M688 178 773.33 152.24 790.09 203.8 705.11 232.79 757.86 307.59 713.39 339.84 657.86 266.36 603.78 337.91 560.6 305.02 613.35 232.79 527.71 201.88 544.49 150.28 630.47 177.99V89.05H688.01Z"></path>
 </svg>

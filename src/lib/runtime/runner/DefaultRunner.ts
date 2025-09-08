@@ -6,13 +6,16 @@ import { Runnable, Consumer, Supplier, Function, FunctionalInterface } from "../
 import { Event, MouseEvent, KeyEvent } from "../event";
 import { PVector } from "../util/PVector";
 import { set_base_uri } from "../worker/worker_data";
-import { Renderer } from "../renderer/Renderer";
-import { DefaultRenderer } from "../renderer/DefaultRenderer";
+import { HashMap } from "../util/HashMap";
 
 export abstract class Runner{
   pre_count:number=-1;
   initiated:boolean=false;
   scaling:{x:number,y:number}={x:1,y:1};
+  log_listeners:((...args:any[])=>void)[]=[];
+  error_listeners:((...args:any[])=>void)[]=[];
+
+  arg_classes:{name:string,type:any}[]=[{name:"PApplet",type:PApplet},{name:"PVector",type:PVector},{name:"ArrayList",type:ArrayList},{name:"HashMap",type:HashMap},{name:"Cursor",type:Cursor},{name:"Runnable",type:Runnable},{name:"Consumer",type:Consumer},{name:"Supplier",type:Supplier},{name:"Function",type:Function},{name:"FunctionalInterface",type:FunctionalInterface},];
 
   abstract manager:SketchManager;
 
@@ -53,10 +56,32 @@ export abstract class Runner{
 
   abstract get_applet_size():{w:number,h:number};
 
+  abstract get_aspect_ratio():number;
+
+  abstract update_resolution(r:number):void;
+
   get_maximum_size():{width:number,height:number}{
     const rect=this.manager.target_element!.getBoundingClientRect();
     return {width:rect.width,height:rect.height};
   }
+
+  addDependency(data:{name:string,type:any},override:boolean){
+    const idx=this.arg_classes.findIndex(a=>a.name==data.name);
+    if(idx==-1||override)this.arg_classes.push(data);
+    if(override&&idx!==-1){
+      this.arg_classes=this.arg_classes.splice(idx,1);
+    }
+  }
+
+  getDependentNames():string[]{
+    return this.arg_classes.map(a=>a.name);
+  }
+
+  getDependentClasses():any[]{
+    return this.arg_classes.map(a=>a.type);
+  }
+
+  abstract addEventListener(type:"log"|"error",listener:(args:any[])=>void):void;
 }
 
 export function convert_button(button:number){
@@ -73,14 +98,12 @@ export class DefaultRunner extends Runner{
   initiated: boolean=false;
 
   manager: SketchManager;
-  renderer:Renderer|null=null;
 
   event_queue:Array<{name:string, event:Event}>;//queue events to be processed in the next frame
   content_display:boolean=true;
   applet: PApplet | null = null;
 
   last_time=0;
-  loop_count=0;
 
   constructor(manager:SketchManager){
     super();
@@ -90,84 +113,107 @@ export class DefaultRunner extends Runner{
 
   async init(sketch:string){
     this.event_queue=[];
-    this.renderer=new DefaultRenderer(this.manager.target_element!,this.manager.base_uri,this.get_maximum_size());
-    const arg_classes=[PApplet,PVector,ArrayList,Cursor,Runnable,Consumer,Supplier,Function,FunctionalInterface];
-    this.applet=new globalThis.Function("__renderer__",...arg_classes.map(c=>c.name),sketch)(this.renderer,...arg_classes) as PApplet;
+    this.applet=new globalThis.Function("__renderer__",...this.arg_classes.map(c=>c.name),sketch)({canvas:this.manager.target_element!,base_path:this.manager.base_uri,max_size:this.get_maximum_size()},...this.arg_classes.map(c=>c.type)) as PApplet;
     this.applet.width=this.manager.target_element!.clientWidth;
     this.applet.height=this.manager.target_element!.clientHeight;
+    this.applet.__log_listener__=(args:any[])=>{this.log_listeners.forEach(l=>l(args))};
     if(this.manager.sketch_resources_promise!=null)this.applet.__set_preload__((await this.manager.sketch_resources_promise).map((r:{path:string,content:ArrayBuffer})=>({path:r.path,content:new Uint8Array(r.content).buffer})));
     set_base_uri(this.manager.base_uri);
     this.initiated=true;
-    await this.applet.settings();
-    await this.applet.setup();
+    try{
+      this.applet.__begin__();
+      await this.applet.settings();
+      await this.applet.setup();
+      this.applet.__end__();
+    }catch(e){
+      if(e instanceof Error)this.error_listeners.forEach(l=>l(e.message));
+      console.error(e)
+    }
     this.set_scaling();
     this.loop();
   }
 
+  private async frame():Promise<void>{
+    if(!this.applet)return;
+    if(!this.initiated){
+      this.applet.__stop__();
+      console.log(`Sketch finished with exit code 0.`);
+      return;
+    }
+    const ID=setTimeout(async ()=>{this.frame();},this.content_display?1000/this.applet.__frameRate__:1000);
+    const now = performance.now();
+    const deltaTime = now - this.last_time;
+    this.last_time = now;
+    this.applet.frameRate=1000/deltaTime;
+    this.applet.__begin__();
+    try{
+      if(this.applet.__loop__||this.applet.frameCount==0)await this.applet.draw();
+      // if(this.applet!.frameCount%60===0)this.applet!.println(1000/deltaTime);
+    }catch(e){
+      if(e instanceof Error)this.error_listeners.forEach(l=>l(e.message));
+      console.error(e);
+    }
+    const code=this.applet.__end__();
+    if(code!=0){
+      clearTimeout(ID);
+      this.applet.__stop__();
+      this.stop();
+      console.log(`Sketch finished with exit code ${code}.`);
+    }
+    this.applet.frameCount++;
+    this.applet.pmouseX=this.applet.mouseX;
+    this.applet.pmouseY=this.applet.mouseY;
+    while(this.event_queue.length>0){
+      const event=this.event_queue.shift()!;
+      let mouse:{x:number,y:number};
+      switch(event.name){
+        case "_mousePressed":
+          this.applet.mousePressed=true;
+          mouse=this.convert_mouse((event.event as MouseEvent).x,(event.event as MouseEvent).y);
+          this.applet.mouseX=mouse.x;
+          this.applet.mouseY=mouse.y;
+          this.applet.mouseButton=(event.event as MouseEvent).button;
+          this.applet._mousePressed(event.event as MouseEvent);
+          break;
+        case "_mouseReleased":
+          this.applet.mousePressed=false;
+          mouse=this.convert_mouse((event.event as MouseEvent).x,(event.event as MouseEvent).y);
+          this.applet.mouseX=mouse.x;
+          this.applet.mouseY=mouse.y;
+          this.applet.mouseButton=(event.event as MouseEvent).button;
+          this.applet._mouseReleased(event.event as MouseEvent);
+          break;
+        case "_mouseMoved":
+          mouse=this.convert_mouse((event.event as MouseEvent).x,(event.event as MouseEvent).y);
+          this.applet.mouseX=mouse.x;
+          this.applet.mouseY=mouse.y;
+          this.applet._mouseMoved(event.event as MouseEvent);
+          break;
+        case "_keyPressed":
+          this.applet.keyPressed=true;
+          this.applet.key=(event.event as KeyEvent).key;
+          this.applet.keyCode=(event.event as KeyEvent).keyCode;
+          this.applet._keyPressed(event.event as KeyEvent);
+          this.applet._keyTyped(event.event as KeyEvent);
+          break;
+        case "_keyReleased":
+          this.applet.keyPressed=false;
+          this.applet._keyReleased(event.event as KeyEvent);
+          break;
+        case "_mouseWheel":
+          this.applet._mouseWheel(event.event as MouseEvent);
+          break;
+        case "_windowResized":
+          this.applet._windowResized();
+          break;
+        default:
+          console.error("Unknown event name: "+event.name);
+      }
+    }
+  }
+
   loop(){
-    const self=this;
-    const ID=setInterval(async function() {
-      const now = performance.now();
-      const deltaTime = now - self.last_time;
-      self.last_time = now;
-      self.applet!.frameRate=1000/deltaTime;
-      self.applet?.__begin__();
-      await self.applet!.draw();
-      const code=self.applet?.__end__();
-      if(code!=0||!self.initiated){
-        clearInterval(ID);
-        self.applet?.__stop__();
-        console.log(`Sketch finished with exit code ${code}.`);
-      }
-      self.applet!.frameCount++;
-      self.loop_count++;
-      while(self.event_queue.length>0){
-        const event=self.event_queue.shift()!;
-        let mouse:{x:number,y:number};
-        switch(event.name){
-          case "_mousePressed":
-            self.applet!.mousePressed=true;
-            mouse=self.convert_mouse((event.event as MouseEvent).x,(event.event as MouseEvent).y);
-            self.applet!.mouseX=mouse.x;
-            self.applet!.mouseY=mouse.y;
-            self.applet!.mouseButton=(event.event as MouseEvent).button;
-            self.applet!._mousePressed(event.event as MouseEvent);
-            break;
-          case "_mouseReleased":
-            self.applet!.mousePressed=false;
-            mouse=self.convert_mouse((event.event as MouseEvent).x,(event.event as MouseEvent).y);
-            self.applet!.mouseX=mouse.x;
-            self.applet!.mouseY=mouse.y;
-            self.applet!.mouseButton=(event.event as MouseEvent).button;
-            self.applet!._mouseReleased(event.event as MouseEvent);
-            break;
-          case "_mouseMoved":
-            mouse=self.convert_mouse((event.event as MouseEvent).x,(event.event as MouseEvent).y);
-            self.applet!.mouseX=mouse.x;
-            self.applet!.mouseY=mouse.y;
-            self.applet!._mouseMoved(event.event as MouseEvent);
-            break;
-          case "_keyPressed":
-            self.applet!.keyPressed=true;
-            self.applet!.key=(event.event as KeyEvent).key;
-            self.applet!.keyCode=(event.event as KeyEvent).keyCode;
-            self.applet!._keyPressed(event.event as KeyEvent);
-            break;
-          case "_keyReleased":
-            self.applet!.keyPressed=false;
-            self.applet!._keyReleased(event.event as KeyEvent);
-            break;
-          case "_mouseWheel":
-            self.applet!._mouseWheel(event.event as MouseEvent);
-            break;
-          case "_windowResized":
-            self.applet!._windowResized();
-            break;
-          default:
-            console.error("Unknown event name: "+event.name);
-        }
-      }
-    },this.content_display?1000/this.applet!.__frameRate__:1000);
+    this.frame();
   }
 
   stop(){
@@ -222,10 +268,31 @@ export class DefaultRunner extends Runner{
     if(!this.applet)return;
     const rect=this.manager.target_element!.getBoundingClientRect();
     this.scaling={x:this.applet.width/rect.width,y:this.applet.height/rect.height};
+    this.update_resolution(window.devicePixelRatio/Math.max(this.scaling.x,this.scaling.y));
   }
 
   get_applet_size():{w:number,h:number}{
     if(!this.applet)return {w:0,h:0};
-    return this.applet.__fullscreen__?{w:0,h:0}:{w:this.applet.width,h:this.applet.height};
+    return {w:this.applet.width,h:this.applet.height};
+  }
+
+  get_aspect_ratio():number{
+    if(!this.applet)return 0;
+    return this.applet.__fullscreen__?0:this.applet.width/this.applet.height;
+  }
+
+  update_resolution(r: number): void {
+    this.applet?.g.updateResolution(r);
+  }
+
+  addEventListener(type:"log"|"error",listener:(args:any[])=>void){
+    switch(type){
+      case "log":
+        this.log_listeners.push(listener);
+        break;
+      case "error":
+        this.error_listeners.push(listener);
+        break;
+    }
   }
 }

@@ -3,11 +3,19 @@ import { _main_sketch, applet_instance } from "./Control";
 import { SolvedClassMember, SolvedFunctionData } from "./Transpiler";
 
 const replace_list:{before:string,after:string}[]=[];
+const primitive:string[]=["number","boolean","string"];
 
 export class Converter{
   
   convert(solved_class_data:Map<string,SolvedClassMember>){
     let result="";
+    let globals="";
+    const s=solved_class_data.get("super")!;
+    s.field.forEach(f=>{
+      globals+=`let ${f.name}=${f.init};\n`;
+    });
+    globals+=getSafeMethod(s.method,false);
+    solved_class_data.delete("super");
     solved_class_data.forEach((v,k)=>{
       result+=`class ${k}${v.class.length>0?` extends ${v.class[0]}`:""}{\n`;
       result+=getSafeConstructor(v.constructor)+"\n";
@@ -30,7 +38,7 @@ export class Converter{
     replace_list.forEach((replace)=>{
       result=result.replace(replace.before,replace.after);
     });
-    result+=`\nconst __applet__=new ${_main_sketch}(__renderer__);\nreturn __applet__;`;
+    result+=`\nconst __applet__=new ${_main_sketch}(__renderer__);\n${globals}\nconsole.log("sketch transpiled!");\nreturn __applet__;`;
     return result;
   }
 }
@@ -41,11 +49,11 @@ function getType(type:string){
   }else if(type.includes("<")){
     return type.replace(/<.*?>/,"").replace(" ","");
   }else{
-    return type.replace(" ","").replace(/int|float|long|double|byte|short|color/,"Number").replace("char","String");
+    return type.replace(" ","").replace(/int|float|long|double|byte|short|color/,"number").replace("char","string").replace("String","string");
   }
 }
 
-function getSafeMethod(method_data:SolvedFunctionData[]){
+function getSafeMethod(method_data:SolvedFunctionData[],member:boolean=true){
   const unique_method=new Map<string,SolvedFunctionData[]>();
   method_data.filter(m=>!m.extended).forEach(m=>{
     if(unique_method.has(m.name)){
@@ -57,12 +65,12 @@ function getSafeMethod(method_data:SolvedFunctionData[]){
   const method_list:string[]=[];
   unique_method.forEach((v,k)=>{
     if(v.length==1){
-      const method=`${v[0].async?"async ":""}${k}(${v[0].args.map((a)=>a.name).join(",")}){\n${v[0].body}}\n`;
+      const method=`${v[0].async?"async ":""}${member?"":"function "}${k}(${v[0].args.map((a)=>`${a.rest?"...":""}${a.name}`).join(",")}){\n${v[0].body}}\n`;
       method_list.push(method);
     }else{
-      let method=`${v[0].async?"async ":""}${k}(...args){\n`;
+      let method=`${v[0].async?"async ":""}${member?"":"function "}${k}(...args){\n`;
       v.forEach((m)=>{
-        method+=`if(args.length==${m.args.length}${m.args.map((v,i)=>v.type.includes("[]")?`&&Array.isArray(args[${i}])`:`&&args[${i}] instanceof ${getType(v.type)}`)}){\n${m.body==""&&m.override?`super.${k}(args);\n`:m.body}}else `;
+        method+=`if(args.length==${m.args.length}${m.args.map(getIdentificationExpression)}){\n${m.body==""&&m.override?`super.${k}(args);\n`:m.body}}else `;
       });
       method=method.slice(0,-5)+"}\n";
       method_list.push(method);
@@ -77,15 +85,22 @@ function getSafeConstructor(constructor_data:SolvedFunctionData[]){
     const constructor=`constructor(){}\n`;
     constructor_list=constructor;
   }else if(constructor_data.length==1){
-    const constructor=`constructor(${constructor_data[0].args.map((a)=>a.name).join(",")}){\n${constructor_data[0].body}}\n`;
+    const constructor=`constructor(${constructor_data[0].args.map((a)=>`${a.rest?"...":""}${a.name}`).join(",")}){\n${constructor_data[0].body}}\n`;
     constructor_list=constructor;
   }else{
     let constructor=`constructor(...args){\n`;
     constructor_data.forEach((m)=>{
-      constructor+=`if(args.length==${m.args.length}${m.args.map((v,i)=>v.type.includes("[]")?`&&Array.isArray(args[${i}])`:`&&args[${i}] instanceof ${getType(v.type)}`)}){\n${m.args.map((v,i)=>`const ${v.name}=args[${i}];\n`)}${m.body}}else `;
+      constructor+=`if(args.length==${m.args.length}${m.args.map(getIdentificationExpression)}){\n${m.args.map((v,i)=>`const ${v.name}=args[${i}];\n`)}${m.body}}else `;
     });
     constructor=constructor.slice(0,-5)+"}\n";
     constructor_list=constructor;
   }
   return constructor_list;
+}
+
+function getIdentificationExpression(v:{name:string,type:string},i:number){
+  const t=getType(v.type);
+  return v.type.includes("[]") ? `&&Array.isArray(args[${i}])`:
+         primitive.includes(t) ? `&&(typeof args[${i}]==="${t}"||args[${i}] instanceof ${t.charAt(0).toUpperCase()+t.slice(1)})`:
+         `&&args[${i}] instanceof ${t}`;
 }

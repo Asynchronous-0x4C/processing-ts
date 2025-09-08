@@ -1,4 +1,4 @@
-import { ArrayInitializerContext, ClassCreatorRestContext, CreatorContext, DefaultValueContext, EnhancedForControlContext, ExpressionContext, LambdaExpressionContext, LiteralContext, LocalVariableDeclarationContext, MethodCallContext, MethodDeclarationContext, PrimaryContext, StatementContext, VariableDeclaratorIdContext, VariableInitializerContext } from "./antlr/parser/ProcessingParser";
+import { ArrayInitializerContext, ClassCreatorRestContext, CreatorContext, DefaultValueContext, EnhancedForControlContext, ExpressionContext, LambdaExpressionContext, LiteralContext, LocalVariableDeclarationContext, MethodCallContext, MethodDeclarationContext, PrimaryContext, StatementContext, SwitchLabelContext, VariableDeclaratorIdContext, VariableInitializerContext } from "./antlr/parser/ProcessingParser";
 import { ClassMember, SolvedClassMember, Transpiler } from "./Transpiler";
 export declare class ReferenceSolver extends Transpiler {
     solved_class_data: Map<string, SolvedClassMember>;
@@ -9,6 +9,7 @@ export declare class ReferenceSolver extends Transpiler {
     visitMethodDeclaration: (ctx: MethodDeclarationContext) => string;
     visitLocalVariableDeclaration: (ctx: LocalVariableDeclarationContext) => string;
     visitStatement: (ctx: StatementContext) => string;
+    visitSwitchLabel: (ctx: SwitchLabelContext) => string;
     visitVariableDeclaratorId: (ctx: VariableDeclaratorIdContext) => string;
     visitEnhancedForControl: (ctx: EnhancedForControlContext) => string;
     visitVariableInitializer: (ctx: VariableInitializerContext) => string;

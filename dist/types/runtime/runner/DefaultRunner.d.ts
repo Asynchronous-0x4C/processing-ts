@@ -1,7 +1,6 @@
 import { SketchManager } from "../..";
 import { PApplet } from "../PApplet";
 import { Event } from "../event";
-import { Renderer } from "../renderer/Renderer";
 export declare abstract class Runner {
     pre_count: number;
     initiated: boolean;
@@ -9,6 +8,12 @@ export declare abstract class Runner {
         x: number;
         y: number;
     };
+    log_listeners: ((...args: any[]) => void)[];
+    error_listeners: ((...args: any[]) => void)[];
+    arg_classes: {
+        name: string;
+        type: any;
+    }[];
     abstract manager: SketchManager;
     abstract init(sketch: string): void;
     abstract loop(): void;
@@ -34,17 +39,25 @@ export declare abstract class Runner {
         w: number;
         h: number;
     };
+    abstract get_aspect_ratio(): number;
+    abstract update_resolution(r: number): void;
     get_maximum_size(): {
         width: number;
         height: number;
     };
+    addDependency(data: {
+        name: string;
+        type: any;
+    }, override: boolean): void;
+    getDependentNames(): string[];
+    getDependentClasses(): any[];
+    abstract addEventListener(type: "log" | "error", listener: (args: any[]) => void): void;
 }
 export declare function convert_button(button: number): number;
 export declare class DefaultRunner extends Runner {
     pre_count: number;
     initiated: boolean;
     manager: SketchManager;
-    renderer: Renderer | null;
     event_queue: Array<{
         name: string;
         event: Event;
@@ -52,9 +65,9 @@ export declare class DefaultRunner extends Runner {
     content_display: boolean;
     applet: PApplet | null;
     last_time: number;
-    loop_count: number;
     constructor(manager: SketchManager);
     init(sketch: string): Promise<void>;
+    private frame;
     loop(): void;
     stop(): void;
     on_focus(): void;
@@ -72,4 +85,7 @@ export declare class DefaultRunner extends Runner {
         w: number;
         h: number;
     };
+    get_aspect_ratio(): number;
+    update_resolution(r: number): void;
+    addEventListener(type: "log" | "error", listener: (args: any[]) => void): void;
 }

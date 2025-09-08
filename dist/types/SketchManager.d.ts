@@ -1,4 +1,6 @@
+import { TranspileErrorListener } from "./transpiler/Control";
 import { Runner } from "./runtime/runner/DefaultRunner";
+import { Token } from "antlr4";
 export type SketchSettings = {
     frameRate?: number;
     thread?: "main";
@@ -18,7 +20,7 @@ export type SketchFile = {
     resources?: string[];
 };
 /**
- * Manage sketch transpile and execution.
+ * Manage transpile and execution of sketch.
  */
 export declare class SketchManager {
     runner: Runner;
@@ -60,12 +62,18 @@ export declare class SketchManager {
      * @param sketch_data Loaded sketch data
      * @returns Transpiled sketch.
      */
-    transpileSketch(sketch_data: SketchData): string;
+    transpileSketch(sketch_data: SketchData): {
+        result: string;
+        error: TranspileErrorListener<Token>;
+    };
     /**
      * Run transpiled sketch.
      * @param sketch Transpiled sketch
      */
-    runTranspiledSketch(sketch: string): Promise<void>;
+    runTranspiledSketch(sketch: {
+        result: string;
+        error: TranspileErrorListener<Token> | null;
+    }): Promise<void>;
     /**
      * Transpile and run sketch.
      * @param sketch_data Loaded sketch data
@@ -76,6 +84,19 @@ export declare class SketchManager {
      * Stop running sketch.
      */
     stopSketch(): void;
+    getAspectRatio(): number;
     resize(): void;
     private setAspectRatio;
+    /**
+     * Add dependent class which is necessary in your sketch.
+     * @param data The name and type of dependent class.
+     * @param override Whether to override the current dependency if the dependent class has a duplicated name.
+     */
+    addDependency(data: {
+        name: string;
+        type: any;
+    }, override?: boolean): void;
+    getDependentNames(): string[];
+    getDependentClasses(): any[];
+    addEventListener(type: "log" | "error", listener: (args: any[]) => void): void;
 }

@@ -1,9 +1,30 @@
 {
-  "name": "processing-ts",
+  "name": "@async0x4c/processing-ts",
   "private": false,
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "A Processing to JavaScript transpiler for web applications.",
+  "main": "dist/index.js",
+  "types": "dist/types/index.d.ts",
   "type": "module",
+  "author": {
+    "name": "async0x4c"
+  },
+  "homepage": "https://github.com/Asynchronous-0x4C/processing-ts",
+  "bugs": {
+    "url": "https://github.com/Asynchronous-0x4C/processing-ts/issues"
+  },
   "license": "MIT",
+  "keywords": [
+    "transpiler",
+    "processing"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "dev": "vite",
     "devh": "vite --host",
@@ -12,12 +33,14 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.3",
+    "@types/p5": "^1.7.6",
     "typescript": "~5.7.2",
     "vite": "^6.2.0",
     "vite-plugin-externalize-deps": "^0.9.0"
   },
   "dependencies": {
     "antlr4": "^4.13.2",
+    "p5": "^2.0.3",
     "pixi.js": "^8.9.1",
     "processing-ts": "file:"
   }

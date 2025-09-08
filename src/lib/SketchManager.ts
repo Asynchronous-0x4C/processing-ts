@@ -1,12 +1,13 @@
-import { transpile } from "./transpiler/Control";
+import { transpile, TranspileErrorListener } from "./transpiler/Control";
 import { DefaultRunner, Runner } from "./runtime/runner/DefaultRunner";
+import { Token } from "antlr4";
 
 export type SketchSettings={frameRate?:number,thread?:"main",keep_aspect_ratio?:boolean};
 export type SketchData={main:string,content:{name:string,content:string}[]};
 export type SketchFile={base_uri:string,main_sketch:string,sketches:string[],resources?:string[]}
 
 /**
- * Manage sketch transpile and execution.
+ * Manage transpile and execution of sketch.
  */
 export class SketchManager{
   runner:Runner;
@@ -55,8 +56,9 @@ export class SketchManager{
     this.base_uri=new URL(typeof sketch_path==="string"?sketch_path:sketch_path.base_uri,document.baseURI).href;
     const sketch_property=typeof sketch_path==="string"?await (await fetch(new URL(sketch_path+"sketch.properties",document.baseURI))).text():"";
     const main_sketch=typeof sketch_path==="string"?sketch_property.match(/\n*(?<!#\s*)main\s*=\s*(.+\.pde)/)![1]:sketch_path.main_sketch;
-    const sketch_names=typeof sketch_path==="string"?sketch_property.match(/\n*(?<!#\s*)sketches\s*=((\s*\w+.pde)+)/)![1].split(/[\s,]+/).map(s=>s.trim()):sketch_path.sketches;
-    const sketch_resources=typeof sketch_path==="string"?sketch_property.match(/\n*(?<!#\s*)resources\s*=[\s,]*(([\w\.]+[,\s]+)*)/)![1].split(/[\s,]+/).map(s=>s.trim()):sketch_path.resources??[];
+    let m;
+    const sketch_names=typeof sketch_path==="string"?(m=sketch_property.match(/\n*(?<!#\s*)sketches\s*=((\s*\w+.pde)+)/))!=null?m[1].split(/[\s,]+/).map(s=>s.trim()):[main_sketch]:sketch_path.sketches;
+    const sketch_resources=typeof sketch_path==="string"?(m=sketch_property.match(/\n*(?<!#\s*)resources\s*=[\s,]*(([\w\.]+[,\s]+)*)/))!=null?m[1].split(/[\s,]+/).map(s=>s.trim()):[]:sketch_path.resources??[];
     
     this.sketch_resources_promise = Promise.all(sketch_resources.map(async(resource) => {
       return {path:resource,content:await fetch(new URL(sketch_path + resource, document.baseURI)).then(res => res.arrayBuffer())};
@@ -104,19 +106,23 @@ export class SketchManager{
    * @param sketch_data Loaded sketch data
    * @returns Transpiled sketch.
    */
-  transpileSketch(sketch_data:SketchData):string{
-    return transpile(sketch_data.content.map(s=>s.content).join("\n"),sketch_data.main.replace(".pde",""));
+  transpileSketch(sketch_data:SketchData):{result: string;error: TranspileErrorListener<Token>;}{
+    let transpiled=transpile(sketch_data.content.map(s=>s.content).join("\n"),sketch_data.main.replace(".pde",""));
+    if(transpiled.error.error){
+      this.runner.error_listeners.forEach(l=>l(transpiled.error.getErrorMessage()));
+    }
+    return transpiled;
   }
 
   /**
    * Run transpiled sketch.
    * @param sketch Transpiled sketch
    */
-  async runTranspiledSketch(sketch:string){
+  async runTranspiledSketch(sketch:{result: string;error: TranspileErrorListener<Token>|null;}){
     this.stopSketch();
-    console.log(sketch);
-    await this.runner.init(sketch);
-    if(this.settings.keep_aspect_ratio!){
+    if(sketch.error!=null&&sketch.error.error)return;
+    await this.runner.init(sketch.result);
+    if(this.settings.keep_aspect_ratio){
       this.setAspectRatio();
     }
   }
@@ -142,25 +148,52 @@ export class SketchManager{
     this.runner.stop();
   }
 
+  getAspectRatio(){
+    return this.runner.get_aspect_ratio();
+  }
+
   resize(){
     if(this.runner.on_resize)this.runner.on_resize();
     this.runner.set_scaling();
-    if(this.settings.keep_aspect_ratio!){
+    if(this.settings.keep_aspect_ratio){
       this.setAspectRatio();
     }
   }
 
   private setAspectRatio(){
-    const rect=this.target_element!.getBoundingClientRect();
+    const rect=this.target_element!.parentElement!.getBoundingClientRect();
     const size=this.runner.get_applet_size();
     if(size.w==0&&size.h==0)return;
     if(this.runner.scaling.x<this.runner.scaling.y){
       const scale=rect.height/size.h;
       this.target_element!.style.width=`${size.w*scale}px`;
+      this.target_element!.style.height=`${size.h*scale}px`;
     }else if(this.runner.scaling.y<this.runner.scaling.x){
       const scale=rect.width/size.w;
       this.target_element!.style.height=`${size.h*scale}px`;
+      this.target_element!.style.width=`${size.w*scale}px`;
     }
     this.runner.set_scaling();
+  }
+
+  /**
+   * Add dependent class which is necessary in your sketch.
+   * @param data The name and type of dependent class.
+   * @param override Whether to override the current dependency if the dependent class has a duplicated name.
+   */
+  addDependency(data:{name:string,type:any},override?:boolean){
+    this.runner.addDependency(data,override??false);
+  }
+
+  getDependentNames():string[]{
+    return this.runner.getDependentNames();
+  }
+
+  getDependentClasses():any[]{
+    return this.runner.getDependentClasses();
+  }
+
+  addEventListener(type:"log"|"error",listener:(args:any[])=>void){
+    this.runner.addEventListener(type,listener);
   }
 }

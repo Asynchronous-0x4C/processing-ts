@@ -1,51 +1,68 @@
-export class ArrayList{
-  private items: any[];
+export class ArrayList<T> extends Array<T>{
 
-  constructor() {
-    this.items = [];
+  constructor(c?:T[]|number) {
+    if(c){
+      if(typeof c === "number"){
+        super(c);
+        this.fill(null as any);
+      }else{
+        super(...c);
+      }
+    }else{
+      super();
+    }
   }
 
-  add(item: any): void {
-    this.items.push(item);
+  add(item: T): void {
+    this.push(item);
   }
 
-  get(index: number): any {
-    return this.items[index];
-  }
-
-  size(): number {
-    return this.items.length;
+  addAll(item:T[]){
+    this.push(...item);
   }
 
   clear(): void {
-    this.items = [];
+    this.splice(0,this.length);
   }
 
-  remove(arg:any): void {
+  contains(v:T){
+    return this.includes(v);
+  }
+
+  get(index: number): T|null {
+    return this[index];
+  }
+
+  isEmpty(){
+    return this.length===0;
+  }
+
+  remove(arg:T|number): void {
     if (typeof arg === "number") {
-      if (arg >= 0 && arg < this.items.length) {
-        this.items.splice(arg, 1);
+      if (arg >= 0 && arg < this.length) {
+        this.splice(arg, 1);
       }
     } else {
-      const index = this.items.indexOf(arg);
+      const index = this.indexOf(arg);
       if (index !== -1) {
-        this.items.splice(index, 1);
+        this.splice(index, 1);
       }
     }
   }
 
-  [Symbol.iterator]() {
-    let index = 0;
-    const items = this.items;
+  removeAll(a:T[]){
+    a.forEach(e=>this.remove(this.indexOf(e)));
+  }
 
-    return {
-      next() {
-        if (index < items.length) {
-          return { value: items[index++], done: false };
-        } else {
-          return { done: true };
-        }
-      }
-    };
+  set(index:number,element:T){
+    this[index]=element;
+  }
+
+  size(): number {
+    return this.length;
+  }
+
+  toArray():T[]{
+    return new Array<T>(...this);
   }
 }

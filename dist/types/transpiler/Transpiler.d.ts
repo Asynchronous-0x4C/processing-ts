@@ -1,4 +1,4 @@
-import { ArrayInitializerContext, BlockContext, CreatorContext, ExpressionContext, FormalParameterContext, ProcessingSketchContext, TypeListContext, TypeTypeContext, VariableInitializerContext } from "./antlr/parser/ProcessingParser";
+import { ArrayInitializerContext, BlockContext, CreatorContext, ExpressionContext, FormalParameterContext, LastFormalParameterContext, ProcessingSketchContext, TypeListContext, TypeTypeContext, VariableInitializerContext } from "./antlr/parser/ProcessingParser";
 import ProcessingVisitor from "./antlr/parser/ProcessingVisitor";
 export type SolvedFunctionData = {
     name: string;
@@ -9,6 +9,7 @@ export type SolvedFunctionData = {
     args: {
         name: string;
         type: string;
+        rest?: boolean;
     }[];
     body: string;
 };
@@ -33,6 +34,7 @@ export type FunctionData = {
     args: {
         name: string;
         type: string;
+        rest?: boolean;
     }[];
     body: BlockContext;
 };
@@ -57,6 +59,7 @@ export declare class Transpiler extends ProcessingVisitor<string> {
     visitVariableInitializer: (ctx: VariableInitializerContext) => string;
     visitArrayInitializer: (ctx: ArrayInitializerContext) => string;
     visitFormalParameter: (ctx: FormalParameterContext) => string;
+    visitLastFormalParameter: (ctx: LastFormalParameterContext) => string;
     visitExpression: (ctx: ExpressionContext) => string;
     visitCreator: (ctx: CreatorContext) => string;
     visitTypeArgumentsOrDiamond: () => string;

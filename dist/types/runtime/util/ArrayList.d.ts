@@ -1,18 +1,14 @@
-export declare class ArrayList {
-    private items;
-    constructor();
-    add(item: any): void;
-    get(index: number): any;
-    size(): number;
+export declare class ArrayList<T> extends Array<T> {
+    constructor(c?: T[] | number);
+    add(item: T): void;
+    addAll(item: T[]): void;
     clear(): void;
-    remove(arg: any): void;
-    [Symbol.iterator](): {
-        next(): {
-            value: any;
-            done: boolean;
-        } | {
-            done: boolean;
-            value?: undefined;
-        };
-    };
+    contains(v: T): boolean;
+    get(index: number): T | null;
+    isEmpty(): boolean;
+    remove(arg: T | number): void;
+    removeAll(a: T[]): void;
+    set(index: number, element: T): void;
+    size(): number;
+    toArray(): T[];
 }

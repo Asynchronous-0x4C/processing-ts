@@ -63,6 +63,14 @@ export class PVector{
     return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
   }
 
+  magSq():number{
+    return this.x * this.x + this.y * this.y + this.z * this.z;
+  }
+
+  setMag(len:number){
+    return this.copy().normalize().mult(len);
+  }
+
   normalize(): PVector {
     const mag = this.mag();
     if (mag === 0) return new PVector(0, 0);
@@ -89,5 +97,10 @@ export class PVector{
       this.z=z;
     }
     return this;
+  }
+
+  limit(max:number):PVector{
+    let mag=this.mag();
+    return mag<max?this:this.setMag(max);
   }
 }

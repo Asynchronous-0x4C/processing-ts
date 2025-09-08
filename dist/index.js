@@ -1,4 +1,4 @@
-import { Texture, Sprite, Application, Graphics, Container, TextStyle, Text } from "pixi.js";
+import { Texture, TextStyle, Graphics, BitmapFont, RenderTexture, CanvasTextMetrics, BitmapText, Matrix, Application } from "pixi.js";
 var t = { 763: () => {
 } }, e = {};
 function n(s2) {
@@ -4009,8 +4009,7 @@ s.rt;
 var Ze = s.jB, Qe = s.M8;
 s.$t;
 s.aq;
-s.pG;
-var sn = s.eP;
+var nn = s.pG, sn = s.eP;
 s.KU;
 s.zW;
 var an = s.IX;
@@ -35008,118 +35007,569 @@ class PConstants {
 }
 class PImage extends PConstants {
   texture = null;
-  sprite = null;
   width = 0;
   height = 0;
+  parent;
+  pixels = [];
+  __pixel_modified__ = !1;
+  constructor(parent, settings) {
+    if (super(), this.parent = parent, settings) {
+      const l2 = settings.width * settings.height;
+      this.pixels = new Proxy(
+        settings.pixels.length < l2 ? settings.pixels.concat(new Array(l2 - settings.pixels.length).fill(4278190080)) : settings.pixels.length > l2 ? settings.pixels.slice(0, l2) : settings.pixels,
+        {
+          set: (t2, p2, n2, r2) => (this.__pixel_modified__ = !0, Reflect.set(t2, p2, n2, r2))
+        }
+      ), this.width = settings.width, this.height = settings.height, this.updatePixels();
+    }
+  }
   async load_from_arraybuffer(buffer) {
     const blob = new Blob([buffer], { type: "image/png" });
     await this.load_from_blob(blob);
   }
   async load_from_blob(blob) {
     const bmp = await createImageBitmap(blob);
-    this.texture = Texture.from(bmp), this.texture.noFrame = !1, this.width = this.texture.frame.width, this.height = this.texture.frame.height, this.sprite = new Sprite(this.texture);
+    this.texture = Texture.from(bmp), this.texture.noFrame = !1, this.width = this.texture.frame.width, this.height = this.texture.frame.height, this.__pixel_modified__ || this.loadPixels();
+  }
+  loadPixels() {
+    if (this.texture) {
+      const px = this.parent.__app__.renderer.extract.pixels({ target: this.texture }).pixels, data = new Array(px.length / 4).fill(0).map((v2, i2) => px[i2 * 4 + 3] << 24 | px[i2 * 4 + 2] << 16 | px[i2 * 4 + 1] << 8 | px[i2 * 4]);
+      this.pixels = new Proxy(data, {
+        set: (t2, p2, n2, r2) => (this.__pixel_modified__ = !0, Reflect.set(t2, p2, n2, r2))
+      }), this.__pixel_modified__ = !1;
+    }
+  }
+  updatePixels() {
+    if (this.pixels.length > 0) {
+      const data = new Uint8Array(this.pixels.length * 4);
+      this.pixels.forEach((v2, i2) => {
+        data[i2 * 4] = v2 & 255, data[i2 * 4 + 1] = v2 >> 8 & 255, data[i2 * 4 + 2] = v2 >> 16 & 255, data[i2 * 4 + 3] = v2 >>> 24;
+      }), console.log(btoa(String.fromCharCode(...convert$1(this.width, this.height, data)))), this.load_from_blob(new Blob([convert$1(this.width, this.height, data)], { type: "image/bmp" })), this.__pixel_modified__ = !1;
+    }
+  }
+  get(x2, y2) {
+    return this.pixels[y2 * this.width + x2];
+  }
+}
+const BMP_HEADER_BASE64 = "Qk0AAAAAAAAAAHoAAABsAAAAAAAAAAAAAAABACAAAwAAAAAAAADDDgAAww4AAAAAAAAAAAAA/wAAAAD/AAAAAP8AAAAA/0JHUnM", BMP_HEADER = Uint8Array.from(atob(BMP_HEADER_BASE64), (c2) => c2.charCodeAt(0)), BMP_HEADER_LENGTH = 122, BMP_FILESIZE_OFFSET = 2, BMP_WIDTH_OFFSET = 18, BMP_HEIGHT_OFFSET = 22, BMP_IMAGESIZE_OFFSET = 34, BMP_RED_BITFIELDS_OFFSET = 54, BMP_GREEN_BITFIELDS_OFFSET = 62, IS_WIN = "navigator" in globalThis && /Trident|Edge/.test(navigator.userAgent), convert$1 = (width, height, data, _options) => {
+  const options = Object.assign({ strict: !1 }, _options), dataLength = data.byteLength, fileSize = BMP_HEADER_LENGTH + dataLength, uint8Array = new Uint8Array(fileSize), dataView = new DataView(uint8Array.buffer), setUint32 = (offset, value) => dataView.setUint32(offset, value, !0);
+  if (uint8Array.set(BMP_HEADER), setUint32(BMP_FILESIZE_OFFSET, fileSize), setUint32(BMP_WIDTH_OFFSET, width), setUint32(BMP_HEIGHT_OFFSET, -height), setUint32(BMP_IMAGESIZE_OFFSET, dataLength), uint8Array.set(data, BMP_HEADER_LENGTH), options.strict || IS_WIN) {
+    setUint32(BMP_RED_BITFIELDS_OFFSET, 16711680), setUint32(BMP_GREEN_BITFIELDS_OFFSET, 255);
+    for (let offset = 0; offset < dataLength; offset += 4)
+      uint8Array[BMP_HEADER_LENGTH + offset] = data[offset + 2], uint8Array[BMP_HEADER_LENGTH + 2 + offset] = data[offset];
+  }
+  return uint8Array;
+}, chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+class PFont {
+  id = "";
+  name;
+  constructor(name) {
+    for (let i2 = 0; i2 < 12; i2++)
+      this.id += chars.charAt(Math.floor(Math.random() * chars.length));
+    this.name = name;
+  }
+  clone() {
+    const f2 = new PFont(this.name);
+    return f2.id = this.id.slice(), f2;
+  }
+}
+class PGraphicsContext {
+  style_buffer = [];
+  texture_cache = /* @__PURE__ */ new Map();
+  font_cache = /* @__PURE__ */ new Map();
+  text_style;
+  stroke_style;
+  fill_style;
+  color_mode = { mode: 1, X: 255, Y: 255, Z: 255, A: 255 };
+  current_font;
+  rect_mode = 0;
+  ellipse_mode = 3;
+  image_mode = 0;
+  shape_buffer = null;
+  shape_mode = 0;
+  fill_enabled = !0;
+  stroke_enabled = !0;
+  graphics;
+  canvas = null;
+  constructor() {
+    this.text_style = new TextStyle({ fontFamily: "Arial", fontSize: 12, fill: "#000000", align: "left" }), this.stroke_style = { width: 1, color: 0, cap: "round", join: "round", miterLimit: 10 }, this.fill_style = { color: 16777215 }, this.graphics = new Graphics(), this.current_font = this.createFont("Arial", 12);
+  }
+  textAlign(align) {
+    let text_align = "left";
+    switch (align) {
+      case 37:
+        text_align = "left";
+        break;
+      case 3:
+        text_align = "center";
+        break;
+      case 39:
+        text_align = "right";
+        break;
+      default:
+        console.warn("Unknown text mode: " + align);
+        break;
+    }
+    this.text_style.align = text_align;
+  }
+  textSize(size) {
+    this.text_style.fontSize = size;
+    const key = `name:${this.current_font.name},size:${size}`;
+    this.font_cache.has(key) ? this.current_font = this.font_cache.get(key) : this.font_cache.set(key, this.createFont(this.current_font.name, size));
+  }
+  createFont(name, size) {
+    const key = `name:${name},size:${size}`;
+    if (this.font_cache.has(key))
+      return this.font_cache.get(key).clone();
+    const font = new PFont(name);
+    return this.font_cache.set(key, font), BitmapFont.install({
+      name: font.id,
+      style: {
+        fontFamily: name,
+        fontSize: size,
+        fill: 16777215
+      }
+    }), font;
+  }
+  textFont(font) {
+    this.current_font = font;
+  }
+  colorMode(mode) {
+    this.color_mode.mode = mode;
+  }
+  fill(r2, g2, b2, a2) {
+    this.fill_enabled = !0, this.fill_style.color = this.color_mode.mode == 1 ? { r: r2, g: g2, b: b2, a: a2 } : { h: r2, s: g2, v: b2, a: a2 };
+  }
+  noFill() {
+    this.fill_enabled = !1;
+  }
+  stroke(r2, g2, b2, a2) {
+    this.stroke_enabled = !0, this.stroke_style.color = this.color_mode.mode == 1 ? { r: r2, g: g2, b: b2, a: a2 } : { h: r2, s: g2, v: b2, a: a2 };
+  }
+  noStroke() {
+    this.stroke_enabled = !1;
+  }
+  strokeWeight(weight) {
+    this.stroke_style.width = weight;
+  }
+  rectMode(mode) {
+    this.rect_mode = mode;
+  }
+  ellipseMode(mode) {
+    this.ellipse_mode = mode;
+  }
+  imageMode(mode) {
+    this.image_mode = mode;
+  }
+  applySettings() {
+    this.graphics.fill(this.fill_enabled ? this.fill_style : { color: 0, alpha: 0 }), this.graphics.stroke(this.stroke_enabled ? this.stroke_style : { color: 0, alpha: 0 });
+  }
+  encodeStyles() {
+    return {
+      text: {
+        style: this.text_style.clone(),
+        font: this.current_font.clone()
+      },
+      stroke: {
+        style: structuredClone(this.stroke_style),
+        enabled: this.stroke_enabled
+      },
+      fill: {
+        style: structuredClone(this.fill_style),
+        enabled: this.fill_enabled
+      },
+      mode: {
+        rect: this.rect_mode,
+        ellipse: this.ellipse_mode,
+        image: this.image_mode
+      }
+    };
+  }
+  decodeStyles(styles) {
+    this.text_style = styles.text.style, this.current_font = styles.text.font, this.stroke_style = styles.stroke.style, this.stroke_enabled = styles.stroke.enabled, this.fill_style = styles.fill.style, this.fill_enabled = styles.fill.enabled, this.rect_mode = styles.mode.rect, this.ellipse_mode = styles.mode.ellipse, this.image_mode = styles.mode.image;
+  }
+  pushStyle() {
+    this.style_buffer.push(this.encodeStyles());
+  }
+  popStyle() {
+    this.decodeStyles(this.style_buffer.shift());
   }
 }
 class PGraphics extends PImage {
-  renderer;
-  constructor(renderer) {
-    super(), this.renderer = renderer;
+  __matrix_stack__ = [];
+  context;
+  initialized = !1;
+  constructor(parent, canvas) {
+    super(parent), this.parent = parent, this.context = new PGraphicsContext(), canvas && (canvas instanceof HTMLCanvasElement ? this.context.canvas = canvas : this.texture = RenderTexture.create({ width: canvas.x, height: canvas.y }));
   }
   async init(width, height) {
-    await this.renderer.init(width, height), this.width = this.renderer.app.screen.width, this.height = this.renderer.app.screen.height;
+    if (this.initialized) {
+      this.parent.println("Renderer already initialized");
+      return;
+    }
+    this.initialized = !0, this.width = width, this.height = height, this.context.canvas != null && (await this.parent.__app__.init({ width, height, backgroundColor: "#dddddd", clearBeforeRender: !1, preserveDrawingBuffer: !0, antialias: !0, canvas: this.context.canvas, resolution: window.devicePixelRatio || 1 }), this.parent.__app__.renderer.resize(width, height), this.parent.__app__.stage.addChild(this.context.graphics)), this.context.graphics.renderable = !1, this.__begin__();
   }
-  background(...color) {
-    const _color = convert_color(color);
-    this.renderer.background(_color[0], _color[1], _color[2], _color[3]);
+  background(c1, c2, c3, c4) {
+    const mat = this.context.graphics.getTransform().clone();
+    if (this.context.graphics.resetTransform(), this.context.graphics.clear(), this.context.graphics.save(), c1 instanceof PImage)
+      this.image(c1, 0, 0, this.parent.__app__.renderer.width, this.parent.__app__.renderer.height);
+    else {
+      const _color = convert_color([c1, c2, c3, c4].filter((c5) => c5 != null), this.context.color_mode), { r: r2, g: g2, b: b2, a: a2 } = { r: _color[0], g: _color[1], b: _color[2], a: _color[3] };
+      this.parent.__app__.renderer != null && (this.parent.__app__.renderer.background.color = { r: r2, g: g2, b: b2, a: a2 }), this.context.graphics.rect(0, 0, this.parent.__app__.renderer.width ?? innerWidth, this.parent.__app__.renderer.height ?? innerHeight), this.context.graphics.fill(this.context.color_mode.mode == 1 ? { color: { r: r2, g: g2, b: b2, a: a2 } } : { color: { h: r2, s: g2, v: b2, a: a2 } }), this.context.graphics.stroke({ color: 0, alpha: 0 });
+    }
+    this.context.graphics.restore(), this.context.graphics.setTransform(mat);
+  }
+  colorMode(mode, ...max) {
+    max.length == 1 ? this.context.color_mode = { mode, X: max[0], Y: max[0], Z: max[0], A: this.context.color_mode.A } : this.context.color_mode = { mode, X: max[0] ?? this.context.color_mode.X, Y: max[1] ?? this.context.color_mode.Y, Z: max[2] ?? this.context.color_mode.Z, A: max[3] ?? this.context.color_mode.A }, this.context.colorMode(mode);
+  }
+  blendMode(mode) {
   }
   fill(...color) {
-    const _color = convert_color(color);
-    this.renderer.fill(_color[0], _color[1], _color[2], _color[3]);
+    const _color = convert_color(color, this.context.color_mode);
+    this.context.fill(_color[0], _color[1], _color[2], _color[3]);
   }
   noFill() {
-    this.renderer.noFill();
+    this.context.noFill();
   }
   stroke(...color) {
-    const _color = convert_color(color);
-    this.renderer.stroke(_color[0], _color[1], _color[2], _color[3]);
+    const _color = convert_color(color, this.context.color_mode);
+    this.context.stroke(_color[0], _color[1], _color[2], _color[3]);
   }
   noStroke() {
-    this.renderer.noStroke();
+    this.context.noStroke();
   }
   strokeWeight(weight) {
-    this.renderer.strokeWeight(weight);
+    this.context.strokeWeight(weight);
   }
   rectMode(mode) {
-    this.renderer.rectMode(mode);
+    this.context.rectMode(mode);
+  }
+  ellipseMode(mode) {
+    this.context.ellipseMode(mode);
   }
   textAlign(align) {
-    this.renderer.textAlign(align);
+    this.context.textAlign(align);
   }
   textSize(size) {
-    this.renderer.textSize(size);
+    this.context.textSize(size);
+  }
+  textWidth(str) {
+    return CanvasTextMetrics.measureText(str, this.context.text_style).width;
+  }
+  createFont(name, size) {
+    return this.context.createFont(name, size);
+  }
+  textFont(font) {
+    this.context.textFont(font);
+  }
+  imageMode(mode) {
+    this.context.imageMode(mode);
+  }
+  point(x2, y2) {
+    this.circle(x2, y2, 1);
   }
   rect(x2, y2, width, height) {
-    this.renderer.rect(x2, y2, width, height);
+    switch (this.context.rect_mode) {
+      case 0:
+        break;
+      case 1:
+        width = width - x2, height = height - y2;
+        break;
+      case 2:
+        x2 -= width * 0.5, y2 -= height * 0.5, width *= 2, height *= 2;
+        break;
+      case 3:
+        x2 -= width * 0.5, y2 -= height * 0.5;
+        break;
+      case 4:
+        x2 -= width * 0.5, y2 -= height * 0.5, width *= 2, height *= 2;
+        break;
+      default:
+        this.parent.println("Unknown rect mode: " + this.context.rect_mode);
+        break;
+    }
+    this.context.graphics.rect(x2, y2, width, height), this.context.applySettings();
+  }
+  quad(x1, y1, x2, y2, x3, y3, x4, y4) {
+    this.context.graphics.poly([x1, y1, x2, y2, x3, y3, x4, y4]), this.context.applySettings();
   }
   ellipse(x2, y2, width, height) {
-    this.renderer.ellipse(x2, y2, width, height);
+    switch (this.context.ellipse_mode) {
+      case 0:
+        x2 = x2 - width * 0.5, y2 = y2 - height * 0.5;
+        break;
+      case 1:
+        width = width - x2, height = height - y2, x2 = x2 - width * 0.5, y2 = y2 - height * 0.5;
+        break;
+      case 2:
+        width *= 2, height *= 2;
+        break;
+      case 3:
+        break;
+      default:
+        this.parent.println("Unknown ellipse mode: " + this.context.ellipse_mode);
+        break;
+    }
+    this.context.graphics.ellipse(x2, y2, width * 0.5, height * 0.5), this.context.applySettings();
+  }
+  circle(x2, y2, r2) {
+    this.ellipse(x2, y2, r2, r2);
   }
   arc(x2, y2, width, height, start, stop) {
-    this.renderer.arc(x2, y2, width, height, start, stop);
+    const mat = this.context.graphics.getTransform().clone();
+    this.context.graphics.translateTransform(x2, y2), this.context.graphics.scaleTransform(1, height / width), this.context.graphics.moveTo(width * 0.5 * Math.cos(start), width * 0.5 * Math.sin(start)), this.context.graphics.arc(0, 0, width * 0.5, start, stop), this.context.graphics.setTransform(mat), this.context.applySettings();
   }
   triangle(x1, y1, x2, y2, x3, y3) {
-    this.renderer.triangle(x1, y1, x2, y2, x3, y3);
+    this.context.graphics.moveTo(x1, y1), this.context.graphics.lineTo(x2, y2), this.context.graphics.lineTo(x3, y3), this.context.graphics.lineTo(x1, y1), this.context.applySettings();
   }
   line(x1, y1, x2, y2) {
-    this.renderer.line(x1, y1, x2, y2);
+    this.context.graphics.moveTo(x1, y1), this.context.graphics.lineTo(x2, y2), this.context.graphics.moveTo(0, 0), this.context.applySettings();
   }
   text(text, x2, y2, w2, h2) {
-    this.renderer.text(text, x2, y2, w2, h2);
+    if (!this.context.text_style) return;
+    switch (this.context.text_style.fill = this.context.fill_style.color, this.context.text_style.align) {
+      case "center":
+        x2 -= this.textWidth(text) * 0.5;
+        break;
+      case "left":
+        break;
+      case "right":
+        x2 -= this.textWidth(text);
+        break;
+    }
+    w2 ? (this.context.text_style.breakWords = !0, this.context.text_style.wordWrap = !0, this.context.text_style.wordWrapWidth = w2) : (this.context.text_style.breakWords = !1, this.context.text_style.wordWrap = !1, this.context.text_style.wordWrapWidth = 0);
+    const style = this.context.text_style.clone();
+    style.fontFamily = this.context.current_font.id;
+    const text_obj = new BitmapText({ text, style });
+    this.context.graphics.getTransform().clone(), w2 && h2 && (text_obj.width = w2, text_obj.height = h2);
+    const key = `font:${style.fontFamily},text:${text},size:${style.fontSize}`;
+    let tex;
+    this.context.texture_cache.has(key) ? (tex = this.context.texture_cache.get(key), tex.frame = this.parent.frameCount) : (tex = { texture: this.parent.__app__.renderer.generateTexture(text_obj), frame: this.parent.frameCount }, this.context.texture_cache.set(key, tex)), this.context.graphics.rect(0, 0, 0, 0), this.context.graphics.fill({ color: 16777215 }), this.context.graphics.stroke({ color: 0 }), this.context.graphics.texture(tex.texture, this.context.fill_style.color, x2, y2 - this.context.text_style.fontSize * 0.75), this.context.applySettings(), this.__render__();
   }
   image(image, x2, y2, w2, h2) {
-    this.renderer.image(image, x2, y2, w2, h2);
+    if (image.texture != null) {
+      switch (image.__pixel_modified__ && image.updatePixels(), w2 = w2 ?? image.width, h2 = h2 ?? image.height, this.context.image_mode) {
+        case 0:
+          break;
+        case 1:
+          w2 = w2 - x2, h2 = h2 - y2;
+          break;
+        case 3:
+          x2 -= w2 * 0.5, y2 -= h2 * 0.5;
+          break;
+        default:
+          this.parent.println("Unknown image mode: " + this.context.image_mode);
+          break;
+      }
+      this.context.graphics.rect(0, 0, 0, 0), this.context.graphics.fill({ color: 16777215 }), this.context.graphics.stroke({ color: 0 }), this.context.graphics.texture(image.texture, 16777215, x2, y2, w2, h2), this.context.applySettings();
+    }
+    this.__render__();
   }
   translate(x2, y2) {
-    this.renderer.translate(x2, y2);
+    const mat = this.getTransform(), t2 = new Matrix().translate(x2, y2);
+    mat.append(t2), this.setTransform(mat);
+  }
+  rotate(angle) {
+    const mat = this.getTransform(), t2 = new Matrix().rotate(angle);
+    mat.append(t2), this.setTransform(mat);
+  }
+  scale(x2, y2) {
+    const mat = this.getTransform(), t2 = new Matrix().scale(x2, y2 ?? x2);
+    mat.append(t2), this.setTransform(mat);
+  }
+  pushMatrix() {
+    this.__matrix_stack__.unshift(this.getTransform());
+  }
+  popMatrix() {
+    const mat = this.__matrix_stack__.shift();
+    if (mat == null) {
+      this.parent.println('You must call "pushMatrix()" first.');
+      return;
+    }
+    this.setTransform(mat);
+  }
+  getTransform() {
+    return this.context.graphics.getTransform().clone() ?? new Matrix();
+  }
+  setTransform(mat) {
+    this.context.graphics.setTransform(mat.clone());
+  }
+  clearTransform() {
+    this.context.graphics.resetTransform();
+  }
+  push() {
+    this.context.graphics.save();
+  }
+  pop() {
+    this.context.graphics.restore();
+  }
+  pushStyle() {
+    this.context.pushStyle();
+  }
+  popStyle() {
+    this.context.popStyle();
+  }
+  resetMatrix() {
+    this.clearTransform();
+  }
+  beginShape(mode) {
+    this.context.shape_mode = mode ?? 0, this.context.shape_buffer = [];
+  }
+  vertex(x2, y2) {
+    this.context.shape_buffer != null && this.context.shape_buffer.push(x2, y2);
+  }
+  endShape(mode) {
+    if (!this.context.shape_buffer) return;
+    const close = mode == 2;
+    switch (this.context.shape_mode) {
+      case 0:
+        this.context.graphics.poly(this.context.shape_buffer, close), this.context.applySettings();
+        break;
+      case 3:
+        for (let i2 = 0; i2 < this.context.shape_buffer.length; i2 += 2)
+          this.point(this.context.shape_buffer[i2], this.context.shape_buffer[i2 + 1]);
+        break;
+      case 5:
+        for (let i2 = 0; i2 < this.context.shape_buffer.length; i2 += 4)
+          this.line(this.context.shape_buffer[i2], this.context.shape_buffer[i2 + 1], this.context.shape_buffer[i2 + 2], this.context.shape_buffer[i2 + 3]);
+        break;
+      case 9:
+        for (let i2 = 0; i2 < this.context.shape_buffer.length; i2 += 6)
+          this.triangle(this.context.shape_buffer[i2], this.context.shape_buffer[i2 + 1], this.context.shape_buffer[i2 + 2], this.context.shape_buffer[i2 + 3], this.context.shape_buffer[i2 + 4], this.context.shape_buffer[i2 + 5]);
+        break;
+      case 10:
+        for (let i2 = 0; i2 < this.context.shape_buffer.length - 4; i2 += 2)
+          this.triangle(this.context.shape_buffer[i2], this.context.shape_buffer[i2 + 1], this.context.shape_buffer[i2 + 2], this.context.shape_buffer[i2 + 3], this.context.shape_buffer[i2 + 4], this.context.shape_buffer[i2 + 5]);
+        break;
+      case 11:
+        for (let i2 = 2; i2 < this.context.shape_buffer.length; i2 += 2) {
+          const x2 = i2 + 2 > this.context.shape_buffer.length ? 2 : i2 + 2, y2 = i2 + 3 > this.context.shape_buffer.length ? 3 : i2 + 3;
+          this.triangle(this.context.shape_buffer[0], this.context.shape_buffer[1], this.context.shape_buffer[i2], this.context.shape_buffer[i2 + 1], this.context.shape_buffer[x2], this.context.shape_buffer[y2]);
+        }
+        break;
+      case 17:
+        for (let i2 = 0; i2 < this.context.shape_buffer.length; i2 += 8)
+          this.quad(this.context.shape_buffer[i2], this.context.shape_buffer[i2 + 1], this.context.shape_buffer[i2 + 2], this.context.shape_buffer[i2 + 3], this.context.shape_buffer[i2 + 4], this.context.shape_buffer[i2 + 5], this.context.shape_buffer[i2 + 6], this.context.shape_buffer[i2 + 7]);
+        break;
+      case 18:
+        for (let i2 = 0; i2 < this.context.shape_buffer.length - 4; i2 += 4)
+          this.quad(this.context.shape_buffer[i2], this.context.shape_buffer[i2 + 1], this.context.shape_buffer[i2 + 2], this.context.shape_buffer[i2 + 3], this.context.shape_buffer[i2 + 6], this.context.shape_buffer[i2 + 7], this.context.shape_buffer[i2 + 4], this.context.shape_buffer[i2 + 5]);
+        break;
+    }
+  }
+  beginDraw() {
+  }
+  endDraw() {
+    this.texture instanceof RenderTexture && (this.context.graphics.renderable = !0, this.parent.__app__.renderer.render({ container: this.context.graphics, target: this.texture, clear: !1 }), this.context.graphics.renderable = !1), this.loadPixels();
   }
   __begin__() {
-    this.renderer.__begin__();
+    this.context.graphics.resetTransform();
   }
   __end__() {
-    this.renderer.__end__();
+    this.__render__(), this.parent.__loop__ && this.context.graphics?.clear();
+    for (let [k2, c2] of this.context.texture_cache)
+      c2.frame < this.parent.frameCount - 60 && (c2.texture.destroy(!0), this.context.texture_cache.delete(k2));
+    return 0;
   }
   __stop__() {
-    this.renderer.__stop__();
+    this.context.graphics.renderable = !0, this.parent.__app__.render(), this.context.graphics.renderable = !1;
+  }
+  __render__() {
+    this.push(), this.context.graphics.renderable = !0, this.parent.__app__.render(), this.context.graphics.renderable = !1, this.parent.__loop__ && this.context.graphics?.clear(), this.pop();
+  }
+  updateResolution(r2) {
+    this.parent.__app__.renderer.resize(this.parent.__app__.renderer.width, this.parent.__app__.renderer.height, r2);
   }
 }
-function convert_color(color) {
+function convert_color(color, color_mode) {
+  const def = color_mode.mode == 1 ? [255, 255, 255, 1] : [360, 100, 100, 1];
   if (color.length == 1)
-    color = [color[0], color[0], color[0], 1];
+    color[0] < 0 || color_mode.Z < color[0] ? color = [color[0] & 255, color[0] >> 8 & 255, color[0] >> 16 & 255, color[0] >>> 24] : color = [color[0], color[0], color[0], 255];
   else if (color.length == 2)
-    color = [color[0], color[0], color[0], color[1] / 255];
+    color[0] < 0 || color_mode.Z < color[0] ? color = [color[0] & 255, color[0] >> 8 & 255, color[0] >> 16 & 255, color[1]] : color = [color[0], color[0], color[0], color[1]];
   else if (color.length == 3)
-    color = [color[0], color[1], color[2], 1];
+    color = [color[0], color[1], color[2], 255];
   else if (color.length == 4)
-    color = [color[0], color[1], color[2], color[3] / 255];
+    color = [color[0], color[1], color[2], color[3]];
   else
     throw new Error("Invalid color length: " + color.length);
-  return [color[0] ?? 0, color[1] ?? 0, color[2] ?? 0, color[3] ?? 1];
+  return [(color[0] ?? 0) / color_mode.X * def[0], (color[1] ?? 0) / color_mode.Y * def[1], (color[2] ?? 0) / color_mode.Z * def[2], (color[3] ?? 255) / color_mode.A * def[3]];
 }
 class PSurface {
   MIN_WINDOW_WIDTH = 128;
   MIN_WINDOW_HEIGHT = 128;
+  current_cursor = "default";
   applet;
   constructor(applet) {
     this.applet = applet;
   }
   setCursor(...args) {
-    this.applet.g.renderer.setCursor(...args);
+    if (args.length == 1 && args[0].constructor.name == "Number") {
+      const kind = args[0];
+      let name = "auto";
+      switch (kind) {
+        case -1:
+          break;
+        case 0:
+          name = "default";
+          break;
+        case 1:
+          name = "crosshair";
+          break;
+        case 2:
+          name = "text";
+          break;
+        case 3:
+          name = "wait";
+          break;
+        case 4:
+          name = "sw-resize";
+          break;
+        case 5:
+          name = "se-resize";
+          break;
+        case 6:
+          name = "nw-resize";
+          break;
+        case 7:
+          name = "ne-resize";
+          break;
+        case 8:
+          name = "n-resize";
+          break;
+        case 9:
+          name = "s-resize";
+          break;
+        case 10:
+          name = "w-resize";
+          break;
+        case 11:
+          name = "e-resize";
+          break;
+        case 12:
+          name = "grab";
+          break;
+        case 13:
+          name = "move";
+          break;
+      }
+      this.current_cursor = name, this.setCursorStyle(name);
+    } else if (args.length == 3 && args[0].constructor.name == "PImage" && args[1].constructor.name == "Number" && args[2].constructor.name == "Number") {
+      const { image, hotspotX, hotspotY } = { image: args[0], hotspotX: args[1], hotspotY: args[2] };
+      this.setCursorStyle({ image, x: hotspotX, y: hotspotY }), console.log(image);
+    }
   }
   showCursor() {
-    this.applet.g.renderer.showCursor();
+    this.setCursorStyle(this.current_cursor);
   }
   hideCursor() {
-    this.applet.g.renderer.hideCursor();
+    this.setCursorStyle("none");
+  }
+  setCursorStyle(arg) {
+    typeof arg == "string" && (this.applet.g.context.canvas.style.cursor = arg);
+  }
+  setTitle(title) {
+    document.title = title;
   }
 }
 class JSONArray {
@@ -35266,20 +35716,72 @@ class JSONObject {
     delete this.json[name];
   }
 }
-let base_uri = "";
-function set_base_uri(uri) {
-  base_uri = uri;
+class IOBase {
+  base_path;
+  preload = null;
+  constructor(base_path) {
+    this.base_path = base_path;
+  }
+  toBlob(src, mime) {
+    const len = src.length, bytes = new Uint8Array(len);
+    for (let i2 = 0; i2 < len; i2++)
+      bytes[i2] = src.charCodeAt(i2) & 255;
+    return new Blob([bytes], { type: mime });
+  }
+  readBlob(blob) {
+    const xhr = new XMLHttpRequest(), url = URL.createObjectURL(blob);
+    return xhr.overrideMimeType("text/plain; charset=x-user-defined"), xhr.open("GET", url, !1), xhr.send(), xhr.response;
+  }
+  save_blob(name, data) {
+    window.localStorage.setItem(name, this.readBlob(data));
+  }
+  save_string(name, data) {
+    window.localStorage.setItem(name, data);
+  }
+  load_buffer_as_blob(name, mime) {
+    if (this.preload == null) return null;
+    const result = this.preload.filter((p2) => p2.path == name);
+    return result.length > 0 ? new Blob([result[0].content], { type: mime }) : null;
+  }
+  load_buffer_as_string(name) {
+    if (this.preload == null) return null;
+    const result = this.preload.filter((p2) => p2.path == name);
+    return result.length > 0 ? new TextDecoder("utf-8").decode(result[0].content) : null;
+  }
+  load_as_blob(name, mime) {
+    let result;
+    return window.localStorage.getItem(name) != null && (result = this.toBlob(window.localStorage.getItem(name), mime)) != null || (result = this.load_buffer_as_blob(name, mime)) != null || (result = this.toBlob(this.request(name), mime)) != null ? result : null;
+  }
+  load_as_string(name) {
+    let result;
+    return (result = window.localStorage.getItem(name)) != null || (result = this.load_buffer_as_string(name)) != null || (result = this.request(name)) != null ? result : null;
+  }
 }
-const date = /* @__PURE__ */ new Date();
+class XHRIO extends IOBase {
+  request(path) {
+    const xhr = new XMLHttpRequest();
+    if (xhr.open("GET", this.base_path + path, !1), xhr.overrideMimeType("text/plain; charset=x-user-defined"), xhr.send(), xhr.status >= 200 && xhr.status < 300)
+      return xhr.responseText;
+    throw new Error(`XHRIO request failed: ${xhr.status} ${xhr.statusText}`);
+  }
+}
 class PApplet extends PConstants {
   g;
   surface = new PSurface(this);
   __io__ = null;
   __fullscreen__ = !1;
+  __log_listener__ = () => {
+  };
+  __date__ = /* @__PURE__ */ new Date();
+  __start_milli_seconds__ = performance.now();
+  __loop__ = !0;
+  __app__;
   __exit_code__ = 0;
   max_size = { width: 0, height: 0 };
   width = 0;
   height = 0;
+  pmouseX = 0;
+  pmouseY = 0;
   mouseX = 0;
   mouseY = 0;
   mousePressed = !1;
@@ -35292,8 +35794,8 @@ class PApplet extends PConstants {
   frameRate = 60;
   frameCount = 0;
   __initialized__ = !1;
-  constructor(renderer) {
-    super(), renderer != null && (this.max_size = renderer.getMaximumSize(), this.__io__ = renderer.__io__), this.g = new PGraphics(renderer);
+  constructor(settings) {
+    super(), settings && (this.max_size = settings.max_size, this.__io__ = new XHRIO(settings.base_path)), this.__app__ = new Application(), this.g = new PGraphics(this, settings?.canvas);
   }
   __set_preload__(buffer) {
     this.__io__ && (this.__io__.preload = buffer);
@@ -35303,6 +35805,7 @@ class PApplet extends PConstants {
   async setup() {
   }
   async draw() {
+    this.noLoop();
   }
   async size(width, height) {
     if (this.__initialized__) {
@@ -35324,8 +35827,11 @@ class PApplet extends PConstants {
   _frameRate(framerate) {
     this.__frameRate__ = framerate;
   }
-  background(...color) {
-    this.g.background(...color);
+  background(c1, c2, c3, c4) {
+    this.g.background(c1, c2, c3, c4);
+  }
+  colorMode(mode, ...max) {
+    this.g.colorMode(mode, ...max);
   }
   fill(...color) {
     this.g.fill(...color);
@@ -35345,17 +35851,41 @@ class PApplet extends PConstants {
   rectMode(mode) {
     this.g.rectMode(mode);
   }
+  ellipseMode(mode) {
+    this.g.ellipseMode(mode);
+  }
   textAlign(align) {
     this.g.textAlign(align);
   }
   textSize(size) {
     this.g.textSize(size);
   }
+  textWidth(str) {
+    return this.g.textWidth(str);
+  }
+  createFont(name, size) {
+    return this.g.createFont(name, size);
+  }
+  textFont(font) {
+    this.g.textFont(font);
+  }
+  imageMode(mode) {
+    this.g.imageMode(mode);
+  }
+  point(x2, y2) {
+    this.g.point(x2, y2);
+  }
   rect(x2, y2, width, height) {
     this.g.rect(x2, y2, width, height);
   }
+  quad(x1, y1, x2, y2, x3, y3, x4, y4) {
+    this.g.quad(x1, y1, x2, y2, x3, y3, x4, y4);
+  }
   ellipse(x2, y2, width, height) {
     this.g.ellipse(x2, y2, width, height);
+  }
+  circle(x2, y2, r2) {
+    this.g.circle(x2, y2, r2);
   }
   arc(x2, y2, width, height, start, stop) {
     this.g.arc(x2, y2, width, height, start, stop);
@@ -35375,7 +35905,45 @@ class PApplet extends PConstants {
   translate(x2, y2) {
     this.g.translate(x2, y2);
   }
+  rotate(angle) {
+    this.g.rotate(angle);
+  }
+  scale(x2, y2) {
+    this.g.scale(x2, y2);
+  }
+  push() {
+    this.g.push();
+  }
+  pop() {
+    this.g.pop();
+  }
+  pushStyle() {
+    this.g.pushStyle();
+  }
+  popStyle() {
+    this.g.popStyle();
+  }
+  pushMatrix() {
+    this.g.pushMatrix();
+  }
+  popMatrix() {
+    this.g.popMatrix();
+  }
+  resetMatrix() {
+    this.g.resetMatrix();
+  }
+  beginShape(mode) {
+    this.g.beginShape(mode);
+  }
+  vertex(x2, y2) {
+    this.g.vertex(x2, y2);
+  }
+  endShape(mode) {
+    this.g.endShape(mode);
+  }
   _keyPressed(e2) {
+  }
+  _keyTyped(e2) {
   }
   _keyReleased(e2) {
   }
@@ -35389,26 +35957,94 @@ class PApplet extends PConstants {
   }
   _windowResized() {
   }
+  color(...color) {
+    let result = 4294967295;
+    if (color = color.map((c2) => Math.max(Math.min(c2, 255), 0)), color.length == 1)
+      result = 4278190080 | color[0] << 16 | color[0] << 8 | color[0];
+    else if (color.length == 2)
+      result = color[1] << 24 | color[0] << 16 | color[0] << 8 | color[0];
+    else if (color.length == 3)
+      result = 4278190080 | color[2] << 16 | color[1] << 8 | color[0];
+    else if (color.length == 4)
+      result = color[3] << 24 | color[2] << 16 | color[1] << 8 | color[0];
+    else
+      throw new Error("Invalid color length: " + color.length);
+    return result;
+  }
+  red(c2) {
+    return c2 & 255;
+  }
+  green(c2) {
+    return c2 >> 8 & 255;
+  }
+  blue(c2) {
+    return c2 >> 16 & 255;
+  }
+  alpha(c2) {
+    return c2 >>> 24;
+  }
+  lerpColor(c1, c2, amt) {
+    amt = this.constrain(amt, 0, 1);
+    const c1_arr = [c1 & 255, c1 >> 8 & 255, c1 >> 16 & 255, c1 >>> 24], c2_arr = [c2 & 255, c2 >> 8 & 255, c2 >> 16 & 255, c2 >>> 24];
+    return this.color(this.lerp(c1_arr[0], c2_arr[0], amt), this.lerp(c1_arr[1], c2_arr[1], amt), this.lerp(c1_arr[2], c2_arr[2], amt), this.lerp(c1_arr[3], c2_arr[3], amt));
+  }
+  join(list, separator) {
+    return list.join(separator);
+  }
+  matchAll(str, regexp) {
+    return str.matchAll(new RegExp(regexp, "g"));
+  }
+  match(str, regexp) {
+    return str.match(new RegExp(regexp));
+  }
+  nf(num, left, right) {
+    if (typeof num == "number") {
+      if (!left) return num.toString();
+      if (right)
+        return num.toFixed(right);
+      {
+        const l2 = Math.max(0, left - Math.floor(num).toString().length);
+        return new Array(l2).fill("0").join("").concat(num.toFixed());
+      }
+    } else
+      return left ? right ? num.map((n2) => n2.toFixed(right)) : num.map((n2) => {
+        const l2 = Math.max(0, left - Math.floor(n2).toString().length);
+        return new Array(l2).fill("0").join("").concat(n2.toFixed());
+      }) : num.map((n2) => n2.toString());
+  }
+  nfc(num, right) {
+    return typeof num == "number" ? right ? new Intl.NumberFormat("en-US", { minimumFractionDigits: right }).format(num) : new Intl.NumberFormat("en-US").format(num) : right ? num.map((n2) => new Intl.NumberFormat("en-US", { minimumFractionDigits: right }).format(n2)) : num.map((n2) => new Intl.NumberFormat("en-US").format(n2));
+  }
+  nfp(num, left, right) {
+    return typeof num == "number" ? right ? new Intl.NumberFormat(void 0, { minimumIntegerDigits: left, minimumFractionDigits: right, signDisplay: "always" }).format(num) : new Intl.NumberFormat(void 0, { minimumIntegerDigits: left, signDisplay: "always" }).format(num) : right ? num.map((n2) => new Intl.NumberFormat(void 0, { minimumIntegerDigits: left, minimumFractionDigits: right, signDisplay: "always" }).format(n2)) : num.map((n2) => new Intl.NumberFormat(void 0, { minimumIntegerDigits: left, signDisplay: "always" }).format(n2));
+  }
+  nfs(num, left, right) {
+    const result = this.nfp(num, left, right);
+    return typeof result == "string" ? result.replace("+", " ") : result.map((r2) => r2.replace("+", " "));
+  }
+  trim(str) {
+    return typeof str == "string" ? str.trim() : str.map((s2) => s2.trim());
+  }
   year() {
-    return date.getFullYear();
+    return this.__date__.getFullYear();
   }
   month() {
-    return date.getMonth() + 1;
+    return this.__date__.getMonth() + 1;
   }
   day() {
-    return date.getDate();
+    return this.__date__.getDate();
   }
   hour() {
-    return date.getHours();
+    return this.__date__.getHours();
   }
   minute() {
-    return date.getMinutes();
+    return this.__date__.getMinutes();
   }
   second() {
-    return date.getSeconds();
+    return this.__date__.getSeconds();
   }
   millis() {
-    return date.getMilliseconds();
+    return Math.round(performance.now() - this.__start_milli_seconds__);
   }
   radians(degrees) {
     return degrees * (Math.PI / 180);
@@ -35416,31 +36052,50 @@ class PApplet extends PConstants {
   degrees(radians) {
     return radians * (180 / Math.PI);
   }
+  abs = Math.abs;
+  floor = Math.floor;
+  ceil = Math.ceil;
+  min = Math.min;
+  max = Math.max;
+  sqrt = Math.sqrt;
+  pow = Math.pow;
   constrain(x2, min, max) {
     return x2 < min ? min : x2 > max ? max : x2;
   }
+  map(value, start1, stop1, start2, stop2) {
+    const range1 = stop1 - start1, range2 = stop2 - start2, position = (value - start1) / range1;
+    return start2 + position * range2;
+  }
+  norm(value, start, stop) {
+    return this.map(value, start, stop, 0, 1);
+  }
+  dist(x1, y1, x2, y2) {
+    return Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2);
+  }
+  exp = Math.exp;
+  sin = Math.sin;
+  cos = Math.cos;
+  tan = Math.tan;
+  asin = Math.asin;
+  acos = Math.acos;
+  atan = Math.atan;
+  atan2 = Math.atan2;
   random(min, max) {
     return max == null && (max = min, min = 0), Math.random() * (max - min) + min;
-  }
-  abs(x2) {
-    return Math.abs(x2);
-  }
-  floor(x2) {
-    return Math.floor(x2);
   }
   noise(x2, y2 = 0, z2 = 0) {
     const X2 = Math.floor(x2) & 255, Y2 = Math.floor(y2) & 255, Z2 = Math.floor(z2) & 255;
     x2 -= Math.floor(x2), y2 -= Math.floor(y2), z2 -= Math.floor(z2);
-    const u2 = this.fade(x2), v2 = this.fade(y2), w2 = this.fade(z2), A2 = this.permutation[X2] + Y2, AA = this.permutation[A2] + Z2, AB = this.permutation[A2 + 1] + Z2, B2 = this.permutation[X2 + 1] + Y2, BA = this.permutation[B2] + Z2, BB = this.permutation[B2 + 1] + Z2;
+    const u2 = this.__fade__(x2), v2 = this.__fade__(y2), w2 = this.__fade__(z2), A2 = this.__permutation__[X2] + Y2, AA = this.__permutation__[A2] + Z2, AB = this.__permutation__[A2 + 1] + Z2, B2 = this.__permutation__[X2 + 1] + Y2, BA = this.__permutation__[B2] + Z2, BB = this.__permutation__[B2 + 1] + Z2;
     return this.lerp(
       this.lerp(
-        this.lerp(this.grad(this.permutation[AA], x2, y2, z2), this.grad(this.permutation[BA], x2 - 1, y2, z2), u2),
-        this.lerp(this.grad(this.permutation[AB], x2, y2 - 1, z2), this.grad(this.permutation[BB], x2 - 1, y2 - 1, z2), u2),
+        this.lerp(this.__grad__(this.__permutation__[AA], x2, y2, z2), this.__grad__(this.__permutation__[BA], x2 - 1, y2, z2), u2),
+        this.lerp(this.__grad__(this.__permutation__[AB], x2, y2 - 1, z2), this.__grad__(this.__permutation__[BB], x2 - 1, y2 - 1, z2), u2),
         v2
       ),
       this.lerp(
-        this.lerp(this.grad(this.permutation[AA + 1], x2, y2, z2 - 1), this.grad(this.permutation[BA + 1], x2 - 1, y2, z2 - 1), u2),
-        this.lerp(this.grad(this.permutation[AB + 1], x2, y2 - 1, z2 - 1), this.grad(this.permutation[BB + 1], x2 - 1, y2 - 1, z2 - 1), u2),
+        this.lerp(this.__grad__(this.__permutation__[AA + 1], x2, y2, z2 - 1), this.__grad__(this.__permutation__[BA + 1], x2 - 1, y2, z2 - 1), u2),
+        this.lerp(this.__grad__(this.__permutation__[AB + 1], x2, y2 - 1, z2 - 1), this.__grad__(this.__permutation__[BB + 1], x2 - 1, y2 - 1, z2 - 1), u2),
         v2
       ),
       w2
@@ -35459,7 +36114,7 @@ class PApplet extends PConstants {
     return str.split(splitter);
   }
   println(...args) {
-    console.log(...args);
+    this.__log_listener__(args);
   }
   loadStrings(path) {
     const result = this.__io__.load_as_string(path);
@@ -35471,46 +36126,58 @@ class PApplet extends PConstants {
 `));
   }
   loadImage(path) {
-    const img = new PImage(), result = this.__io__.load_as_blob(path, `image/${path.split(".").pop()?.toLowerCase() ?? "png"}`);
+    const img = new PImage(this), result = this.__io__.load_as_blob(path, `image/${path.split(".").pop()?.toLowerCase() ?? "png"}`);
     return result != null ? (img.load_from_blob(result), img) : null;
   }
+  createImage(width, height, format) {
+    return new PImage(this, { pixels: [], width, height, format });
+  }
+  createGraphics(width, height, renderer) {
+    return new PGraphics(this, { x: width, y: height });
+  }
   loadJSONObject(path) {
-    const result = this.__io__.load_as_string(base_uri + path);
+    const result = this.__io__.load_as_string(path);
     return result != null ? JSONObject.parse(result) : null;
   }
-  saveJSONObject(path, data) {
+  saveJSONObject(data, path) {
     this.__io__?.save_string(path, data.toString());
   }
   loadJSONArray(path) {
-    const result = this.__io__.load_as_string(base_uri + path);
+    const result = this.__io__.load_as_string(path);
     return result != null ? JSONArray.parse(result) : null;
   }
-  saveJSONArray(path, data) {
+  saveJSONArray(data, path) {
     this.__io__?.save_string(path, data.toString());
+  }
+  loop() {
+    this.__loop__ = !0;
+  }
+  noLoop() {
+    this.__loop__ = !1;
   }
   exit() {
     this.__exit_code__ = 1;
   }
   __begin__() {
-    this.g.__begin__();
+    this.g.__begin__(), this.__date__ = /* @__PURE__ */ new Date();
   }
   __end__() {
     return this.g.__end__(), this.__exit_code__;
   }
   __stop__() {
-    this.g.background(255), this.g.__stop__();
+    this.colorMode(this.RGB, 255, 255, 255, 255), this.g.background(255), this.g.__stop__();
   }
-  fade(t2) {
+  __fade__(t2) {
     return t2 * t2 * t2 * (t2 * (t2 * 6 - 15) + 10);
   }
-  lerp(a2, b2, t2) {
-    return a2 + t2 * (b2 - a2);
+  lerp(start, stop, amt) {
+    return start + amt * (stop - start);
   }
-  grad(hash, x2, y2, z2) {
+  __grad__(hash, x2, y2, z2) {
     const h2 = hash & 15, u2 = h2 < 8 ? x2 : y2, v2 = h2 < 4 ? y2 : h2 === 12 || h2 === 14 ? x2 : z2;
     return ((h2 & 1) === 0 ? u2 : -u2) + ((h2 & 2) === 0 ? v2 : -v2);
   }
-  permutation = (() => {
+  __permutation__ = (() => {
     const p2 = new Uint8Array(512), perm = [
       151,
       160,
@@ -36491,6 +37158,7 @@ class Transpiler extends ProcessingVisitor {
     return `[${result}]`;
   };
   visitFormalParameter = (ctx) => ctx.variableDeclaratorId().IDENTIFIER().getText();
+  visitLastFormalParameter = (ctx) => (console.log(ctx), `...${ctx.variableDeclaratorId().IDENTIFIER().getText()}`);
   visitExpression = (ctx) => {
     let result = "";
     const child_count = ctx.getChildCount();
@@ -36511,7 +37179,7 @@ class Transpiler extends ProcessingVisitor {
         has_bracket && (result += ")");
       } else child instanceof MethodCallContext ? result += this.visit(child) : result += child.getText() + (child.getText() === "new" ? " " : "");
     }
-    return result.replace("System.out.println", "console.log");
+    return result;
   };
   visitCreator = (ctx) => {
     const child_count = ctx.getChildCount();
@@ -36578,7 +37246,7 @@ class MemberAnalyzer extends Transpiler {
   };
   visitLastFormalParameter = (ctx) => {
     const name = ctx.variableDeclaratorId().getText(), type = ctx.typeType().getText();
-    return this.arg_list.push({ name, type: type + "[]" }), "";
+    return this.arg_list.push({ name, type: type + "[]", rest: !0 }), "";
   };
   current_type = "";
   visitFieldDeclaration = (ctx) => {
@@ -36650,7 +37318,15 @@ class ReferenceSolver extends Transpiler {
     super("");
   }
   solve(class_data2) {
-    return class_data2.forEach((v2, k2) => {
+    this.solved_class_data.set("super", { field: [], method: [], constructor: [], class: [], interface: [] }), this.current_class = "super";
+    const applet = class_data2.get(_main_sketch), globals = { field: [], method: [] };
+    applet.field = applet.field.filter((f2) => (globals.field.push(f2), !1));
+    const replace_name = replace_list$1.map((v2) => v2.before);
+    return applet.method = applet.method.filter((m2) => !replace_name.includes(m2.name) && !overloaded_functions.includes(m2.name) && applet_instance[m2.name] == null ? (globals.method.push(m2), !1) : !0), globals.field.forEach((f2) => {
+      this.solved_class_data.get("super")?.field.push({ name: f2.name, init: f2.init != null ? this.visit(f2.init) : f2.type.startsWith("!") ? "false" : f2.type.startsWith("@") ? "0" : "null", type: f2.type.replace("!", "").replace("@", ""), extended: f2.extended });
+    }), globals.method.forEach((m2) => {
+      this.vatiable_list = [[...m2.args.map((a2) => a2.name)]], this.solved_class_data.get("super")?.method.push({ name: m2.name, type: m2.type, async: m2.async, override: m2.override, extended: m2.extended, args: m2.args, body: m2.body != null ? this.visit(m2.body).slice(1, -1) : "" });
+    }), class_data2.forEach((v2, k2) => {
       if (this.solved_class_data.set(k2, { field: [], method: [], constructor: [], class: v2.class, interface: v2.interface }), this.current_class = k2, this.vatiable_list = [[]], v2.field.forEach((f2) => {
         this.solved_class_data.get(k2)?.field.push({ name: f2.name, init: f2.init != null ? this.visit(f2.init) : f2.type.startsWith("!") ? "false" : f2.type.startsWith("@") ? "0" : "null", type: f2.type.replace("!", "").replace("@", ""), extended: f2.extended });
       }), v2.constructor.forEach((c2) => {
@@ -36664,10 +37340,9 @@ class ReferenceSolver extends Transpiler {
         const setup = this.solved_class_data.get(k2).method.find((m2) => m2.name == "setup");
         if (setup) {
           let match = setup.body.match(/__applet__.size\(\d+,\d+(?:,(?:P2D|P3D))?\);/);
-          if (match || (match = setup.body.match(/__applet__.fullScreen\((?:P2D|P3D|\d+)?\);/)), match) {
-            let idx = match.index + match[0].length;
-            setup.body = [setup.body.slice(0, idx), this.solved_class_data.get(k2).field.filter((f2) => !f2.extended).map((f2) => `this.${f2.name}=${f2.init}`).join(";") + (this.solved_class_data.get(k2).field.length > 0 ? ";" : ""), setup.body.slice(idx)].join("");
-          }
+          match || (match = setup.body.match(/__applet__.fullScreen\((?:P2D|P3D|\d+)?\);/));
+          let idx = 0;
+          match && (idx = match.index + match[0].length), setup.body = [setup.body.slice(0, idx), this.solved_class_data.get(k2).field.filter((f2) => !f2.extended).map((f2) => `this.${f2.name}=${f2.init}`).join(";") + (this.solved_class_data.get(k2).field.length > 0 ? ";" : ""), setup.body.slice(idx)].join("");
         }
         v2.method.forEach((m2, i2) => {
           replace_list$1.forEach((replace) => {
@@ -36689,17 +37364,27 @@ class ReferenceSolver extends Transpiler {
       case "return":
         result = `return${ctx.expression(0) != null ? ` ${this.visit(ctx.expression(0))}` : ""};`;
         break;
+      case "if":
+        ctx.ELSE() != null ? result = `if${this.visit(ctx.parExpression())}${this.visit(ctx.statement_list()[0])}else ${this.visit(ctx.statement_list()[1])}` : result = this.visitChildren(ctx);
+        break;
       default:
         result = this.visitChildren(ctx);
         break;
     }
     return this.vatiable_list.pop(), result;
   };
+  visitSwitchLabel = (ctx) => ctx.CASE() != null ? `${ctx.CASE()} ${ctx.expression() != null ? this.visit(ctx.expression()) : this.visit(ctx.IDENTIFIER())}:` : `${ctx.DEFAULT()}:`;
   visitVariableDeclaratorId = (ctx) => (this.vatiable_list[this.vatiable_list.length - 1].push(ctx.IDENTIFIER().getText()), ctx.IDENTIFIER().getText());
   visitEnhancedForControl = (ctx) => `let ${this.visit(ctx.variableDeclaratorId())} of ${this.visit(ctx.expression())}`;
   visitVariableInitializer = (ctx) => this.visitChildren(ctx);
   visitArrayInitializer = (ctx) => `[${ctx.variableInitializer_list().map((v2) => this.visit(v2)).join(",")}]`;
-  visitExpression = (ctx) => this.visitChildren(ctx).replace("System.out.println", "console.log");
+  visitExpression = (ctx) => {
+    if (ctx.INSTANCEOF() == null) {
+      if (ctx.typeType() != null)
+        return this.visit(ctx.expression(0));
+    }
+    return this.current_class == "super" && ctx.children && ctx._bop != null && ctx.expression(0) != null && ctx.expression(0).getText() === "this" && (ctx.children = ctx.children?.slice(2)), this.visitChildren(ctx);
+  };
   visitLambdaExpression = (ctx) => {
     this.vatiable_list.push([ctx.lambdaParameters().IDENTIFIER_list().map((i2) => i2.getText()).join(",")]);
     const result = `FunctionalInterface.get(${this.visit(ctx.lambdaParameters())}=>${this.visit(ctx.lambdaBody())})`;
@@ -36707,8 +37392,8 @@ class ReferenceSolver extends Transpiler {
   };
   visitMethodCall = (ctx) => {
     if (ctx.IDENTIFIER() != null) {
-      const { is_member, is_applet_member } = isMemberMethod(class_data, this.current_class, ctx.IDENTIFIER().getText()), is_overloaded = !is_member && is_applet_member && overloaded_functions.includes(ctx.IDENTIFIER().getText());
-      return (is_member ? "this." : is_applet_member ? "__applet__." : "") + (is_overloaded ? "_" : "") + ctx.IDENTIFIER() + `(${ctx.expressionList() != null ? this.visit(ctx.expressionList()) : ""})`;
+      const { is_member, is_applet_member } = isMemberMethod(class_data, this.current_class, ctx), is_overloaded = !is_member && is_applet_member && overloaded_functions.includes(ctx.IDENTIFIER().getText()), length = ctx.IDENTIFIER().getText() == "length" && !(is_member || is_applet_member) && ctx.parentCtx._bop != null && ctx.expressionList() == null;
+      return (is_member ? "this." : is_applet_member ? "__applet__." : "") + (is_overloaded ? "_" : "") + ctx.IDENTIFIER() + (length ? "" : `(${ctx.expressionList() != null ? this.visit(ctx.expressionList()) : ""})`);
     } else if (ctx.functionWithPrimitiveTypeName() != null) {
       const _ctx = ctx.functionWithPrimitiveTypeName();
       return `__applet__.${_ctx.getChild(0).getText()}(${_ctx.expressionList() != null ? this.visit(_ctx.expressionList()) : ""})`;
@@ -36717,7 +37402,7 @@ class ReferenceSolver extends Transpiler {
   };
   visitPrimary = (ctx) => {
     if (ctx.IDENTIFIER() != null) {
-      const { is_member, is_applet_member } = isMemberVariable(class_data, this.current_class, this.vatiable_list, ctx.IDENTIFIER().getText());
+      const { is_member, is_applet_member } = isMemberVariable(class_data, this.current_class, this.vatiable_list, ctx);
       return (is_member ? "this." : is_applet_member ? "__applet__." : "") + ctx.IDENTIFIER().getText();
     }
     return this.visitChildren(ctx);
@@ -36748,7 +37433,8 @@ class ReferenceSolver extends Transpiler {
   visitTypeArgumentsOrDiamond = () => "";
   visitDefaultValue = (ctx) => ctx.getText();
 }
-function isMemberVariable(class_data2, class_name, variable_data, primary) {
+function isMemberVariable(class_data2, class_name, variable_data, ctx) {
+  const primary = ctx.IDENTIFIER().getText();
   let is_local = !1;
   variable_data.forEach((vd) => {
     vd.forEach((v2) => {
@@ -36759,26 +37445,32 @@ function isMemberVariable(class_data2, class_name, variable_data, primary) {
   class_data2.get(class_name)?.field.forEach((field) => {
     primary === field.name && (is_member = !0);
   });
-  let is_applet_member = primary in applet_instance;
+  let is_applet_member = primary in applet_instance && typeof applet_instance[primary] != "function";
   return class_data2.get(_main_sketch)?.field.forEach((field) => {
     primary === field.name && (is_applet_member = !0);
   }), is_member = !is_local && is_member, is_applet_member = !is_local && is_applet_member, { is_member, is_applet_member };
 }
-function isMemberMethod(class_data2, class_name, name) {
+function isMemberMethod(class_data2, class_name, ctx) {
+  if (ctx.parentCtx.expression_list().length > 0) return { is_member: !1, is_applet_member: !1 };
+  const name = ctx.IDENTIFIER().getText();
   let is_member = !1;
   class_data2.get(class_name)?.method.forEach((method) => {
     name === method.name && (is_member = !0);
   }), class_name === _main_sketch && (is_member = !1);
-  let is_applet_member = name in applet_instance;
+  let is_applet_member = name in applet_instance && (typeof applet_instance[name] == "function" || overloaded_functions.includes(name));
   return class_data2.get(_main_sketch)?.method.forEach((method) => {
-    name === method.name && (is_applet_member = !0);
+    name === method.name && (console.log(name, method, typeof applet_instance[name]), is_applet_member = !0);
   }), { is_member, is_applet_member };
 }
-const replace_list = [];
+const replace_list = [], primitive = ["number", "boolean", "string"];
 class Converter {
   convert(solved_class_data) {
-    let result = "";
-    solved_class_data.forEach((v2, k2) => {
+    let result = "", globals = "";
+    const s2 = solved_class_data.get("super");
+    s2.field.forEach((f2) => {
+      globals += `let ${f2.name}=${f2.init};
+`;
+    }), globals += getSafeMethod(s2.method, !1), solved_class_data.delete("super"), solved_class_data.forEach((v2, k2) => {
       result += `class ${k2}${v2.class.length > 0 ? ` extends ${v2.class[0]}` : ""}{
 `, result += getSafeConstructor(v2.constructor) + `
 `, result += getSafeMethod(v2.method) + `
@@ -36795,13 +37487,15 @@ class Converter {
       result = result.replace(replace.before, replace.after);
     }), result += `
 const __applet__=new ${_main_sketch}(__renderer__);
+${globals}
+console.log("sketch transpiled!");
 return __applet__;`, result;
   }
 }
 function getType(type) {
-  return type.includes("[]") ? type.replace("[]", "").replace(" ", "") + "[]" : type.includes("<") ? type.replace(/<.*?>/, "").replace(" ", "") : type.replace(" ", "").replace(/int|float|long|double|byte|short|color/, "Number").replace("char", "String");
+  return type.includes("[]") ? type.replace("[]", "").replace(" ", "") + "[]" : type.includes("<") ? type.replace(/<.*?>/, "").replace(" ", "") : type.replace(" ", "").replace(/int|float|long|double|byte|short|color/, "number").replace("char", "string").replace("String", "string");
 }
-function getSafeMethod(method_data) {
+function getSafeMethod(method_data, member = !0) {
   const unique_method = /* @__PURE__ */ new Map();
   method_data.filter((m2) => !m2.extended).forEach((m2) => {
     unique_method.has(m2.name) ? unique_method.get(m2.name).push(m2) : unique_method.set(m2.name, [m2]);
@@ -36809,15 +37503,15 @@ function getSafeMethod(method_data) {
   const method_list = [];
   return unique_method.forEach((v2, k2) => {
     if (v2.length == 1) {
-      const method = `${v2[0].async ? "async " : ""}${k2}(${v2[0].args.map((a2) => a2.name).join(",")}){
+      const method = `${v2[0].async ? "async " : ""}${member ? "" : "function "}${k2}(${v2[0].args.map((a2) => `${a2.rest ? "..." : ""}${a2.name}`).join(",")}){
 ${v2[0].body}}
 `;
       method_list.push(method);
     } else {
-      let method = `${v2[0].async ? "async " : ""}${k2}(...args){
+      let method = `${v2[0].async ? "async " : ""}${member ? "" : "function "}${k2}(...args){
 `;
       v2.forEach((m2) => {
-        method += `if(args.length==${m2.args.length}${m2.args.map((v22, i2) => v22.type.includes("[]") ? `&&Array.isArray(args[${i2}])` : `&&args[${i2}] instanceof ${getType(v22.type)}`)}){
+        method += `if(args.length==${m2.args.length}${m2.args.map(getIdentificationExpression)}){
 ${m2.body == "" && m2.override ? `super.${k2}(args);
 ` : m2.body}}else `;
       }), method = method.slice(0, -5) + `}
@@ -36832,14 +37526,14 @@ function getSafeConstructor(constructor_data) {
     constructor_list = `constructor(){}
 `;
   else if (constructor_data.length == 1)
-    constructor_list = `constructor(${constructor_data[0].args.map((a2) => a2.name).join(",")}){
+    constructor_list = `constructor(${constructor_data[0].args.map((a2) => `${a2.rest ? "..." : ""}${a2.name}`).join(",")}){
 ${constructor_data[0].body}}
 `;
   else {
     let constructor = `constructor(...args){
 `;
     constructor_data.forEach((m2) => {
-      constructor += `if(args.length==${m2.args.length}${m2.args.map((v2, i2) => v2.type.includes("[]") ? `&&Array.isArray(args[${i2}])` : `&&args[${i2}] instanceof ${getType(v2.type)}`)}){
+      constructor += `if(args.length==${m2.args.length}${m2.args.map(getIdentificationExpression)}){
 ${m2.args.map((v2, i2) => `const ${v2.name}=args[${i2}];
 `)}${m2.body}}else `;
     }), constructor = constructor.slice(0, -5) + `}
@@ -36847,7 +37541,11 @@ ${m2.args.map((v2, i2) => `const ${v2.name}=args[${i2}];
   }
   return constructor_list;
 }
-let applet_instance, _main_sketch = "";
+function getIdentificationExpression(v2, i2) {
+  const t2 = getType(v2.type);
+  return v2.type.includes("[]") ? `&&Array.isArray(args[${i2}])` : primitive.includes(t2) ? `&&(typeof args[${i2}]==="${t2}"||args[${i2}] instanceof ${t2.charAt(0).toUpperCase() + t2.slice(1)})` : `&&args[${i2}] instanceof ${t2}`;
+}
+let applet_instance, _main_sketch = "", error_listener;
 function transpile(sketch_content, main_sketch) {
   _main_sketch = main_sketch, applet_instance = new PApplet(null), performance.clearMarks(), performance.clearMeasures(), performance.mark("analyze_member()");
   const class_data2 = analyze_member(sketch_content);
@@ -36855,14 +37553,14 @@ function transpile(sketch_content, main_sketch) {
   const solved_class_data = solve_reference(class_data2);
   performance.mark("convert()");
   const converted_class_data = convert(solved_class_data);
-  return performance.mark("end"), performance.measure("function analyze_member()", "analyze_member()", "solve_reference()"), performance.measure("analyze : new_instance", "new_instance", "read_stream"), performance.measure("analyze : read_stream", "read_stream", "parse_tree"), performance.measure("analyze : parse_tree", "parse_tree", "visit"), performance.measure("analyze : visit", "visit", "end_analyze"), performance.measure("function solve_reference()", "solve_reference()", "convert()"), performance.measure("function convert()", "convert()", "end"), performance.getEntriesByType("measure").forEach((e2) => console.log(`${e2.name} takes ${e2.duration}ms`)), converted_class_data;
+  return performance.mark("end"), performance.measure("function analyze_member()", "analyze_member()", "solve_reference()"), performance.measure("analyze : new_instance", "new_instance", "read_stream"), performance.measure("analyze : read_stream", "read_stream", "parse_tree"), performance.measure("analyze : parse_tree", "parse_tree", "visit"), performance.measure("analyze : visit", "visit", "end_analyze"), performance.measure("function solve_reference()", "solve_reference()", "convert()"), performance.measure("function convert()", "convert()", "end"), performance.getEntriesByType("measure").forEach((e2) => console.log(`${e2.name} takes ${e2.duration}ms`)), { result: converted_class_data, error: error_listener };
 }
 function analyze_member(sketch_content) {
   performance.mark("new_instance");
   const member_analyzer = new MemberAnalyzer(_main_sketch);
   performance.mark("read_stream");
   const parser = new ProcessingParser(new Ze(new ProcessingLexer(Xe.fromString(sketch_content))));
-  performance.mark("parse_tree");
+  error_listener = new TranspileErrorListener(), parser.addErrorListener(error_listener), performance.mark("parse_tree");
   const tree = parser.processingSketch();
   return performance.mark("visit"), member_analyzer.visit(tree), performance.mark("end_analyze"), class_data;
 }
@@ -36875,6 +37573,19 @@ function convert(solved_class_data) {
 function get_last(a2) {
   if (a2.length != 0)
     return a2[a2.length - 1];
+}
+class TranspileErrorListener extends nn {
+  error = !1;
+  message = "";
+  column = 0;
+  line = 0;
+  syntaxError(recognizer, offendingSymbol, line, column, msg, e2) {
+    this.error = !0, this.message = msg, this.column = column, this.line = line;
+  }
+  getErrorMessage() {
+    return this.error ? `${this.message}
+line: ${this.line},column: ${this.column}` : "";
+  }
 }
 class Cursor {
   static CUSTOM_CURSOR = -1;
@@ -36900,39 +37611,47 @@ class Cursor {
     return this.type;
   }
 }
-class ArrayList {
-  items;
-  constructor() {
-    this.items = [];
+class ArrayList extends Array {
+  constructor(c2) {
+    c2 ? typeof c2 == "number" ? (super(c2), this.fill(null)) : super(...c2) : super();
   }
   add(item) {
-    this.items.push(item);
+    this.push(item);
   }
-  get(index) {
-    return this.items[index];
-  }
-  size() {
-    return this.items.length;
+  addAll(item) {
+    this.push(...item);
   }
   clear() {
-    this.items = [];
+    this.splice(0, this.length);
+  }
+  contains(v2) {
+    return this.includes(v2);
+  }
+  get(index) {
+    return this[index];
+  }
+  isEmpty() {
+    return this.length === 0;
   }
   remove(arg) {
     if (typeof arg == "number")
-      arg >= 0 && arg < this.items.length && this.items.splice(arg, 1);
+      arg >= 0 && arg < this.length && this.splice(arg, 1);
     else {
-      const index = this.items.indexOf(arg);
-      index !== -1 && this.items.splice(index, 1);
+      const index = this.indexOf(arg);
+      index !== -1 && this.splice(index, 1);
     }
   }
-  [Symbol.iterator]() {
-    let index = 0;
-    const items = this.items;
-    return {
-      next() {
-        return index < items.length ? { value: items[index++], done: !1 } : { done: !0 };
-      }
-    };
+  removeAll(a2) {
+    a2.forEach((e2) => this.remove(this.indexOf(e2)));
+  }
+  set(index, element) {
+    this[index] = element;
+  }
+  size() {
+    return this.length;
+  }
+  toArray() {
+    return new Array(...this);
   }
 }
 class Runnable {
@@ -37061,6 +37780,12 @@ class PVector {
   mag() {
     return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
   }
+  magSq() {
+    return this.x * this.x + this.y * this.y + this.z * this.z;
+  }
+  setMag(len) {
+    return this.copy().normalize().mult(len);
+  }
   normalize() {
     const mag = this.mag();
     return mag === 0 ? new PVector(0, 0) : (this.x /= mag, this.y /= mag, this.z /= mag, this);
@@ -37078,262 +37803,56 @@ class PVector {
     }
     return this;
   }
-}
-class IOBase {
-  base_path;
-  preload = null;
-  constructor(base_path) {
-    this.base_path = base_path;
-  }
-  toBlob(src, mime) {
-    const len = src.length, bytes = new Uint8Array(len);
-    for (let i2 = 0; i2 < len; i2++)
-      bytes[i2] = src.charCodeAt(i2) & 255;
-    return new Blob([bytes], { type: mime });
-  }
-  readBlob(blob) {
-    const xhr = new XMLHttpRequest(), url = URL.createObjectURL(blob);
-    return xhr.overrideMimeType("text/plain; charset=x-user-defined"), xhr.open("GET", url, !1), xhr.send(), xhr.response;
-  }
-  save_blob(name, data) {
-    window.localStorage.setItem(name, this.readBlob(data));
-  }
-  save_string(name, data) {
-    window.localStorage.setItem(name, data);
-  }
-  load_buffer_as_blob(name, mime) {
-    if (this.preload == null) return null;
-    const result = this.preload.filter((p2) => p2.path == name);
-    return result.length > 0 ? new Blob([result[0].content], { type: mime }) : null;
-  }
-  load_buffer_as_string(name) {
-    if (this.preload == null) return null;
-    const result = this.preload.filter((p2) => p2.path == name);
-    return result.length > 0 ? new TextDecoder("utf-8").decode(result[0].content) : null;
-  }
-  load_as_blob(name, mime) {
-    let result;
-    return (result = this.toBlob(window.localStorage.getItem(name), mime)) != null || (result = this.load_buffer_as_blob(name, mime)) != null || (result = this.toBlob(this.request(name), mime)) != null ? result : null;
-  }
-  load_as_string(name) {
-    let result;
-    return (result = window.localStorage.getItem(name)) != null || (result = this.load_buffer_as_string(name)) != null || (result = this.request(name)) != null ? result : null;
+  limit(max) {
+    return this.mag() < max ? this : this.setMag(max);
   }
 }
-class XHRIO extends IOBase {
-  request(path) {
-    const xhr = new XMLHttpRequest();
-    if (xhr.open("GET", this.base_path + path, !1), xhr.overrideMimeType("text/plain; charset=x-user-defined"), xhr.send(), xhr.status >= 200 && xhr.status < 300)
-      return xhr.responseText;
-    throw new Error(`XHRIO request failed: ${xhr.status} ${xhr.statusText}`);
+class HashMap {
+  map;
+  constructor(iterable) {
+    typeof iterable == "number" ? this.map = /* @__PURE__ */ new Map() : this.map = new Map(iterable);
   }
-}
-class Renderer {
-  app = null;
-  graphics = null;
-  text_container = null;
-  target_element = null;
-  text_style = null;
-  stroke_style = null;
-  font_size = 12;
-  font_family = "Arial";
-  text_align = "left";
-  rect_mode = 0;
-  ellipse_mode = 0;
-  fill_enabled = !0;
-  stroke_enabled = !0;
-  fill_color = 0;
-  stroke_color = 0;
-  current_cursor = "default";
-  initialized = !1;
-  async init(width, height) {
-    if (this.initialized) {
-      console.warn("Renderer already initialized");
-      return;
-    }
-    this.initialized = !0, this.app = new Application(), this.graphics = new Graphics(), this.text_container = new Container(), width === 0 && height === 0 && (width = this.getMaximumSize().width, height = this.getMaximumSize().height), await this.app.init({ width, height, backgroundColor: "#dddddd", clearBeforeRender: !1, preserveDrawingBuffer: !0, antialias: !0, canvas: this.canvas }), this.app.renderer.resize(width, height), this.app.stage.addChild(this.graphics), this.app.stage.addChild(this.text_container), this.text_style = new TextStyle({ fontFamily: this.font_family, fontSize: this.font_size, fill: "#000000", align: "left" }), this.stroke_style = { width: 1, color: 0, cap: "round", join: "round", miterLimit: 10 };
+  containsKey(key) {
+    return this.map.has(key);
   }
-  background(r2, g2, b2, a2) {
-    const mat = this.graphics?.getTransform().clone();
-    this.graphics?.clear(), this.text_container?.removeChildren(0, this.text_container.children.length), this.app.renderer != null && (this.app.renderer.background.color = { r: r2, g: g2, b: b2, a: a2 }), this.graphics?.rect(0, 0, innerWidth, innerHeight), this.graphics?.fill({ color: { r: r2, g: g2, b: b2, a: a2 } }), this.graphics?.stroke({ color: 0, alpha: 0 }), this.graphics?.setTransform(mat);
+  containsValue(value) {
+    return new Array(...this.map.values()).includes(value);
   }
-  fill(r2, g2, b2, a2) {
-    this.fill_enabled = !0, this.fill_color = { r: r2, g: g2, b: b2, a: a2 };
+  get(key) {
+    return this.map.get(key);
   }
-  noFill() {
-    this.fill_enabled = !1;
+  getOrDefault(key, value) {
+    return this.map.get(key) ?? value;
   }
-  stroke(r2, g2, b2, a2) {
-    this.stroke_enabled = !0, this.stroke_color = { r: r2, g: g2, b: b2, a: a2 };
+  isEmpty() {
+    return this.map.size === 0;
   }
-  noStroke() {
-    this.stroke_enabled = !1;
+  keySet() {
+    return this.map.keys();
   }
-  strokeWeight(weight) {
-    this.stroke_style.width = weight, this.graphics?.setStrokeStyle(this.stroke_style);
+  put(key, value) {
+    this.map.set(key, value);
   }
-  rectMode(mode) {
-    this.rect_mode = mode;
+  putIfAbsent(key, value) {
+    this.map.has(key) || this.map.set(key, value);
   }
-  textAlign(align) {
-    switch (align) {
-      case 37:
-        this.text_align = "left";
-        break;
-      case 3:
-        this.text_align = "center";
-        break;
-      case 39:
-        this.text_align = "right";
-        break;
-      default:
-        console.warn("Unknown text mode: " + align);
-        break;
-    }
-    this.text_style.align = this.text_align;
+  remove(k2, v2) {
+    v2 ? this.map.get(k2) === v2 && this.map.delete(k2) : this.map.delete(k2);
   }
-  textSize(size) {
-    this.text_style.fontSize = size;
+  size() {
+    return this.map.size;
   }
-  rect(x2, y2, width, height) {
-    switch (this.rect_mode) {
-      case 0:
-        break;
-      case 1:
-        x2 -= width / 2, y2 -= height / 2;
-        break;
-      case 2:
-        x2 -= width / 2, y2 -= height / 2, width *= 2, height *= 2;
-        break;
-      case 3:
-        x2 -= width / 2, y2 -= height / 2;
-        break;
-      case 4:
-        x2 -= width / 2, y2 -= height / 2, width *= 2, height *= 2;
-        break;
-      default:
-        console.warn("Unknown rect mode: " + this.rect_mode);
-        break;
-    }
-    this.graphics?.rect(x2, y2, width, height), this.graphics?.fill(this.fill_enabled ? { color: this.fill_color } : { color: 0, alpha: 0 }), this.graphics?.stroke(this.stroke_enabled ? { color: this.stroke_color } : { color: 0, alpha: 0 });
-  }
-  ellipse(x2, y2, width, height) {
-    this.graphics?.ellipse(x2, y2, width * 0.5, height * 0.5), this.graphics?.fill(this.fill_enabled ? { color: this.fill_color } : { color: 0, alpha: 0 }), this.graphics?.stroke(this.stroke_enabled ? { color: this.stroke_color } : { color: 0, alpha: 0 });
-  }
-  arc(x2, y2, width, height, start, stop) {
-    const mat = this.graphics?.getTransform().clone();
-    this.graphics?.translateTransform(x2, y2), this.graphics?.scaleTransform(1, height / width), this.graphics?.moveTo(width * 0.5 * Math.cos(start), width * 0.5 * Math.sin(start)), this.graphics?.arc(0, 0, width * 0.5, start, stop), this.graphics?.setTransform(mat), this.graphics?.fill(this.fill_enabled ? { color: this.fill_color } : { color: 0, alpha: 0 }), this.graphics?.stroke(this.stroke_enabled ? { color: this.stroke_color } : { color: 0, alpha: 0 });
-  }
-  triangle(x1, y1, x2, y2, x3, y3) {
-    this.graphics?.moveTo(x1, y1), this.graphics?.lineTo(x2, y2), this.graphics?.lineTo(x3, y3), this.graphics?.lineTo(x1, y1), this.graphics?.fill(this.fill_enabled ? { color: this.fill_color } : { color: 0, alpha: 0 }), this.graphics?.stroke(this.stroke_enabled ? { color: this.stroke_color } : { color: 0, alpha: 0 });
-  }
-  line(x1, y1, x2, y2) {
-    this.graphics?.moveTo(x1, y1), this.graphics?.lineTo(x2, y2), this.graphics?.moveTo(0, 0), this.graphics?.stroke(this.stroke_enabled ? { color: this.stroke_color } : { color: 0, alpha: 0 });
-  }
-  text(text, x2, y2, w2, h2) {
-    if (!this.text_style) return;
-    this.text_style.fill = this.fill_color, w2 ? (this.text_style.breakWords = !0, this.text_style.wordWrap = !0, this.text_style.wordWrapWidth = w2) : (this.text_style.breakWords = !1, this.text_style.wordWrap = !1, this.text_style.wordWrapWidth = 0);
-    const text_obj = new Text({ text, style: this.text_style.clone() }), pos = (this.graphics?.getTransform().clone()).apply({ x: x2, y: y2 - this.text_style.fontSize * 0.75 });
-    text_obj.x = pos.x, text_obj.y = pos.y, w2 && h2 && (text_obj.width = w2, text_obj.height = h2), this.text_container.addChild(text_obj);
-  }
-  image(image, x2, y2, w2, h2) {
-    image.texture != null && this.graphics?.texture(image.texture, 16777215, x2, y2, w2, h2);
-  }
-  translate(x2, y2) {
-    this.graphics?.translateTransform(x2, y2);
-  }
-  setCursor(...args) {
-    if (args.length == 1 && args[0].constructor.name == "Number") {
-      const kind = args[0];
-      let name = "auto";
-      switch (kind) {
-        case -1:
-          break;
-        case 0:
-          name = "default";
-          break;
-        case 1:
-          name = "crosshair";
-          break;
-        case 2:
-          name = "text";
-          break;
-        case 3:
-          name = "wait";
-          break;
-        case 4:
-          name = "sw-resize";
-          break;
-        case 5:
-          name = "se-resize";
-          break;
-        case 6:
-          name = "nw-resize";
-          break;
-        case 7:
-          name = "ne-resize";
-          break;
-        case 8:
-          name = "n-resize";
-          break;
-        case 9:
-          name = "s-resize";
-          break;
-        case 10:
-          name = "w-resize";
-          break;
-        case 11:
-          name = "e-resize";
-          break;
-        case 12:
-          name = "grab";
-          break;
-        case 13:
-          name = "move";
-          break;
-      }
-      this.current_cursor = name, this.setCursorStyle(name);
-    } else if (args.length == 3 && args[0].constructor.name == "PImage" && args[1].constructor.name == "Number" && args[2].constructor.name == "Number") {
-      const { image, hotspotX, hotspotY } = { image: args[0], hotspotX: args[1], hotspotY: args[2] };
-      this.setCursorStyle({ image, x: hotspotX, y: hotspotY }), console.log(image);
-    }
-  }
-  showCursor() {
-    this.setCursorStyle(this.current_cursor);
-  }
-  hideCursor() {
-    this.setCursorStyle("none");
-  }
-  async invoke(name, ...args) {
-    this[name] ? await this[name](...args) : console.warn("Unknown method: " + name);
-  }
-  __begin__() {
-    this.graphics?.clear(), this.text_container?.removeChildren(0, this.text_container.children.length);
-  }
-  __end__() {
-    return 0;
-  }
-  __stop__() {
-  }
-}
-class DefaultRenderer extends Renderer {
-  __io__;
-  canvas;
-  max_size = { width: 0, height: 0 };
-  constructor(canvas, base_path, max_size) {
-    super(), this.canvas = canvas, this.__io__ = new XHRIO(base_path), max_size && (this.max_size = max_size);
-  }
-  setCursorStyle(arg) {
-    typeof arg == "string" && (this.canvas.style.cursor = arg);
-  }
-  getMaximumSize() {
-    return this.max_size;
+  values() {
+    return this.map.values();
   }
 }
 class Runner {
   pre_count = -1;
   initiated = !1;
   scaling = { x: 1, y: 1 };
+  log_listeners = [];
+  error_listeners = [];
+  arg_classes = [{ name: "PApplet", type: PApplet }, { name: "PVector", type: PVector }, { name: "ArrayList", type: ArrayList }, { name: "HashMap", type: HashMap }, { name: "Cursor", type: Cursor }, { name: "Runnable", type: Runnable }, { name: "Consumer", type: Consumer }, { name: "Supplier", type: Supplier }, { name: "Function", type: Function }, { name: "FunctionalInterface", type: FunctionalInterface }];
   convert_button(button) {
     switch (button) {
       case 0:
@@ -37359,61 +37878,88 @@ class Runner {
     const rect = this.manager.target_element.getBoundingClientRect();
     return { width: rect.width, height: rect.height };
   }
+  addDependency(data, override) {
+    const idx = this.arg_classes.findIndex((a2) => a2.name == data.name);
+    (idx == -1 || override) && this.arg_classes.push(data), override && idx !== -1 && (this.arg_classes = this.arg_classes.splice(idx, 1));
+  }
+  getDependentNames() {
+    return this.arg_classes.map((a2) => a2.name);
+  }
+  getDependentClasses() {
+    return this.arg_classes.map((a2) => a2.type);
+  }
 }
 class DefaultRunner extends Runner {
   pre_count = -1;
   initiated = !1;
   manager;
-  renderer = null;
   event_queue;
   //queue events to be processed in the next frame
   content_display = !0;
   applet = null;
   last_time = 0;
-  loop_count = 0;
   constructor(manager) {
     super(), this.manager = manager, this.event_queue = [];
   }
   async init(sketch) {
-    this.event_queue = [], this.renderer = new DefaultRenderer(this.manager.target_element, this.manager.base_uri, this.get_maximum_size());
-    const arg_classes = [PApplet, PVector, ArrayList, Cursor, Runnable, Consumer, Supplier, Function, FunctionalInterface];
-    this.applet = new globalThis.Function("__renderer__", ...arg_classes.map((c2) => c2.name), sketch)(this.renderer, ...arg_classes), this.applet.width = this.manager.target_element.clientWidth, this.applet.height = this.manager.target_element.clientHeight, this.manager.sketch_resources_promise != null && this.applet.__set_preload__((await this.manager.sketch_resources_promise).map((r2) => ({ path: r2.path, content: new Uint8Array(r2.content).buffer }))), set_base_uri(this.manager.base_uri), this.initiated = !0, await this.applet.settings(), await this.applet.setup(), this.set_scaling(), this.loop();
+    this.event_queue = [], this.applet = new globalThis.Function("__renderer__", ...this.arg_classes.map((c2) => c2.name), sketch)({ canvas: this.manager.target_element, base_path: this.manager.base_uri, max_size: this.get_maximum_size() }, ...this.arg_classes.map((c2) => c2.type)), this.applet.width = this.manager.target_element.clientWidth, this.applet.height = this.manager.target_element.clientHeight, this.applet.__log_listener__ = (args) => {
+      this.log_listeners.forEach((l2) => l2(args));
+    }, this.manager.sketch_resources_promise != null && this.applet.__set_preload__((await this.manager.sketch_resources_promise).map((r2) => ({ path: r2.path, content: new Uint8Array(r2.content).buffer }))), this.manager.base_uri, this.initiated = !0;
+    try {
+      this.applet.__begin__(), await this.applet.settings(), await this.applet.setup(), this.applet.__end__();
+    } catch (e2) {
+      e2 instanceof Error && this.error_listeners.forEach((l2) => l2(e2.message)), console.error(e2);
+    }
+    this.set_scaling(), this.loop();
+  }
+  async frame() {
+    if (!this.applet) return;
+    if (!this.initiated) {
+      this.applet.__stop__(), console.log("Sketch finished with exit code 0.");
+      return;
+    }
+    const ID = setTimeout(async () => {
+      this.frame();
+    }, this.content_display ? 1e3 / this.applet.__frameRate__ : 1e3), now = performance.now(), deltaTime = now - this.last_time;
+    this.last_time = now, this.applet.frameRate = 1e3 / deltaTime, this.applet.__begin__();
+    try {
+      (this.applet.__loop__ || this.applet.frameCount == 0) && await this.applet.draw();
+    } catch (e2) {
+      e2 instanceof Error && this.error_listeners.forEach((l2) => l2(e2.message)), console.error(e2);
+    }
+    const code = this.applet.__end__();
+    for (code != 0 && (clearTimeout(ID), this.applet.__stop__(), this.stop(), console.log(`Sketch finished with exit code ${code}.`)), this.applet.frameCount++, this.applet.pmouseX = this.applet.mouseX, this.applet.pmouseY = this.applet.mouseY; this.event_queue.length > 0; ) {
+      const event = this.event_queue.shift();
+      let mouse;
+      switch (event.name) {
+        case "_mousePressed":
+          this.applet.mousePressed = !0, mouse = this.convert_mouse(event.event.x, event.event.y), this.applet.mouseX = mouse.x, this.applet.mouseY = mouse.y, this.applet.mouseButton = event.event.button, this.applet._mousePressed(event.event);
+          break;
+        case "_mouseReleased":
+          this.applet.mousePressed = !1, mouse = this.convert_mouse(event.event.x, event.event.y), this.applet.mouseX = mouse.x, this.applet.mouseY = mouse.y, this.applet.mouseButton = event.event.button, this.applet._mouseReleased(event.event);
+          break;
+        case "_mouseMoved":
+          mouse = this.convert_mouse(event.event.x, event.event.y), this.applet.mouseX = mouse.x, this.applet.mouseY = mouse.y, this.applet._mouseMoved(event.event);
+          break;
+        case "_keyPressed":
+          this.applet.keyPressed = !0, this.applet.key = event.event.key, this.applet.keyCode = event.event.keyCode, this.applet._keyPressed(event.event), this.applet._keyTyped(event.event);
+          break;
+        case "_keyReleased":
+          this.applet.keyPressed = !1, this.applet._keyReleased(event.event);
+          break;
+        case "_mouseWheel":
+          this.applet._mouseWheel(event.event);
+          break;
+        case "_windowResized":
+          this.applet._windowResized();
+          break;
+        default:
+          console.error("Unknown event name: " + event.name);
+      }
+    }
   }
   loop() {
-    const self = this, ID = setInterval(async function() {
-      const now = performance.now(), deltaTime = now - self.last_time;
-      self.last_time = now, self.applet.frameRate = 1e3 / deltaTime, self.applet?.__begin__(), await self.applet.draw();
-      const code = self.applet?.__end__();
-      for ((code != 0 || !self.initiated) && (clearInterval(ID), self.applet?.__stop__(), console.log(`Sketch finished with exit code ${code}.`)), self.applet.frameCount++, self.loop_count++; self.event_queue.length > 0; ) {
-        const event = self.event_queue.shift();
-        let mouse;
-        switch (event.name) {
-          case "_mousePressed":
-            self.applet.mousePressed = !0, mouse = self.convert_mouse(event.event.x, event.event.y), self.applet.mouseX = mouse.x, self.applet.mouseY = mouse.y, self.applet.mouseButton = event.event.button, self.applet._mousePressed(event.event);
-            break;
-          case "_mouseReleased":
-            self.applet.mousePressed = !1, mouse = self.convert_mouse(event.event.x, event.event.y), self.applet.mouseX = mouse.x, self.applet.mouseY = mouse.y, self.applet.mouseButton = event.event.button, self.applet._mouseReleased(event.event);
-            break;
-          case "_mouseMoved":
-            mouse = self.convert_mouse(event.event.x, event.event.y), self.applet.mouseX = mouse.x, self.applet.mouseY = mouse.y, self.applet._mouseMoved(event.event);
-            break;
-          case "_keyPressed":
-            self.applet.keyPressed = !0, self.applet.key = event.event.key, self.applet.keyCode = event.event.keyCode, self.applet._keyPressed(event.event);
-            break;
-          case "_keyReleased":
-            self.applet.keyPressed = !1, self.applet._keyReleased(event.event);
-            break;
-          case "_mouseWheel":
-            self.applet._mouseWheel(event.event);
-            break;
-          case "_windowResized":
-            self.applet._windowResized();
-            break;
-          default:
-            console.error("Unknown event name: " + event.name);
-        }
-      }
-    }, this.content_display ? 1e3 / this.applet.__frameRate__ : 1e3);
+    this.frame();
   }
   stop() {
     this.initiated && (this.initiated = !1);
@@ -37451,10 +37997,26 @@ class DefaultRunner extends Runner {
   set_scaling() {
     if (!this.applet) return;
     const rect = this.manager.target_element.getBoundingClientRect();
-    this.scaling = { x: this.applet.width / rect.width, y: this.applet.height / rect.height };
+    this.scaling = { x: this.applet.width / rect.width, y: this.applet.height / rect.height }, this.update_resolution(window.devicePixelRatio / Math.max(this.scaling.x, this.scaling.y));
   }
   get_applet_size() {
-    return this.applet ? this.applet.__fullscreen__ ? { w: 0, h: 0 } : { w: this.applet.width, h: this.applet.height } : { w: 0, h: 0 };
+    return this.applet ? { w: this.applet.width, h: this.applet.height } : { w: 0, h: 0 };
+  }
+  get_aspect_ratio() {
+    return this.applet ? this.applet.__fullscreen__ ? 0 : this.applet.width / this.applet.height : 0;
+  }
+  update_resolution(r2) {
+    this.applet?.g.updateResolution(r2);
+  }
+  addEventListener(type, listener) {
+    switch (type) {
+      case "log":
+        this.log_listeners.push(listener);
+        break;
+      case "error":
+        this.error_listeners.push(listener);
+        break;
+    }
   }
 }
 class SketchManager {
@@ -37495,7 +38057,9 @@ class SketchManager {
    */
   async loadSketch(sketch_path) {
     this.base_uri = new URL(typeof sketch_path == "string" ? sketch_path : sketch_path.base_uri, document.baseURI).href;
-    const sketch_property = typeof sketch_path == "string" ? await (await fetch(new URL(sketch_path + "sketch.properties", document.baseURI))).text() : "", main_sketch = typeof sketch_path == "string" ? sketch_property.match(/\n*(?<!#\s*)main\s*=\s*(.+\.pde)/)[1] : sketch_path.main_sketch, sketch_names = typeof sketch_path == "string" ? sketch_property.match(/\n*(?<!#\s*)sketches\s*=((\s*\w+.pde)+)/)[1].split(/[\s,]+/).map((s2) => s2.trim()) : sketch_path.sketches, sketch_resources = typeof sketch_path == "string" ? sketch_property.match(/\n*(?<!#\s*)resources\s*=[\s,]*(([\w\.]+[,\s]+)*)/)[1].split(/[\s,]+/).map((s2) => s2.trim()) : sketch_path.resources ?? [];
+    const sketch_property = typeof sketch_path == "string" ? await (await fetch(new URL(sketch_path + "sketch.properties", document.baseURI))).text() : "", main_sketch = typeof sketch_path == "string" ? sketch_property.match(/\n*(?<!#\s*)main\s*=\s*(.+\.pde)/)[1] : sketch_path.main_sketch;
+    let m2;
+    const sketch_names = typeof sketch_path == "string" ? (m2 = sketch_property.match(/\n*(?<!#\s*)sketches\s*=((\s*\w+.pde)+)/)) != null ? m2[1].split(/[\s,]+/).map((s2) => s2.trim()) : [main_sketch] : sketch_path.sketches, sketch_resources = typeof sketch_path == "string" ? (m2 = sketch_property.match(/\n*(?<!#\s*)resources\s*=[\s,]*(([\w\.]+[,\s]+)*)/)) != null ? m2[1].split(/[\s,]+/).map((s2) => s2.trim()) : [] : sketch_path.resources ?? [];
     this.sketch_resources_promise = Promise.all(sketch_resources.map(async (resource) => ({ path: resource, content: await fetch(new URL(sketch_path + resource, document.baseURI)).then((res) => res.arrayBuffer()) })));
     const sketch_content = await Promise.all(sketch_names.map(async (name) => ({ name, content: await fetch(new URL(sketch_path + name, document.baseURI)).then((res) => res.text()) })));
     return { main: main_sketch, content: sketch_content };
@@ -37538,15 +38102,16 @@ class SketchManager {
    * @returns Transpiled sketch.
    */
   transpileSketch(sketch_data) {
-    return transpile(sketch_data.content.map((s2) => s2.content).join(`
+    let transpiled = transpile(sketch_data.content.map((s2) => s2.content).join(`
 `), sketch_data.main.replace(".pde", ""));
+    return transpiled.error.error && this.runner.error_listeners.forEach((l2) => l2(transpiled.error.getErrorMessage())), transpiled;
   }
   /**
    * Run transpiled sketch.
    * @param sketch Transpiled sketch
    */
   async runTranspiledSketch(sketch) {
-    this.stopSketch(), console.log(sketch), await this.runner.init(sketch), this.settings.keep_aspect_ratio && this.setAspectRatio();
+    this.stopSketch(), !(sketch.error != null && sketch.error.error) && (await this.runner.init(sketch.result), this.settings.keep_aspect_ratio && this.setAspectRatio());
   }
   /**
    * Transpile and run sketch.
@@ -37567,21 +38132,41 @@ class SketchManager {
   stopSketch() {
     this.runner.stop();
   }
+  getAspectRatio() {
+    return this.runner.get_aspect_ratio();
+  }
   resize() {
     this.runner.on_resize && this.runner.on_resize(), this.runner.set_scaling(), this.settings.keep_aspect_ratio && this.setAspectRatio();
   }
   setAspectRatio() {
-    const rect = this.target_element.getBoundingClientRect(), size = this.runner.get_applet_size();
+    const rect = this.target_element.parentElement.getBoundingClientRect(), size = this.runner.get_applet_size();
     if (!(size.w == 0 && size.h == 0)) {
       if (this.runner.scaling.x < this.runner.scaling.y) {
         const scale = rect.height / size.h;
-        this.target_element.style.width = `${size.w * scale}px`;
+        this.target_element.style.width = `${size.w * scale}px`, this.target_element.style.height = `${size.h * scale}px`;
       } else if (this.runner.scaling.y < this.runner.scaling.x) {
         const scale = rect.width / size.w;
-        this.target_element.style.height = `${size.h * scale}px`;
+        this.target_element.style.height = `${size.h * scale}px`, this.target_element.style.width = `${size.w * scale}px`;
       }
       this.runner.set_scaling();
     }
+  }
+  /**
+   * Add dependent class which is necessary in your sketch.
+   * @param data The name and type of dependent class.
+   * @param override Whether to override the current dependency if the dependent class has a duplicated name.
+   */
+  addDependency(data, override) {
+    this.runner.addDependency(data, override ?? !1);
+  }
+  getDependentNames() {
+    return this.runner.getDependentNames();
+  }
+  getDependentClasses() {
+    return this.runner.getDependentClasses();
+  }
+  addEventListener(type, listener) {
+    this.runner.addEventListener(type, listener);
   }
 }
 export {

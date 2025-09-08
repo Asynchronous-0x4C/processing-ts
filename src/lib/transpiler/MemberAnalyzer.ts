@@ -8,7 +8,7 @@ const async_list:string[]=["settings","setup","draw"];
 
 export class MemberAnalyzer extends Transpiler{
   class_names:string[]=[];
-  arg_list:{name:string,type:string}[]=[];
+  arg_list:{name:string,type:string,rest?:boolean}[]=[];
 
   constructor(main_sketch:string){
     super(main_sketch);
@@ -89,7 +89,7 @@ export class MemberAnalyzer extends Transpiler{
   visitLastFormalParameter=(ctx: FormalParameterContext)=>{
     const name=ctx.variableDeclaratorId().getText();
     const type=ctx.typeType().getText();
-    this.arg_list.push({name:name,type:type+"[]"});
+    this.arg_list.push({name:name,type:type+"[]",rest:true});
     return ""
   }
 

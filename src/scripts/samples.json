@@ -1,0 +1,45 @@
+{
+  "Structure": [
+    "create_graphics"
+  ],
+  "Image": [
+    "pointillism",
+    "create_image",
+    "background_image"
+  ],
+  "Forms": [
+    "regular_polygon"
+  ],
+  "Input": [
+    "constrain",
+    "clock"
+  ],
+  "Color": [
+    "saturation",
+    "relativity",
+    "radial_gradient",
+    "linear_gradient",
+    "hue",
+    "color_variables",
+    "brightness"
+  ],
+  "Games": [
+    "simple_shooter_game"
+  ],
+  "Template": [
+    "sketch"
+  ],
+  "Transform": [
+    "rotate",
+    "arm",
+    "scale"
+  ],
+  "Arrays": [
+    "array_objects",
+    "array",
+    "array2d"
+  ],
+  "Data": [
+    "characters_strings"
+  ]
+}

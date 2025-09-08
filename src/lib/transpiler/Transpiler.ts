@@ -1,9 +1,9 @@
-import { ArrayInitializerContext, BlockContext, ClassCreatorRestContext, CreatedNameContext, CreatorContext, ExpressionContext, FormalParameterContext, MethodCallContext, PrimaryContext, ProcessingSketchContext, TypeArgumentsOrDiamondContext, TypeListContext, TypeTypeContext, VariableInitializerContext } from "./antlr/parser/ProcessingParser";
+import { ArrayInitializerContext, BlockContext, ClassCreatorRestContext, CreatedNameContext, CreatorContext, ExpressionContext, FormalParameterContext, LastFormalParameterContext, MethodCallContext, PrimaryContext, ProcessingSketchContext, TypeArgumentsOrDiamondContext, TypeListContext, TypeTypeContext, VariableInitializerContext } from "./antlr/parser/ProcessingParser";
 import ProcessingVisitor from "./antlr/parser/ProcessingVisitor";
 
-export type SolvedFunctionData={name:string,type:string,async:boolean,override:boolean,extended:boolean,args:{name:string,type:string}[],body:string};
+export type SolvedFunctionData={name:string,type:string,async:boolean,override:boolean,extended:boolean,args:{name:string,type:string,rest?:boolean}[],body:string};
 export type SolvedClassMember={field:{name:string,init:string,type:string,extended:boolean}[],method:SolvedFunctionData[],constructor:SolvedFunctionData[],class:string[],interface:string[]};
-export type FunctionData={name:string,type:string,async:boolean,override:boolean,extended:boolean,args:{name:string,type:string}[],body:BlockContext};
+export type FunctionData={name:string,type:string,async:boolean,override:boolean,extended:boolean,args:{name:string,type:string,rest?:boolean}[],body:BlockContext};
 export type ClassMember={field:{name:string,init:VariableInitializerContext|null,type:string,extended:boolean}[],method:FunctionData[],constructor:FunctionData[],class:string[],interface:string[]};
 
 export class Transpiler extends ProcessingVisitor<string>{
@@ -46,6 +46,10 @@ export class Transpiler extends ProcessingVisitor<string>{
     return ctx.variableDeclaratorId().IDENTIFIER().getText();
   }
 
+  visitLastFormalParameter=(ctx: LastFormalParameterContext)=>{console.log(ctx)
+    return `...${ctx.variableDeclaratorId().IDENTIFIER().getText()}`;
+  }
+
   visitExpression=(ctx:ExpressionContext)=>{
     let result="";
     const child_count=ctx.getChildCount();
@@ -72,8 +76,7 @@ export class Transpiler extends ProcessingVisitor<string>{
         result+=child.getText()+(child.getText()==="new"?" ":"");
       }
     }
-    return result
-      .replace('System.out.println', 'console.log');
+    return result;
   }
 
   visitCreator=(ctx: CreatorContext)=>{

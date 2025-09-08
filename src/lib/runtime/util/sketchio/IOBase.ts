@@ -57,7 +57,7 @@ export abstract class IOBase{
 
   load_as_blob(name:string,mime:string):Blob|null{
     let result;
-    if((result=this.toBlob(window.localStorage.getItem(name)!,mime))!=null){
+    if(window.localStorage.getItem(name)!=null&&(result=this.toBlob(window.localStorage.getItem(name)!,mime))!=null){
       return result;
     }else if((result=this.load_buffer_as_blob(name,mime))!=null){
       return result;

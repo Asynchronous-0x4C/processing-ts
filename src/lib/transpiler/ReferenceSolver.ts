@@ -1,4 +1,5 @@
-import { ArrayInitializerContext, ClassCreatorRestContext, CreatorContext, DefaultValueContext, EnhancedForControlContext, ExpressionContext, InnerCreatorContext, LambdaExpressionContext, LiteralContext, LocalVariableDeclarationContext, MethodCallContext, MethodDeclarationContext, PrimaryContext, StatementContext, VariableDeclaratorIdContext, VariableInitializerContext } from "./antlr/parser/ProcessingParser";
+import { PApplet } from "../runtime/PApplet";
+import { ArrayInitializerContext, BaseStringLiteralContext, ClassCreatorRestContext, CreatorContext, DefaultValueContext, EnhancedForControlContext, ExpressionContext, InnerCreatorContext, LambdaExpressionContext, LiteralContext, LocalVariableDeclarationContext, MethodCallContext, MethodDeclarationContext, PrimaryContext, StatementContext, StringLiteralContext, SwitchLabelContext, VariableDeclaratorIdContext, VariableInitializerContext } from "./antlr/parser/ProcessingParser";
 import { _main_sketch, applet_instance, get_last } from "./Control";
 import { class_data } from "./MemberAnalyzer";
 import { ClassMember, SolvedClassMember, Transpiler } from "./Transpiler";
@@ -16,6 +17,32 @@ export class ReferenceSolver extends Transpiler{
   }
 
   solve(class_data:Map<string,ClassMember>){
+    this.solved_class_data.set("super",{field:[],method:[],constructor:[],class:[],interface:[]});
+    this.current_class="super";
+    const applet=class_data.get(_main_sketch)!;
+    const globals:ClassMember={field:[],method:[],constructor:[],class:[],interface:[]};
+
+    applet.field=applet.field.filter(f=>{
+      globals.field.push(f);
+      return false;
+    });
+    const replace_name=replace_list.map(v=>v.before);
+    applet.method=applet.method.filter(m=>{
+      if(!replace_name.includes(m.name)&&!overloaded_functions.includes(m.name)&&applet_instance[m.name as keyof PApplet]==null){
+        globals.method.push(m);
+        return false;
+      }
+      return true;
+    });
+
+    globals.field.forEach(f=>{
+      this.solved_class_data.get("super")?.field.push({name:f.name,init:f.init!=null?this.visit(f.init):f.type.startsWith("!")?"false":f.type.startsWith("@")?"0":"null",type:f.type.replace("!","").replace("@",""),extended:f.extended});
+    });
+    globals.method.forEach(m=>{
+        this.vatiable_list=[[...m.args.map(a=>a.name)]];
+        this.solved_class_data.get("super")?.method.push({name:m.name,type:m.type,async:m.async,override:m.override,extended:m.extended,args:m.args,body:m.body!=null?this.visit(m.body).slice(1,-1):""});
+    });
+
     class_data.forEach((v,k)=>{
       this.solved_class_data.set(k,{field:[],method:[],constructor:[],class:v.class,interface:v.interface});
       this.current_class=k;
@@ -32,16 +59,18 @@ export class ReferenceSolver extends Transpiler{
         this.vatiable_list=[[...m.args.map(a=>a.name)]];
         this.solved_class_data.get(k)?.method.push({name:m.name,type:m.type,async:m.async,override:m.override,extended:m.extended,args:m.args,body:m.body!=null?this.visit(m.body).slice(1,-1):""});
       });
+
       if(k==_main_sketch){
         this.solved_class_data.get(k)!.constructor.push({name:k,type:k,async:false,override:true,extended:false,args:[],body:"super(arguments[0]);"});
         const setup=this.solved_class_data.get(k)!.method.find(m=>m.name=="setup");
         if(setup){
           let match=setup.body.match(/__applet__.size\(\d+,\d+(?:,(?:P2D|P3D))?\);/);
           if(!match)match=setup.body.match(/__applet__.fullScreen\((?:P2D|P3D|\d+)?\);/);
+          let idx=0;
           if(match){
-            let idx=match!.index!+match![0].length;
-            setup.body=[setup.body.slice(0,idx),this.solved_class_data.get(k)!.field.filter(f=>!f.extended).map(f=>`this.${f.name}=${f.init}`).join(";")+(this.solved_class_data.get(k)!.field.length>0?";":""),setup.body.slice(idx)].join("");
+            idx=match!.index!+match![0].length;
           }
+          setup.body=[setup.body.slice(0,idx),this.solved_class_data.get(k)!.field.filter(f=>!f.extended).map(f=>`this.${f.name}=${f.init}`).join(";")+(this.solved_class_data.get(k)!.field.length>0?";":""),setup.body.slice(idx)].join("");
         }
         v.method.forEach((m,i)=>{
           replace_list.forEach((replace)=>{
@@ -72,12 +101,23 @@ export class ReferenceSolver extends Transpiler{
       case "return":
         result=`return${ctx.expression(0)!=null?` ${this.visit(ctx.expression(0))}`:""};`;
         break;
+      case "if":
+        if(ctx.ELSE()!=null){
+          result=`if${this.visit(ctx.parExpression())}${this.visit(ctx.statement_list()[0])}else ${this.visit(ctx.statement_list()[1])}`;
+        }else{
+          result=this.visitChildren(ctx);
+        }
+        break;
       default:
         result=this.visitChildren(ctx);
         break;
     }
     this.vatiable_list.pop();
     return result;
+  }
+
+  visitSwitchLabel=(ctx: SwitchLabelContext)=>{
+    return ctx.CASE()!=null?`${ctx.CASE()} ${ctx.expression()!=null?this.visit(ctx.expression()):this.visit(ctx.IDENTIFIER())}:`:`${ctx.DEFAULT()}:`;
   }
 
   visitVariableDeclaratorId=(ctx: VariableDeclaratorIdContext)=>{
@@ -98,8 +138,15 @@ export class ReferenceSolver extends Transpiler{
   }
   
   visitExpression=(ctx:ExpressionContext)=>{
-    return this.visitChildren(ctx)
-      .replace('System.out.println', 'console.log');
+    if(ctx.INSTANCEOF()!=null){
+
+    }else if(ctx.typeType()!=null){
+      return this.visit(ctx.expression(0));
+    }
+    if(this.current_class=="super"&&ctx.children&&ctx._bop!=null&&ctx.expression(0)!=null){
+      if(ctx.expression(0).getText()==="this")ctx.children=ctx.children?.slice(2);
+    }
+    return this.visitChildren(ctx);
   }
 
   visitLambdaExpression=(ctx: LambdaExpressionContext)=>{
@@ -111,9 +158,10 @@ export class ReferenceSolver extends Transpiler{
 
   visitMethodCall=(ctx: MethodCallContext)=>{
     if(ctx.IDENTIFIER()!=null){
-      const {is_member,is_applet_member}=isMemberMethod(class_data,this.current_class,ctx.IDENTIFIER().getText());
+      const {is_member,is_applet_member}=isMemberMethod(class_data,this.current_class,ctx);
       const is_overloaded=(!is_member)&&is_applet_member&&overloaded_functions.includes(ctx.IDENTIFIER().getText());
-      return (is_member?"this.":is_applet_member?"__applet__.":"")+(is_overloaded?"_":"")+ctx.IDENTIFIER()+`(${ctx.expressionList()!=null?this.visit(ctx.expressionList()):""})`;
+      const length=ctx.IDENTIFIER().getText()=="length"&&!(is_member||is_applet_member)&&(ctx.parentCtx as ExpressionContext)._bop!=null&&ctx.expressionList()==null;
+      return (is_member?"this.":is_applet_member?"__applet__.":"")+(is_overloaded?"_":"")+ctx.IDENTIFIER()+(length?"":`(${ctx.expressionList()!=null?this.visit(ctx.expressionList()):""})`);
     }else if(ctx.functionWithPrimitiveTypeName()!=null){
       const _ctx=ctx.functionWithPrimitiveTypeName();
       return `__applet__.${_ctx.getChild(0).getText()}(${_ctx.expressionList()!=null?this.visit(_ctx.expressionList()):""})`;
@@ -123,7 +171,7 @@ export class ReferenceSolver extends Transpiler{
 
   visitPrimary=(ctx: PrimaryContext)=>{
     if(ctx.IDENTIFIER()!=null){
-      const {is_member,is_applet_member}=isMemberVariable(class_data,this.current_class,this.vatiable_list,ctx.IDENTIFIER().getText());
+      const {is_member,is_applet_member}=isMemberVariable(class_data,this.current_class,this.vatiable_list,ctx);
       return (is_member?"this.":is_applet_member?"__applet__.":"")+ctx.IDENTIFIER().getText();
     }
     return this.visitChildren(ctx);
@@ -192,7 +240,8 @@ export class ReferenceSolver extends Transpiler{
   }
 }
 
-function isMemberVariable(class_data:Map<string,ClassMember>,class_name:string,variable_data:string[][],primary:string){
+function isMemberVariable(class_data:Map<string,ClassMember>,class_name:string,variable_data:string[][],ctx:PrimaryContext){
+  const primary=ctx.IDENTIFIER().getText();
   let is_local=false;
   variable_data.forEach((vd)=>{
     vd.forEach((v)=>{
@@ -207,7 +256,7 @@ function isMemberVariable(class_data:Map<string,ClassMember>,class_name:string,v
       is_member=true;
     }
   });
-  let is_applet_member=primary in applet_instance;
+  let is_applet_member=primary in applet_instance&&typeof applet_instance[primary as keyof PApplet] !== "function";
   class_data.get(_main_sketch)?.field.forEach((field)=>{
     if(primary===field.name){
       is_applet_member=true;
@@ -218,7 +267,9 @@ function isMemberVariable(class_data:Map<string,ClassMember>,class_name:string,v
   return {is_member,is_applet_member};
 }
 
-function isMemberMethod(class_data:Map<string,ClassMember>,class_name:string,name:string){
+function isMemberMethod(class_data:Map<string,ClassMember>,class_name:string,ctx:MethodCallContext){
+  if((ctx.parentCtx as ExpressionContext).expression_list().length>0)return {is_member:false,is_applet_member:false};
+  const name=ctx.IDENTIFIER().getText();
   let is_member=false;
   class_data.get(class_name)?.method.forEach((method)=>{
     if(name===method.name){
@@ -226,9 +277,9 @@ function isMemberMethod(class_data:Map<string,ClassMember>,class_name:string,nam
     }
   });
   if(class_name===_main_sketch)is_member=false;
-  let is_applet_member=name in applet_instance;
+  let is_applet_member=name in applet_instance&&(typeof applet_instance[name as keyof PApplet] === "function"||overloaded_functions.includes(name));
   class_data.get(_main_sketch)?.method.forEach((method)=>{
-    if(name===method.name){
+    if(name===method.name){console.log(name,method,typeof applet_instance[name as keyof PApplet])
       is_applet_member=true;
     }
   });

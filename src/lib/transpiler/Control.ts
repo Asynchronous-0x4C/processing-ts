@@ -1,4 +1,4 @@
-import { CommonTokenStream, CharStreams } from "antlr4";
+import { CommonTokenStream, CharStreams, ErrorListener, RecognitionException, Recognizer, Token } from "antlr4";
 import ProcessingLexer from "./antlr/parser/ProcessingLexer";
 import ProcessingParser from "./antlr/parser/ProcessingParser";
 import { PApplet } from "../runtime/PApplet";
@@ -11,6 +11,8 @@ export const primitive_numbers:string[]=["int","float","long","double","short","
 
 export let applet_instance:PApplet;
 export let _main_sketch:string="";
+
+let error_listener:TranspileErrorListener<Token>;
 
 export function transpile(sketch_content:string,main_sketch:string){
   _main_sketch=main_sketch;
@@ -32,7 +34,7 @@ export function transpile(sketch_content:string,main_sketch:string){
   performance.measure("function solve_reference()","solve_reference()","convert()");
   performance.measure("function convert()","convert()","end");
   performance.getEntriesByType("measure").forEach(e=>console.log(`${e.name} takes ${e.duration}ms`));
-  return converted_class_data;
+  return {result:converted_class_data,error:error_listener};
 }
 
 function analyze_member(sketch_content:string){
@@ -40,6 +42,8 @@ function analyze_member(sketch_content:string){
   const member_analyzer=new MemberAnalyzer(_main_sketch);
   performance.mark("read_stream");
   const parser = new ProcessingParser(new CommonTokenStream(new ProcessingLexer(CharStreams.fromString(sketch_content))));
+  error_listener = new TranspileErrorListener<Token>();
+  parser.addErrorListener(error_listener);
   performance.mark("parse_tree");
   const tree = parser.processingSketch();
   performance.mark("visit");
@@ -61,4 +65,23 @@ function convert(solved_class_data:Map<string,SolvedClassMember>){
 export function get_last<T>(a:T[]){
   if(a.length==0)return undefined;
   return a[a.length-1];
+}
+
+export class TranspileErrorListener<T> extends ErrorListener<T>{
+  error=false;
+  message="";
+  column=0;
+  line=0;
+
+  syntaxError(recognizer: Recognizer<T>, offendingSymbol: T, line: number, column: number, msg: string, e: RecognitionException | undefined){
+    this.error=true;
+    this.message=msg;
+    this.column=column;
+    this.line=line;
+  }
+
+  getErrorMessage(){
+    if(!this.error)return "";
+    return `${this.message}\nline: ${this.line},column: ${this.column}`
+  }
 }
