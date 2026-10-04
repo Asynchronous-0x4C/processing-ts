@@ -63,6 +63,18 @@ export class BrowserRunner {
     await this.server?.close();
   }
 
+  /** Transpile a sketch `repeat` times in a fresh page (first run = cold). */
+  async transpileTimes(sketch: SketchSource, repeat: number): Promise<{ total: number; timings?: Record<string, number>; error?: string }[]> {
+    const page = await this.browser!.newPage();
+    try {
+      await page.goto(`${this.baseUrl}/tools/vt/harness/index.html`, { waitUntil: "load" });
+      await page.waitForFunction(() => (window as any).__vt__ !== undefined);
+      return await page.evaluate(([o, n]) => (window as any).__vt__.transpile(o, n), [{ main: sketch.main, files: sketch.files }, repeat] as const);
+    } finally {
+      await page.close();
+    }
+  }
+
   /** Run one sketch in a fresh page. `frames` = number of draw() calls before capture. */
   async run(sketch: SketchSource, frames: number, timeoutMs = 30_000): Promise<BrowserRunResult> {
     const page = await this.browser!.newPage({ viewport: { width: 1280, height: 1024 }, deviceScaleFactor: 1 });

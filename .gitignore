@@ -25,3 +25,6 @@ dist-ssr
 *.jar
 # visual test outputs
 tests/visual/out/
+
+# benchmark outputs
+tests/bench/out/

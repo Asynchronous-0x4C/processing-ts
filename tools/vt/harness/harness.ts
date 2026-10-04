@@ -70,4 +70,24 @@ async function run(opts: RunOptions) {
   }
 }
 
-(window as unknown as { __vt__: { run: typeof run } }).__vt__ = { run };
+/**
+ * Transpile only, `repeat` times in this page (the first run is cold). Used by tools/bench.
+ * Returns the total and per-phase milliseconds of every run.
+ */
+function transpile(opts: { main: string; files: { name: string; content: string }[] }, repeat: number) {
+  const manager = new SketchManager({ manual_step: true });
+  const runs: { total: number; timings?: Record<string, number>; error?: string }[] = [];
+  for (let i = 0; i < repeat; i++) {
+    const t = performance.now();
+    try {
+      const r = manager.transpileSketch({ main: opts.main, content: opts.files });
+      runs.push({ total: performance.now() - t, timings: r.timings, error: r.error?.error ? r.error.getErrorMessage() : undefined });
+    } catch (e) {
+      runs.push({ total: performance.now() - t, error: String(e) });
+      break;
+    }
+  }
+  return runs;
+}
+
+(window as unknown as { __vt__: { run: typeof run; transpile: typeof transpile } }).__vt__ = { run, transpile };

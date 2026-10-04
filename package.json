@@ -34,11 +34,14 @@
     "test:visual:ref": "node tools/vt/cli.ts ref",
     "vt": "node tools/vt/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false && tsc -p tools && tsc -p tests",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench": "node tools/bench/cli.ts parse transpile",
+    "size": "node tools/bench/cli.ts size"
   },
   "devDependencies": {
     "@types/node": "^24.0.3",
     "@types/pngjs": "^6.0.5",
+    "esbuild": "^0.25.12",
     "pixelmatch": "^7.2.0",
     "playwright-core": "^1.63.0",
     "pngjs": "^7.0.0",

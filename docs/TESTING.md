@@ -5,6 +5,7 @@
 | 単体テスト | `npm test`（Vitest, `tests/unit/*.test.ts`） | Node で動く純粋なロジック（構文解析 `SketchParser`、PVector など、tools/vt の補助関数）。トランスパイラ全体は現状 `new PApplet()`（Pixi/DOM）に依存するため対象外（P1 の新コンパイラで Node 対応） |
 | 視覚 / 出力回帰テスト | `npm run test:visual` | 本物の Processing との画像・println 比較（以下） |
 | 型チェック | `npm run typecheck` | src/lib・tools・tests |
+| 性能 / サイズ | `npm run bench` / `npm run size` | 変換時間・バンドルサイズ（後述「性能・サイズ計測」） |
 
 # 視覚 / 出力回帰テスト
 
@@ -125,8 +126,25 @@ pixelmatch（`includeAA: false` でアンチエイリアス差を無視）で不
 `npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 19 ケース中 5 PASS / 14 XFAIL。
 各 XFAIL の原因は `vt.json` の `knownIssue` と [STATUS.md](STATUS.md) にある。
 
+## 性能・サイズ計測（tools/bench）
+
+```sh
+npm run bench                      # parse（Node）+ transpile（ブラウザ）。= node tools/bench/cli.ts parse transpile
+npm run size                       # バンドルサイズ（esbuild で minify した ESM の min / gzip / brotli）
+node tools/bench/cli.ts parse --filter synthetic --runs 50
+node tools/bench/cli.ts all --update-budget   # 意図した変更でサイズ/時間が変わったら予算を更新してコミット
+```
+
+- 入力: `public/samples` の全スケッチ、`tests/visual/cases` の全ケース、生成した約 5,000 行のスケッチ（`synthetic-5k`、`tools/bench/inputs.ts`）。
+- parse: `src/lib/transpiler/SketchParser.ts` を esbuild で Node 用にバンドルし、入力ごとに新しいプロセスで「最初の 1 回（cold）」と「その後の中央値（warm）」を測る。
+- transpile: ヘッドレス Chromium の新しいページで `SketchManager.transpileSketch` を繰り返し、1 回目（cold）と 2 回目以降の中央値（warm）、およびそのうちの構文解析時間を出す。
+- 予算: `tools/bench/budget.json`。超えると終了コード 1（回帰検出用）。サイズは +5%、時間は +50%（最低 5ms）の余裕で `--update-budget` が書き換える。
+- 結果: `tests/bench/out/<command>.md` と `.json`（gitignore 済み）。
+
+2026-10-04 時点の主な値: `synthetic-5k` の warm 解析 15ms（SLL 化前は約 8 秒）、`simple_shooter_game`（199 行）のブラウザでの cold 変換 約 150ms（うち解析 135ms）、ライブラリ本体 87 KiB gz（pixi 込み 228 KiB gz）。
+
 ## 今後追加すべきテスト（ROADMAP 参照）
 
 - トランスパイラの単体テスト（Vitest）: AST/型推論/コード生成のスナップショット
 - Processing 同梱 examples（`C:/Program Files/Processing/app/resources/modes/java/examples`、254 本）を流す互換性コーパス（ROADMAP P0-5）
-- パフォーマンス計測（変換時間・初回描画までの時間・フレーム時間・バンドルサイズ）の CLI 化と閾値チェック
+- 初回描画までの時間・フレーム時間の計測（tools/bench に追加）

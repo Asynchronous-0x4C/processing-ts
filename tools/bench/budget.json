@@ -1,0 +1,29 @@
+{
+  "size": {
+    "library (pixi.js external)": {
+      "gzipKiB": 91.6
+    },
+    "library + pixi.js": {
+      "gzipKiB": 239.9
+    },
+    "parser (antlr4 + generated)": {
+      "gzipKiB": 72.5
+    }
+  },
+  "parse": {
+    "synthetic-5k": {
+      "warmMs": 22.7
+    },
+    "samples/simple_shooter_game": {
+      "warmMs": 5
+    }
+  },
+  "transpile": {
+    "samples/simple_shooter_game": {
+      "coldMs": 231.2
+    },
+    "synthetic-5k": {
+      "coldMs": 165.5
+    }
+  }
+}

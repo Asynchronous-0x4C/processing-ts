@@ -22,16 +22,16 @@
 
 ## P0: 基盤整備とすぐ効く改善
 
-- [ ] **P0-1 構文解析の SLL 化**（S, T1）
+- [x] **P0-1 構文解析の SLL 化**（S, T1）
   `Control.ts` で `PredictionMode.SLL` + `BailErrorStrategy` で解析し、失敗したら LL（既定のエラー戦略）で再解析する。
-  完了条件: 視覚テストに回帰なし。docs/research/2026-10-measurements の 5k 行入力で、ウォーム解析が 100ms 未満（P0-4 の bench で計測）。
+  完了条件: 視覚テストに回帰なし。5k 行入力で、ウォーム解析が 100ms 未満（P0-4 の bench で計測）。→ 結果: 15ms（`node tools/bench/cli.ts parse --filter synthetic`）
 - [x] **P0-2 デバッグ出力の除去**（S, T16, R8）
   `PImage.updatePixels` の `console.log(btoa(...))`、`Transpiler.visitLastFormalParameter` / `ReferenceSolver.isMemberMethod` の console.log、`Control.ts` の計測ログ（オプション化）。
   完了条件: `npm run vt -- shot public/samples/Image/create_image` がエラーなしで完走。
 - [x] **P0-3 リポジトリの整理**（S）
   未使用依存（`p5`, `@types/p5`）と自己参照 `"processing-ts": "file:"` の削除。旧実装（`runtime/renderer/`, `runtime/worker/`, `runner/AsyncRunner.ts`, `runtime/intex.ts`, `index.ts` のコメントアウト）の削除。`vite.config.ts` のサンプル一覧生成をパス区切りに依存しない実装にし、無関係な watcher パスを削除。
   完了条件: `npm run build` を一時ディレクトリへ出力して成功（`vite build --outDir <tmp>`。コミット済みの dist は変えない）、デモ（`npm run dev`）のサンプル一覧が従来どおり。
-- [ ] **P0-4 性能・サイズ計測 CLI**（M）
+- [x] **P0-4 性能・サイズ計測 CLI**（M）
   `tools/bench/`: (a) 変換時間（同梱サンプル + 合成 5k 行、コールド/ウォーム。ブラウザは vt のハーネスを流用）、(b) バンドルサイズ（エントリごとの min/gzip）を計測し、`docs/research` の基準値と予算（EVALUATION.md §8）と比較して表で出す。`npm run bench` / `npm run size`。
   完了条件: 両コマンドが表を出力し、予算超過時に終了コード 1。
 - [ ] **P0-5 互換性コーパス・ランナー**（M）
@@ -127,7 +127,7 @@ CodeMirror 6 + Lezer Processing 文法のデモエディタ（ハイライト、
 | 時期 | ツール | 内容 |
 |---|---|---|
 | 済 | `tools/vt run/ref/shot/list` | Processing の参照画像・stdout と比較（[TESTING.md](TESTING.md)） |
-| P0-4 | `npm run bench` / `npm run size` | 変換時間・バンドルサイズの計測と予算チェック |
+| 済 (P0-4) | `npm run bench` / `npm run size` | 変換時間・バンドルサイズの計測と予算チェック |
 | P0-5 | `npm run vt -- corpus` | 同梱 examples 254 本の互換性集計 |
 | P0-6 | `npm test`（Vitest） | コンパイラの単体テスト |
 | P1-8 | `npm run test:lang` | 描画しない stdout 適合テストを Node で高速実行 |
