@@ -1,0 +1,259 @@
+import { PGraphics, enumPath, type Path, CAP } from "./PGraphics";
+import { PImage, createNativeCanvas, type Native2D, type NativeCanvas } from "./PImage";
+import { DEFAULT_FONT_FAMILY, PFont, ensureDefaultFont } from "./PFont";
+import type { PApplet } from "./PApplet";
+
+const BEVEL=32,ROUND_JOIN=2;
+
+/** Processing blend modes → canvas composite operations. */
+const COMPOSITE:Record<number,GlobalCompositeOperation>={
+  0:"copy", // REPLACE
+  1:"source-over", // BLEND
+  2:"lighter", // ADD
+  4:"difference", // SUBTRACT (no exact canvas equivalent)
+  8:"lighten", // LIGHTEST
+  16:"darken", // DARKEST
+  32:"difference",
+  64:"exclusion",
+  128:"multiply",
+  256:"screen",
+  512:"overlay",
+  1024:"hard-light",
+  2048:"soft-light",
+  4096:"color-dodge", // DODGE
+  8192:"color-burn", // BURN
+};
+
+/**
+ * The JAVA2D renderer on the Canvas 2D API: immediate drawing, the canvas keeps what was drawn (as the
+ * Java2D image does), and the canvas doubles as the PImage store for loadPixels()/get()/set().
+ */
+export class PGraphicsJava2D extends PGraphics{
+  canvas:NativeCanvas|null;
+  ctx:Native2D|null=null;
+  private cssCache=new Map<number,string>();
+  private tintCache=new WeakMap<object,{key:string,canvas:NativeCanvas}>();
+
+  constructor(parent:PApplet,canvas?:HTMLCanvasElement|null,primary=false){
+    super(parent);
+    this.canvas=canvas??null;
+    this.primary=primary;
+    this.format=primary?1:2;
+  }
+
+  setSize(width:number,height:number,density=1){
+    this.width=width;
+    this.height=height;
+    this.pixelDensity=density;
+    this.pixelWidth=Math.round(width*density);
+    this.pixelHeight=Math.round(height*density);
+    if(this.canvas){
+      this.canvas.width=this.pixelWidth;
+      this.canvas.height=this.pixelHeight;
+    }else{
+      this.canvas=createNativeCanvas(this.pixelWidth,this.pixelHeight);
+    }
+    this.ctx=this.canvas.getContext("2d") as Native2D;
+    this.__canvas__=this.canvas;
+    this.__ctx__=this.ctx;
+    this.pixels=new Int32Array(this.pixelWidth*this.pixelHeight);
+    this.applyMatrixToRenderer();
+    this.applyBlendMode(this.style.blendMode);
+    this.ctx.miterLimit=10;
+  }
+
+  /** smooth()/noSmooth(): image smoothing (shapes are always antialiased by the canvas). */
+  smooth(_level?:number){
+    if(this.ctx)this.ctx.imageSmoothingEnabled=true;
+  }
+
+  noSmooth(){
+    if(this.ctx)this.ctx.imageSmoothingEnabled=false;
+  }
+
+  private css(argb:number):string{
+    let s=this.cssCache.get(argb);
+    if(s===undefined){
+      s=`rgba(${(argb>>16)&0xff},${(argb>>8)&0xff},${argb&0xff},${(argb>>>24)/255})`;
+      if(this.cssCache.size>256)this.cssCache.clear();
+      this.cssCache.set(argb,s);
+    }
+    return s;
+  }
+
+  protected applyMatrixToRenderer(){
+    if(!this.ctx)return;
+    const m=this.matrix,d=this.pixelDensity;
+    this.ctx.setTransform(m.m00*d,m.m10*d,m.m01*d,m.m11*d,m.m02*d,m.m12*d);
+  }
+
+  protected applyBlendMode(mode:number){
+    if(this.ctx)this.ctx.globalCompositeOperation=COMPOSITE[mode]??"source-over";
+  }
+
+  private path2d(path:Path):Path2D{
+    const p=new Path2D();
+    const P=enumPath;
+    for(let i=0;i<path.length;){
+      switch(path[i]){
+        case P.MOVE:p.moveTo(path[i+1],path[i+2]);i+=3;break;
+        case P.LINE:p.lineTo(path[i+1],path[i+2]);i+=3;break;
+        case P.QUAD:p.quadraticCurveTo(path[i+1],path[i+2],path[i+3],path[i+4]);i+=5;break;
+        case P.CUBIC:p.bezierCurveTo(path[i+1],path[i+2],path[i+3],path[i+4],path[i+5],path[i+6]);i+=7;break;
+        case P.ELLIPSE:p.ellipse(path[i+1],path[i+2],Math.max(0,path[i+3]),Math.max(0,path[i+4]),0,path[i+5],path[i+6]);i+=7;break;
+        default:p.closePath();i+=1;break;
+      }
+    }
+    return p;
+  }
+
+  private setStroke(ctx:Native2D){
+    const s=this.style;
+    ctx.strokeStyle=this.css(s.strokeColor);
+    ctx.lineWidth=s.strokeWeight;
+    ctx.lineCap=s.strokeCap===CAP.SQUARE?"butt":s.strokeCap===CAP.PROJECT?"square":"round";
+    ctx.lineJoin=s.strokeJoin===BEVEL?"bevel":s.strokeJoin===ROUND_JOIN?"round":"miter";
+  }
+
+  protected drawPath(path:Path,fill:boolean,stroke:boolean){
+    const ctx=this.ctx;
+    if(!ctx)return;
+    const s=this.style;
+    const p=this.path2d(path);
+    if(fill&&s.fill){
+      ctx.fillStyle=this.css(s.fillColor);
+      ctx.fill(p,"nonzero");
+    }
+    if(stroke&&s.stroke&&s.strokeWeight>0){
+      this.setStroke(ctx);
+      ctx.stroke(p);
+    }
+  }
+
+  protected drawPoint(x:number,y:number){
+    const ctx=this.ctx;
+    if(!ctx)return;
+    const s=this.style;
+    const w=s.strokeWeight;
+    ctx.fillStyle=this.css(s.strokeColor);
+    if(s.strokeCap===CAP.ROUND){
+      const p=new Path2D();
+      p.ellipse(x,y,w/2,w/2,0,0,Math.PI*2);
+      ctx.fill(p);
+    }else if(s.strokeCap===CAP.PROJECT){
+      ctx.fillRect(x-w/2,y-w/2,w,w);
+    }
+    // SQUARE (butt) caps on a zero-length line draw nothing, as in Java2D.
+  }
+
+  protected backgroundImpl(argb:number,clear=false){
+    const ctx=this.ctx;
+    if(!ctx)return;
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalCompositeOperation="source-over";
+    ctx.globalAlpha=1;
+    if(clear||!this.primary)ctx.clearRect(0,0,this.pixelWidth,this.pixelHeight);
+    if(!clear){
+      // The sketch window ignores the background's alpha (Processing does the same).
+      ctx.fillStyle=this.css(this.primary?(argb|0xff000000):argb);
+      ctx.fillRect(0,0,this.pixelWidth,this.pixelHeight);
+    }
+    ctx.restore();
+  }
+
+  protected backgroundImage(img:PImage){
+    const ctx=this.ctx,src=img.__native__();
+    if(!ctx||!src)return;
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalCompositeOperation="copy";
+    ctx.drawImage(src,0,0,this.pixelWidth,this.pixelHeight);
+    ctx.restore();
+  }
+
+  /** The image's canvas, multiplied by the tint color (cached per image and tint). */
+  private tinted(img:PImage,src:NativeCanvas):NativeCanvas{
+    const t=this.style.tintColor;
+    const key=`${t}:${img.pixelWidth}x${img.pixelHeight}`;
+    const cached=this.tintCache.get(img);
+    if(cached&&cached.key===key&&!(img instanceof PGraphics))return cached.canvas;
+    const c=createNativeCanvas(img.pixelWidth,img.pixelHeight);
+    const cx=c.getContext("2d") as Native2D;
+    cx.drawImage(src,0,0);
+    cx.globalCompositeOperation="multiply";
+    cx.fillStyle=this.css(t|0xff000000);
+    cx.fillRect(0,0,img.pixelWidth,img.pixelHeight);
+    cx.globalCompositeOperation="destination-in";
+    cx.drawImage(src,0,0);
+    this.tintCache.set(img,{key,canvas:c});
+    return c;
+  }
+
+  protected drawImage(img:PImage,x1:number,y1:number,x2:number,y2:number,u1:number,v1:number,u2:number,v2:number){
+    const ctx=this.ctx;
+    let src=img.__native__();
+    if(!ctx||!src)return;
+    const s=this.style;
+    let alpha=1;
+    if(s.tint){
+      alpha=(s.tintColor>>>24)/255;
+      if((s.tintColor&0xffffff)!==0xffffff)src=this.tinted(img,src);
+    }
+    const d=img.pixelDensity;
+    ctx.save();
+    ctx.globalAlpha=alpha;
+    // Negative sizes flip the image, as in Java2D.
+    let w=x2-x1,h=y2-y1;
+    if(w<0||h<0){
+      ctx.translate(w<0?x1:0,h<0?y1:0);
+      ctx.scale(w<0?-1:1,h<0?-1:1);
+      x1=w<0?0:x1;
+      y1=h<0?0:y1;
+      w=Math.abs(w);
+      h=Math.abs(h);
+    }
+    ctx.drawImage(src,u1*d,v1*d,(u2-u1)*d,(v2-v1)*d,x1,y1,w,h);
+    ctx.restore();
+  }
+
+  private font():string{
+    ensureDefaultFont();
+    const f=this.style.textFont;
+    const family=f?f.cssFamily():`"${DEFAULT_FONT_FAMILY}", sans-serif`;
+    return `${this.style.textSize}px ${family}`;
+  }
+
+  protected drawTextLine(line:string,x:number,y:number){
+    const ctx=this.ctx;
+    if(!ctx||!line)return;
+    ctx.font=this.font();
+    ctx.textAlign="left";
+    ctx.textBaseline="alphabetic";
+    ctx.fillStyle=this.css(this.style.fillColor);
+    ctx.fillText(line,x,y);
+  }
+
+  private measure(text:string):TextMetrics|null{
+    const ctx=this.ctx??this.parent?.g?.ctx;
+    if(!ctx)return null;
+    ctx.font=this.font();
+    return ctx.measureText(text);
+  }
+
+  protected textWidthImpl(line:string){
+    return this.measure(line)?.width??line.length*this.style.textSize*0.5;
+  }
+
+  protected textAscentImpl(){
+    const m=this.measure("H");
+    return m?.fontBoundingBoxAscent??this.style.textSize*0.8;
+  }
+
+  protected textDescentImpl(){
+    const m=this.measure("H");
+    return m?.fontBoundingBoxDescent??this.style.textSize*0.2;
+  }
+}
+
+export { PFont };
