@@ -49,6 +49,7 @@
     "@lezer/generator": "^1.8.1",
     "@types/node": "^24.0.3",
     "@types/pngjs": "^6.0.5",
+    "antlr4": "^4.13.2",
     "esbuild": "^0.25.12",
     "pixelmatch": "^7.2.0",
     "playwright-core": "^1.63.0",
@@ -61,7 +62,6 @@
   "dependencies": {
     "@lezer/common": "^1.5.3",
     "@lezer/lr": "^1.4.10",
-    "antlr4": "^4.13.2",
     "pixi.js": "^8.9.1"
   },
   "engines": {

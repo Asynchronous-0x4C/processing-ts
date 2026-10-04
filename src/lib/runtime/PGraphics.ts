@@ -38,6 +38,8 @@ export class PGraphics extends PImage{
     }
     this.context.graphics.renderable=false;
     this.__begin__();
+    // Processing starts the sketch window gray (204); createGraphics() surfaces start transparent.
+    if(this.context.canvas!=null)this.background(204);
   }
 
   background(c1:number|PImage,c2?:number,c3?:number,c4?:number){
@@ -472,22 +474,45 @@ export class PGraphics extends PImage{
   }
 }
 
+/**
+ * fill(x)/stroke(x)/background(x) with one value (and an optional alpha): an int with no alpha bits that
+ * fits the color mode's range is a gray level, anything else is an ARGB color (0xAARRGGBB, as Processing's
+ * color ints and #RRGGBB literals are).
+ */
+function isArgb(c:number,color_mode:{X:number}){
+  return Number.isInteger(c)&&((c&0xff000000)!==0||c>color_mode.X||c<0);
+}
+
+/** ARGB int → values in the current color mode's units. */
+function argbToMode(c:number,alpha:number|null,color_mode:{mode:number,X:number,Y:number,Z:number,A:number}):number[]{
+  const r=(c>>16)&0xff,g=(c>>8)&0xff,b=c&0xff;
+  const a=alpha??((c>>>24)/255*color_mode.A);
+  if(color_mode.mode==1)return [r/255*color_mode.X,g/255*color_mode.Y,b/255*color_mode.Z,a];
+  // HSB
+  const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
+  let h=0;
+  if(d!==0)h=max===r?((g-b)/d+6)%6:max===g?(b-r)/d+2:(r-g)/d+4;
+  return [h/6*color_mode.X,(max===0?0:d/max)*color_mode.Y,max/255*color_mode.Z,a];
+}
+
 function convert_color(color:number[],color_mode:{mode:number,X:number,Y:number,Z:number,A:number}){
   const def=color_mode.mode==1?[255,255,255,1]:[360,100,100,1];
   if(color.length==1){
-    if(color[0]<0||color_mode.Z<color[0]){
-      color=[color[0]&0xff,(color[0]>>8)&0xff,(color[0]>>16)&0xff,color[0]>>>24];
+    if(isArgb(color[0],color_mode)){
+      color=argbToMode(color[0],null,color_mode);
     }else{
-      color=[color[0],color[0],color[0],255];
+      color=[color[0]/color_mode.X*color_mode.Z,color[0]/color_mode.X*color_mode.Z,color[0]/color_mode.X*color_mode.Z,color_mode.A];
+      if(color_mode.mode!=1)color=[0,0,color[2],color_mode.A];
     }
   }else if(color.length==2){
-    if(color[0]<0||color_mode.Z<color[0]){
-      color=[color[0]&0xff,(color[0]>>8)&0xff,(color[0]>>16)&0xff,color[1]];
+    if(isArgb(color[0],color_mode)){
+      color=argbToMode(color[0],color[1],color_mode);
     }else{
-      color=[color[0],color[0],color[0],color[1]];
+      color=[color[0]/color_mode.X*color_mode.Z,color[0]/color_mode.X*color_mode.Z,color[0]/color_mode.X*color_mode.Z,color[1]];
+      if(color_mode.mode!=1)color=[0,0,color[2],color[1]];
     }
   }else if(color.length==3){
-    color=[color[0],color[1],color[2],255];
+    color=[color[0],color[1],color[2],color_mode.A];
   }else if(color.length==4){
     color=[color[0],color[1],color[2],color[3]];
   }else{

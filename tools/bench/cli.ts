@@ -153,9 +153,7 @@ async function benchTranspile(): Promise<{ md: string; failed: boolean; data: un
       const r = {
         lines: input.lines,
         coldMs: cold.total,
-        coldParseMs: cold.timings?.parse ?? NaN,
         warmMs: median(warm.map((x) => x.total)),
-        warmParseMs: median(warm.map((x) => x.timings?.parse ?? NaN)),
         error: cold.error ?? null,
       };
       data[input.name] = r;
@@ -164,14 +162,14 @@ async function benchTranspile(): Promise<{ md: string; failed: boolean; data: un
       if (limit !== undefined && r.coldMs > limit) failed = true;
       rows.push({
         name: input.name,
-        values: { lines: r.lines, "cold ms (parse)": `${ms(r.coldMs)} (${ms(r.coldParseMs)})`, "warm ms (parse)": `${ms(r.warmMs)} (${ms(r.warmParseMs)})`, error: r.error ? "yes" : "" },
+        values: { lines: r.lines, "cold ms": ms(r.coldMs), "warm ms": ms(r.warmMs), error: r.error ? "yes" : "" },
         over,
       });
     }
   } finally {
     await runner.stop();
   }
-  return { md: table("transpile (headless Chromium, cold = first run in a fresh page)", ["lines", "cold ms (parse)", "warm ms (parse)", "error"], rows), failed, data };
+  return { md: table("transpile: SketchManager.transpileSketch with the new compiler (headless Chromium, cold = first run in a fresh page)", ["lines", "cold ms", "warm ms", "error"], rows), failed, data };
 }
 
 // --- size: esbuild bundles (minified ESM) and their gzip/brotli sizes

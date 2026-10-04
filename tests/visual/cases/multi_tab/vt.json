@@ -2,7 +2,5 @@
   "tags": [
     "lang"
   ],
-  "note": "Tabs, inheritance, constructor/method overloading (int vs float).",
-  "expect": "fail",
-  "knownIssue": "Overload dispatch joins conditions with commas (Converter: map() without join) -> SyntaxError."
+  "note": "Tabs, inheritance, constructor/method overloading (int vs float)."
 }

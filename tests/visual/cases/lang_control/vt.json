@@ -2,7 +2,5 @@
   "tags": [
     "lang"
   ],
-  "note": "Language semantics through println() (new compiler, Node: npm run test:lang).",
-  "expect": "fail",
-  "knownIssue": "Old transpiler: no Java semantics (types, overloads, Java formatting). Passes with the new compiler (P1-5) in npm run test:lang."
+  "note": "Language semantics through println() (also checked in Node by npm run test:lang)."
 }

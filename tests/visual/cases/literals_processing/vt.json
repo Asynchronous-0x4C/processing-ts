@@ -2,7 +2,5 @@
   "tags": [
     "lang"
   ],
-  "note": "Literal forms whose values Processing 4.5.2 defines differently from (or beyond) plain Java, compared via println(): text blocks keep a leading newline and the raw indentation, #RRGGBB has alpha FF, hex/binary/octal int literals wrap, var.",
-  "expect": "fail",
-  "knownIssue": "Old transpiler: text blocks and var are not supported (SyntaxError); fixed by the new compiler (P1-5/P1-9)."
+  "note": "Literal forms whose values Processing 4.5.2 defines differently from (or beyond) plain Java, compared via println(): text blocks keep a leading newline and the raw indentation, #RRGGBB has alpha FF, hex/binary/octal int literals wrap, var."
 }

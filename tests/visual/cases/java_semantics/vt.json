@@ -2,7 +2,5 @@
   "tags": [
     "lang"
   ],
-  "note": "Compared via println(): int division, casts, char arithmetic, overflow, float formatting.",
-  "expect": "fail",
-  "knownIssue": "Transpiled JS has a SyntaxError (long literal L suffix); casts are dropped, no integer division, char is a string."
+  "note": "Compared via println(): int division, casts, char arithmetic, overflow, float formatting."
 }

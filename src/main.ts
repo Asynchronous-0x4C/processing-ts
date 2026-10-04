@@ -395,7 +395,10 @@ runButton.addEventListener('pointerdown', () => {
   console.log("実行ボタンが押されました。");
   isRunning = true;
   updateControlState();
-  manager.runSketch(manager.loadSketchString(tabs.map(t => t.code).join("\n"), tabs[0].name, undefined));
+  // One entry per tab, so that compile errors point at the right tab and line.
+  const sketch = manager.loadSketchString(tabs[0].code, `${tabs[0].name}.pde`, undefined);
+  sketch.content = tabs.map(t => ({ name: `${t.name}.pde`, content: t.code }));
+  manager.runSketch(sketch);
 });
 
 stopButton.addEventListener('pointerdown', () => {

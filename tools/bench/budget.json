@@ -1,10 +1,10 @@
 {
   "size": {
     "library (pixi.js external)": {
-      "gzipKiB": 91.6
+      "gzipKiB": 157.9
     },
     "library + pixi.js": {
-      "gzipKiB": 239.9
+      "gzipKiB": 306.5
     },
     "parser (antlr4 + generated)": {
       "gzipKiB": 72.5
@@ -13,10 +13,10 @@
       "gzipKiB": 32.1
     },
     "compiler front end (lezer + AST, src/compiler/parse.ts)": {
-      "gzipKiB": 42.8
+      "gzipKiB": 42.7
     },
     "compiler (front end + type checker + library model + codegen, src/compiler/index.ts)": {
-      "gzipKiB": 123.5
+      "gzipKiB": 125
     },
     "language runtime (src/runtime/lang)": {
       "gzipKiB": 20
@@ -40,10 +40,10 @@
   },
   "transpile": {
     "samples/simple_shooter_game": {
-      "coldMs": 231.2
+      "coldMs": 33.6
     },
     "synthetic-5k": {
-      "coldMs": 165.5
+      "coldMs": 126.5
     }
   }
 }

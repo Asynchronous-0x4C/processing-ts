@@ -4,8 +4,30 @@ import { PApplet } from "../PApplet";
 import { ArrayList } from "../util/ArrayList";
 import { Runnable, Consumer, Supplier, Function, FunctionalInterface } from "../util/function";
 import { Event, MouseEvent, KeyEvent } from "../event";
+import { javaKey } from "../event/KeyEvent";
 import { PVector } from "../util/PVector";
 import { HashMap } from "../util/HashMap";
+import { PImage } from "../PImage";
+import { PGraphics } from "../PGraphics";
+import { PFont } from "../PFont";
+import { JSONObject } from "../data/JSONObject";
+import { JSONArray } from "../data/JSONArray";
+import { javaClasses, lang } from "../../../runtime/lang/index.ts";
+import type { SourceMapV3 } from "../../../compiler/index.ts";
+
+/** Processing classes by binary name, for compiled sketches ($rt.classes). */
+const PROCESSING_CLASSES:Record<string,unknown>={
+  "processing.core.PApplet":PApplet,
+  "processing.core.PVector":PVector,
+  "processing.core.PImage":PImage,
+  "processing.core.PGraphics":PGraphics,
+  "processing.core.PFont":PFont,
+  "processing.data.JSONObject":JSONObject,
+  "processing.data.JSONArray":JSONArray,
+  "processing.event.MouseEvent":MouseEvent,
+  "processing.event.KeyEvent":KeyEvent,
+  "processing.event.Event":Event,
+};
 
 export abstract class Runner{
   pre_count:number=-1;
@@ -18,7 +40,42 @@ export abstract class Runner{
 
   abstract manager:SketchManager;
 
-  abstract init(sketch:string):void;
+  /** Text printed by the sketch that does not end with a newline yet. */
+  private pending_output="";
+
+  /** Output of print/println: complete lines go to the log listeners, one call per line. */
+  write_output(text:string){
+    this.pending_output+=text;
+    let i:number;
+    while((i=this.pending_output.indexOf("\n"))>=0){
+      const line=this.pending_output.slice(0,i);
+      this.pending_output=this.pending_output.slice(i+1);
+      this.log_listeners.forEach(l=>l([line]));
+    }
+  }
+
+  flushOutput(){
+    if(this.pending_output==="")return;
+    const line=this.pending_output;
+    this.pending_output="";
+    this.log_listeners.forEach(l=>l([line]));
+  }
+
+  /** Report an uncaught exception like Java ("java.lang.NullPointerException: ...") to the error listeners. */
+  report_error(e:unknown){
+    const message=lang.toJava(e).toString();
+    this.error_listeners.forEach(l=>l(message));
+    console.error(e);
+  }
+
+  /** $rt.classes: the Java runtime, Processing's classes, and the dependencies added by name. */
+  runtime_classes():Record<string,unknown>{
+    const classes:Record<string,unknown>={...javaClasses,...PROCESSING_CLASSES};
+    for(const c of this.arg_classes)if(!(c.name in classes))classes[c.name]=c.type;
+    return classes;
+  }
+
+  abstract init(sketch:string,map?:SourceMapV3|null):void;
   abstract loop():void;
   abstract step():Promise<number>;
   abstract stop():void;
@@ -111,9 +168,18 @@ export class DefaultRunner extends Runner{
     this.event_queue=[];
   }
 
-  async init(sketch:string){
+  async init(sketch:string,_map?:SourceMapV3|null){
     this.event_queue=[];
-    this.applet=new globalThis.Function("__renderer__",...this.arg_classes.map(c=>c.name),sketch)({canvas:this.manager.target_element!,base_path:this.manager.base_uri,max_size:this.get_maximum_size()},...this.arg_classes.map(c=>c.type)) as PApplet;
+    this.flushOutput();
+    lang.setOutput((text)=>this.write_output(text));
+    const rt={lang,PApplet,classes:this.runtime_classes()};
+    const renderer={canvas:this.manager.target_element!,base_path:this.manager.base_uri,max_size:this.get_maximum_size()};
+    try{
+      this.applet=new globalThis.Function("$rt","__renderer__",sketch)(rt,renderer) as PApplet;
+    }catch(e){
+      this.report_error(e);
+      return;
+    }
     this.applet.width=this.manager.target_element!.clientWidth;
     this.applet.height=this.manager.target_element!.clientHeight;
     this.applet.__log_listener__=(args:any[])=>{this.log_listeners.forEach(l=>l(args))};
@@ -125,8 +191,10 @@ export class DefaultRunner extends Runner{
       await this.applet.setup();
       this.applet.__end__();
     }catch(e){
-      if(e instanceof Error)this.error_listeners.forEach(l=>l(e.message));
-      console.error(e)
+      // An uncaught exception stops the sketch, as in Processing.
+      this.report_error(e);
+      this.initiated=false;
+      return;
     }
     this.set_scaling();
     if(!this.manager.settings.manual_step)this.loop();
@@ -157,10 +225,10 @@ export class DefaultRunner extends Runner{
     this.applet.__begin__();
     try{
       if(this.applet.__loop__||this.applet.frameCount==0)await this.applet.draw();
-      // if(this.applet!.frameCount%60===0)this.applet!.println(1000/deltaTime);
     }catch(e){
-      if(e instanceof Error)this.error_listeners.forEach(l=>l(e.message));
-      console.error(e);
+      this.report_error(e);
+      this.stop();
+      return 1;
     }
     const code=this.applet.__end__();
     if(code!=0){
@@ -252,7 +320,8 @@ export class DefaultRunner extends Runner{
 
   on_keydown(e: KeyboardEvent){
     const modifiers = e.getModifierState("Shift") ? 1 : 0;
-    this.event_queue.push({name:"_keyPressed",event:new KeyEvent(e.key,e.keyCode,modifiers)});
+    const k = javaKey(e.key, e.keyCode);
+    this.event_queue.push({name:"_keyPressed",event:new KeyEvent(k.key,k.keyCode,modifiers)});
     if(e.key==="Tab"){
       e.preventDefault();
     }
@@ -260,7 +329,8 @@ export class DefaultRunner extends Runner{
 
   on_keyup(e: KeyboardEvent){
     const modifiers = e.getModifierState("Shift") ? 1 : 0;
-    this.event_queue.push({name:"_keyReleased",event:new KeyEvent(e.key,e.keyCode,modifiers)});
+    const k = javaKey(e.key, e.keyCode);
+    this.event_queue.push({name:"_keyReleased",event:new KeyEvent(k.key,k.keyCode,modifiers)});
   }
 
   on_wheel(e: WheelEvent){

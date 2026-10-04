@@ -54,11 +54,13 @@ async function run(opts: RunOptions) {
       await manager.step(1);
       frameMs.push(performance.now() - t);
     }
+    manager.flushOutput();
     phase = "capture";
     const png = canvas.toDataURL("image/png");
     phase = "done";
     return { ok: errors.length === 0, phase, png, width: canvas.width, height: canvas.height, logs, errors, transpileMs, timings, setupMs, frameMs, code };
   } catch (e) {
+    manager.flushOutput();
     errors.push(`[${phase}] ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
     let png: string | undefined;
     try {

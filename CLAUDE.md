@@ -55,10 +55,10 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 ## 構成（要点）
 
 - `src/lib/SketchManager.ts` … 公開 API（読み込み → 変換 → 実行）
-- `src/compiler/` … 新コンパイラ（P1、開発中で未接続）。`index.ts` の `compileSketch()` が解析 → 型付き AST（`ast.ts`）→ 型検査（`check.ts`）→ JS 生成（`codegen.ts`）を行い、コードと診断を返す。DOM 非依存（[ARCHITECTURE.md](docs/ARCHITECTURE.md) の「新コンパイラ」）
+- `src/compiler/` … コンパイラ（P1。`SketchManager` が使う）。`index.ts` の `compileSketch()` が解析 → 型付き AST（`ast.ts`）→ 型検査（`check.ts`）→ JS 生成（`codegen.ts`）を行い、コードと診断を返す。DOM 非依存（[ARCHITECTURE.md](docs/ARCHITECTURE.md) の「新コンパイラ」）
 - `src/runtime/lang/` … 新コンパイラの生成コードが使う Java 言語ランタイム（数値・文字列・例外・ボックス・java.util の一部）。DOM 非依存
 - `src/compiler/grammar/` … 新コンパイラ用の Lezer 文法（`processing.grammar` を編集 → `npm run gen:grammar`。`parser.ts` は生成物なので手で編集しない）
-- `src/lib/transpiler/` … ANTLR4（`antlr/Processing.g4` から生成した `antlr/parser/*` は **手で編集しない**）→ MemberAnalyzer → ReferenceSolver → Converter
+- `src/lib/transpiler/` … 旧トランスパイラ（ANTLR4。P1-9 で実行パスから外した。`npm run test:grammar` と bench の比較対象として残す。生成物の `antlr/parser/*` は **手で編集しない**）
 - `src/lib/runtime/` … PApplet（API）, PGraphics（PixiJS v8 で描画）, PImage, DefaultRunner（フレームループ）
 - `src/main.ts` ほか … デモ用エディタ。`public/samples/` はデモのサンプル
 - `tools/vt/` … 視覚テスト CLI。`tests/visual/cases/<name>/` がケース、`tests/visual/refs/` が Processing の参照（コミットする）
@@ -79,7 +79,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 
 - Processing 4.5 は HiDPI 画面で既定 `pixelDensity(2)`。参照生成では `pixelDensity(1)` を注入している。
 - Windows では P2D/P3D の小さいウィンドウが OS に広げられる（200px 幅 → 232px）。テストは幅 320 以上で作る。
-- 変換時に `new PApplet(null)` を作るため、旧トランスパイラ単体では Node で動かない（ブラウザが必要。新コンパイラ `src/compiler/` は Node で動く）。
+- `SketchManager` は新コンパイラ（`compileSketch`）で変換し、`DefaultRunner` が `$rt = { lang, PApplet, classes }` で実行する。生成コードが呼ぶ PApplet のメソッド名・型を変えるときは `src/compiler/codegen.ts`/`intrinsics.ts` との約束（ARCHITECTURE.md の「生成コードの形」）を確認する。
 - `src/compiler/`・`src/runtime/` と `tools/` は Node の型除去でそのまま実行されるので、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など変換が必要な TS 構文を使わない。import には `.ts` 拡張子を付ける。
 - Processing は Java と挙動が違うことがある（例: テキストブロックは字下げを除去しない）。Java の仕様から推測せず本物で確かめる。
 - Git Bash の heredoc で `'` を含む長い内容を書くと失敗することがある。ファイル作成は Write ツールを使う。

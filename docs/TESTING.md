@@ -127,7 +127,7 @@ pixelmatch（`includeAA: false` でアンチエイリアス差を無視）で不
 
 ## 現在のケースと状態
 
-`npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 38 ケース中 5 PASS / 33 XFAIL。うち `lang` タグの 23 件（`lang_*` 18 件を含む）は旧トランスパイラでは XFAIL だが、新コンパイラの `npm run test:lang` では 22 件 PASS（`random_seed` だけ XFAIL）。
+`npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 38 ケース中 29 PASS / 9 XFAIL。XFAIL はすべてランタイム（描画・noise）の未実装か不一致で、`vt.json` の `knownIssue` と [STATUS.md](STATUS.md) の R 番号に対応する。`lang` タグの 23 件は `npm run test:lang`（Node）でも 22 件 PASS（`random_seed` は Node のスタブに random() が無いので XFAIL）。
 各 XFAIL の原因は `vt.json` の `knownIssue` と [STATUS.md](STATUS.md) にある。
 
 ## 互換性コーパス（Processing 同梱 examples）
@@ -152,7 +152,7 @@ node tools/lang/cli.ts --corpus      # 同梱 examples + リポジトリのス�
 
 - 視覚テストのケース（`tests/visual/cases/`）のうち `vt.json` の `tags` に `lang` を含むものを、新コンパイラで変換して Node で実行する（`tools/lang/runner.ts`）。参照は視覚テストと共用の `tests/visual/refs/<case>.stdout.txt`（`npm run test:visual:ref -- <case>` で本物の Processing から作る）。
 - 描画はしない。PApplet はスタブ（描画関数はすべて何もしない。`width`/`height`/`frameCount` などの変数と `size`/`noLoop` だけ持つ）なので、`random()` や `red()` など結果を返す Processing の関数を使うケースは比較できない。そういうケースは `vt.json` に `"langExpect": "fail"` と `"langKnownIssue"` を書く（XFAIL。直ったら XPASS と表示されるので消す）。
-- 新しい言語仕様のケースは `lang_` で始まる名前にし、旧トランスパイラでは通らないので視覚テスト側は `"expect": "fail"` にしておく（P1-9 で新コンパイラに切り替えたら外す）。
+- 新しい言語仕様のケースは `lang_` で始まる名前にする。視覚テスト（ブラウザ）と `npm run test:lang`（Node）の両方で同じ参照と比べる。
 - `--corpus` は「変換できるか（コンパイラの例外・不正な JS が無いか）」を見る。スタブ上の実行時例外（PVector などが無い）は一覧に出すだけで失敗にしない。拒否されたスケッチは `npm run test:check` で Processing と照合する。
 
 ## 性能・サイズ計測（tools/bench）
@@ -167,11 +167,12 @@ node tools/bench/cli.ts all --update-budget   # 意図した変更でサイズ/�
 - 入力: `public/samples` の全スケッチ、`tests/visual/cases` の全ケース、生成した約 5,000 行のスケッチ（`synthetic-5k`、`tools/bench/inputs.ts`）。
 - parse: `src/lib/transpiler/SketchParser.ts` を esbuild で Node 用にバンドルし、入力ごとに新しいプロセスで「最初の 1 回（cold）」と「その後の中央値（warm）」を測る。
 - compile: 新コンパイラ全体（`compileSketch`: Lezer 解析 + 構文エラー + AST + 型検査 + コード生成）を同じ方法で測る。cold にはライブラリモデルの読み込みを含む。
-- transpile: ヘッドレス Chromium の新しいページで `SketchManager.transpileSketch` を繰り返し、1 回目（cold）と 2 回目以降の中央値（warm）、およびそのうちの構文解析時間を出す。
+- transpile: ヘッドレス Chromium の新しいページで `SketchManager.transpileSketch`（新コンパイラ）を繰り返し、1 回目（cold）と 2 回目以降の中央値（warm）を出す。
+- parse: 旧トランスパイラの ANTLR パーサ（比較用。ライブラリには含まれない）。
 - 予算: `tools/bench/budget.json`。超えると終了コード 1（回帰検出用）。サイズは +5%、時間は +50%（最低 5ms）の余裕で `--update-budget` が書き換える。
 - 結果: `tests/bench/out/<command>.md` と `.json`（gitignore 済み）。
 
-2026-10-04 時点の主な値: `synthetic-5k` の warm 解析 15ms（SLL 化前は約 8 秒）、`simple_shooter_game`（199 行）のブラウザでの cold 変換 約 150ms（うち解析 135ms）、ライブラリ本体 87 KiB gz（pixi 込み 228 KiB gz）。新コンパイラ（compile、コード生成まで）は `simple_shooter_game` の warm 3.0ms・`synthetic-5k` の warm 54ms（うち Lezer の解析 23ms、型検査まで 45ms）、バンドル 117.6 KiB gz（フロントエンド 40.6 KiB、Lezer パーサ単体 30.5 KiB）。言語ランタイム（`src/runtime/lang`）は 11.9 KiB gz。
+2026-10-04 時点の主な値（P1-9 の後）: ブラウザでの変換は `simple_shooter_game`（199 行）が cold 22ms・warm 3ms、`synthetic-5k` が cold 84ms・warm 40ms（旧トランスパイラは 199 行の cold が約 170ms）。Node の compile は `synthetic-5k` の warm 54〜64ms（うち Lezer の解析 約 20ms）。バンドル: ライブラリ 150 KiB gz（pixi 込み 292 KiB gz）、うち新コンパイラ 119 KiB gz（フロントエンド 40.6 KiB、Lezer パーサ単体 30.5 KiB、ライブラリモデル 36 KiB）、言語ランタイム 19 KiB gz。
 
 ## 今後追加すべきテスト（ROADMAP 参照）
 

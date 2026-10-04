@@ -3,7 +3,5 @@
     "2d",
     "color"
   ],
-  "note": "#RRGGBB literals must become 0xFFRRGGBB (ARGB).",
-  "expect": "fail",
-  "knownIssue": "#RRGGBB becomes 0xRRGGBB without alpha, and color ints are ABGR (red()/blue() swapped); hex() is missing."
+  "note": "#RRGGBB literals must become 0xFFRRGGBB (ARGB)."
 }

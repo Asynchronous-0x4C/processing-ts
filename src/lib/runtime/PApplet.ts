@@ -10,6 +10,7 @@ import { JSONArray } from "./data/JSONArray";
 import { XHRIO } from "./util/sketchio/XHRIO";
 import { Application } from "pixi.js";
 import { PFont } from "./PFont";
+import { Random } from "../../runtime/lang/util.ts";
 
 export interface PAppletSettings{
   canvas: HTMLCanvasElement,
@@ -39,7 +40,8 @@ export class PApplet extends PConstants{
   mouseY:number=0;
   mousePressed:boolean=false;
   mouseButton:number=0; // 0: left, 1: middle, 2: right
-  key:string="";
+  /** The last key as a char code (Processing's char key; CODED for arrows etc.). */
+  key:number=0;
   keyCode:number=0;
   keyPressed:boolean=false;
   __frameRate__:number=60;
@@ -269,44 +271,47 @@ export class PApplet extends PConstants{
 
   _windowResized(){}
 
+  /** Processing's color int: ARGB (0xAARRGGBB) as a signed 32-bit int. RGB values 0-255. */
   color(...color:number[]):number{
-    let result=0xffffffff;
-    color=color.map(c=>Math.max(Math.min(c,255),0));
-    if(color.length==1){
-      result=0xff000000|color[0]<<16|color[0]<<8|color[0];
-    }else if(color.length==2){
-      result=color[1]<<24|color[0]<<16|color[0]<<8|color[0];
-    }else if(color.length==3){
-      result=0xff000000|color[2]<<16|color[1]<<8|color[0];
-    }else if(color.length==4){
-      result=color[3]<<24|color[2]<<16|color[1]<<8|color[0];
+    // color(argb) with alpha bits (or out of the gray range) is returned as it is.
+    if(color.length==1&&Number.isInteger(color[0])&&((color[0]&0xff000000)!==0||color[0]>255||color[0]<0))return color[0]|0;
+    const c=color.map(v=>Math.max(Math.min(Math.trunc(v),255),0));
+    let a=255,r:number,g:number,b:number;
+    if(c.length==1){
+      r=g=b=c[0];
+    }else if(c.length==2){
+      r=g=b=c[0];a=c[1];
+    }else if(c.length==3){
+      [r,g,b]=c;
+    }else if(c.length==4){
+      [r,g,b,a]=c;
     }else{
       throw new Error("Invalid color length: "+color.length);
     }
-    return result;
+    return (a<<24|r<<16|g<<8|b)|0;
   }
 
   red(c:number){
-    return c&0xff;
+    return Math.fround((c>>16)&0xff);
   }
 
   green(c:number){
-    return (c>>8)&0xff;
+    return Math.fround((c>>8)&0xff);
   }
 
   blue(c:number){
-    return (c>>16)&0xff;
+    return Math.fround(c&0xff);
   }
 
   alpha(c:number){
-    return c>>>24;
+    return Math.fround(c>>>24);
   }
 
   lerpColor(c1:number,c2:number,amt:number){
     amt=this.constrain(amt,0,1);
-    const c1_arr=[c1&0xff,(c1>>8)&0xff,(c1>>16)&0xff,c1>>>24];
-    const c2_arr=[c2&0xff,(c2>>8)&0xff,(c2>>16)&0xff,c2>>>24];
-    return this.color(this.lerp(c1_arr[0],c2_arr[0],amt),this.lerp(c1_arr[1],c2_arr[1],amt),this.lerp(c1_arr[2],c2_arr[2],amt),this.lerp(c1_arr[3],c2_arr[3],amt));
+    const ch=(c:number)=>[(c>>16)&0xff,(c>>8)&0xff,c&0xff,c>>>24];
+    const a=ch(c1),b=ch(c2);
+    return this.color(this.lerp(a[0],b[0],amt),this.lerp(a[1],b[1],amt),this.lerp(a[2],b[2],amt),this.lerp(a[3],b[3],amt));
   }
 
   join(list:string[],separator:string){
@@ -479,10 +484,56 @@ export class PApplet extends PConstants{
 
   atan2=Math.atan2;
 
-  random(min:number,max:number){
-    if(max==undefined)max=min,min=0;
-    return Math.random()*(max-min)+min;
+  /** Processing's random generator: a java.util.Random (randomSeed() makes it reproducible). */
+  __random__:Random|null=null;
+
+  private __randomHigh__(high:number):number{
+    if(high===0||high!==high)return 0;
+    const r=(this.__random__??=new Random());
+    let v:number;
+    // nextFloat() * high, never high itself (float rounding can produce it)
+    do{
+      v=Math.fround(r.nextFloat()*high);
+    }while(v===high);
+    return v;
   }
+
+  /** random(high) or random(low, high) */
+  random(a:number,b?:number){
+    if(b===undefined)return this.__randomHigh__(a);
+    if(a>=b)return a;
+    let v:number;
+    do{
+      v=Math.fround(this.__randomHigh__(Math.fround(b-a))+a);
+    }while(v===b);
+    return v;
+  }
+
+  randomSeed(seed:number){
+    (this.__random__??=new Random()).setSeed(seed);
+  }
+
+  randomGaussian(){
+    return Math.fround((this.__random__??=new Random()).nextGaussian());
+  }
+
+  /** The noise is not Processing's yet (STATUS R14); the seed and detail are accepted. */
+  noiseSeed(_seed:number){}
+
+  noiseDetail(_lod:number,_falloff?:number){}
+
+  /** Rendering quality and density are fixed in the browser; called from settings() like in Processing. */
+  smooth(_level?:number){}
+
+  noSmooth(){}
+
+  pixelDensity(_density:number){}
+
+  displayDensity(){
+    return 1;
+  }
+
+  hint(_which:number){}
 
   noise(x: number, y: number = 0, z: number = 0): number {
     const X = Math.floor(x) & 255;

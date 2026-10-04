@@ -1,6 +1,5 @@
-import { transpile, TranspileErrorListener, type TranspileTimings } from "./transpiler/Control";
+import { compileSketch, formatDiagnostic, type SourceMapV3 } from "../compiler/index.ts";
 import { DefaultRunner, Runner } from "./runtime/runner/DefaultRunner";
-import { Token } from "antlr4";
 
 /**
  * @property manual_step When true, the frame loop is not started automatically; advance frames with `SketchManager.step()`.
@@ -8,6 +7,23 @@ import { Token } from "antlr4";
 export type SketchSettings={frameRate?:number,thread?:"main",keep_aspect_ratio?:boolean,manual_step?:boolean};
 export type SketchData={main:string,content:{name:string,content:string}[]};
 export type SketchFile={base_uri:string,main_sketch:string,sketches:string[],resources?:string[]}
+
+/** Compile errors of a sketch, formatted like "Tab.pde:3:10: error: Missing ';'". */
+export class CompileErrors{
+  readonly messages:string[];
+  constructor(messages:string[]){
+    this.messages=messages;
+  }
+  get error():boolean{
+    return this.messages.length>0;
+  }
+  getErrorMessage():string{
+    return this.messages.join("\n");
+  }
+}
+
+/** A compiled sketch: `result` is the JavaScript run by the runner (see src/compiler/codegen.ts). */
+export type CompiledSketch={result:string;error:CompileErrors|null;map?:SourceMapV3|null;timings?:{compile:number}};
 
 /**
  * Manage transpile and execution of sketch.
@@ -109,22 +125,27 @@ export class SketchManager{
    * @param sketch_data Loaded sketch data
    * @returns Transpiled sketch.
    */
-  transpileSketch(sketch_data:SketchData):{result: string;error: TranspileErrorListener<Token>;timings?:TranspileTimings}{
-    let transpiled=transpile(sketch_data.content.map(s=>s.content).join("\n"),sketch_data.main.replace(".pde",""));
-    if(transpiled.error.error){
-      this.runner.error_listeners.forEach(l=>l(transpiled.error.getErrorMessage()));
+  transpileSketch(sketch_data:SketchData):CompiledSketch{
+    const t0=performance.now();
+    // The main tab first, as Processing does (it names the sketch class).
+    const main=sketch_data.content.filter(f=>f.name===sketch_data.main);
+    const tabs=[...main,...sketch_data.content.filter(f=>f.name!==sketch_data.main)].map(f=>({name:f.name,text:f.content}));
+    const r=compileSketch(tabs);
+    const error=new CompileErrors(r.diagnostics.filter(d=>d.severity==="error").map(d=>formatDiagnostic(r.parse.source,d)));
+    if(error.error){
+      this.runner.error_listeners.forEach(l=>l(error.getErrorMessage()));
     }
-    return transpiled;
+    return {result:r.code??"",error,map:r.map,timings:{compile:performance.now()-t0}};
   }
 
   /**
    * Run transpiled sketch.
    * @param sketch Transpiled sketch
    */
-  async runTranspiledSketch(sketch:{result: string;error: TranspileErrorListener<Token>|null;}){
+  async runTranspiledSketch(sketch:CompiledSketch){
     this.stopSketch();
     if(sketch.error!=null&&sketch.error.error)return;
-    await this.runner.init(sketch.result);
+    await this.runner.init(sketch.result,sketch.map);
     if(this.settings.keep_aspect_ratio){
       this.setAspectRatio();
     }
@@ -149,6 +170,13 @@ export class SketchManager{
    */
   stopSketch(){
     this.runner.stop();
+  }
+
+  /**
+   * Send text printed without a final newline (print("x")) to the log listeners now.
+   */
+  flushOutput(){
+    this.runner.flushOutput();
   }
 
   /**

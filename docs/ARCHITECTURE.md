@@ -1,4 +1,4 @@
-# 現行アーキテクチャ（2026-10 時点 / commit 587ba38 ベース）
+# 現行アーキテクチャ（2026-10 時点）
 
 このドキュメントは **現在のコードがどう動いているか** を記述する。将来の設計は [EVALUATION.md](EVALUATION.md) と [ROADMAP.md](ROADMAP.md) を参照。
 
@@ -6,22 +6,24 @@
 
 ```
 .pde（複数タブ）
-   │  SketchManager.loadSketch() / loadSketchString()   … fetch で .pde を取得（タブは "\n" で連結）
+   │  SketchManager.loadSketch() / loadSketchString()   … fetch で .pde を取得（タブごと）
    ▼
-transpile()  src/lib/transpiler/Control.ts
-   ├─ ANTLR4 で字句解析・構文解析（Processing.g4 → 生成済み ProcessingParser.ts）
-   ├─ MemberAnalyzer   : クラス/フィールド/メソッド/コンストラクタを収集し、継承をマージ
-   ├─ ReferenceSolver  : メソッド本体を JS 文字列へ変換し、識別子を this. / __applet__. に解決
-   └─ Converter        : クラス定義・オーバーロード分岐・グローバル関数を組み立てて JS 文字列を返す
+SketchManager.transpileSketch()  → compileSketch()  src/compiler/index.ts（下の「新コンパイラ」）
+   │  構文解析（Lezer）→ 型付き AST → 前処理（モード・settings()）→ 型検査 → コード生成 + Source Map
+   │  エラーは "Tab.pde:行:列: error: ..." の形で error listener へ（複数件）
    ▼
-JS 文字列（関数本体）
-   │  new Function("__renderer__", "PApplet", "PVector", "ArrayList", ..., code)(...)
+JS（関数本体）
+   │  DefaultRunner.init(): new Function("$rt", "__renderer__", code)($rt, renderer)
+   │    $rt = { lang（src/runtime/lang の Java 言語ランタイム）, PApplet, classes（java.* と processing.* のクラス）}
    ▼
 スケッチクラス（PApplet のサブクラス）のインスタンス
    │  DefaultRunner: settings() → setup() → setTimeout ループで draw()、イベントはフレーム後に処理
+   │  print/println は lang.setOutput 経由で log listener へ（1 行ずつ）。捕捉されない例外は Java 形式で error listener へ送り、スケッチを止める
    ▼
 PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、app.render()）
 ```
+
+旧トランスパイラ（`src/lib/transpiler/`、ANTLR4）は P1-9 で実行パスから外した。構文の判定基準（`npm run test:grammar`）と速度比較（`npm run bench` の parse）のためにリポジトリに残している（antlr4 は devDependency）。
 
 ## ディレクトリ
 
@@ -29,11 +31,11 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 |---|---|
 | `src/lib/index.ts` | ライブラリのエントリ。`SketchManager` だけを export |
 | `src/lib/SketchManager.ts` | 公開 API。読み込み・変換・実行・停止・イベント登録・アスペクト比維持 |
-| `src/lib/transpiler/` | トランスパイラ（下記） |
+| `src/lib/transpiler/` | 旧トランスパイラ（使用していない。文法と速度の比較対象） |
 | `src/lib/transpiler/SketchParser.ts` | 構文解析（SLL → 失敗時 LL の 2 段階）とエラーリスナー。ランタイムに依存しないので Node でテスト可能 |
 | `src/lib/transpiler/antlr/Processing.g4` | Processing 公式プリプロセッサの文法（Java 1.7/8 ベース + `color` 型、`#RRGGBB`、`int()` 等の変換関数、静的/アクティブ/Java モード） |
 | `src/lib/transpiler/antlr/parser/` | ANTLR4 で生成された TS（**手で編集しない**。ProcessingParser.ts は約 12,000 行） |
-| `src/compiler/` | **新コンパイラ**（ROADMAP P1、開発中。まだ実行パスでは使っていない）。DOM 非依存で Node / Worker でも動く。詳細は下の「新コンパイラ」 |
+| `src/compiler/` | **コンパイラ**（ROADMAP P1）。DOM 非依存で Node / Worker でも動く。詳細は下の「新コンパイラ」 |
 | `src/compiler/grammar/` | 新コンパイラ用の Lezer 文法（@lezer/java のフォーク、MIT）。`processing.grammar` を編集して `npm run gen:grammar` で `parser.ts` を再生成する（生成物はコミット） |
 | `src/runtime/lang/` | 新コンパイラが生成するコード用の Java 言語ランタイム（数値・文字列・例外・配列・ボクシング・java.util の一部）。DOM 非依存。詳細は下の「言語ランタイム」 |
 | `src/lib/runtime/PApplet.ts` | Processing API の本体（約 100 関数）。描画系は `this.g`（PGraphics）へ委譲 |
@@ -51,9 +53,9 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `tests/visual/` | 視覚テストのケースと参照画像 |
 | `dist/`, `library.js` | **コミットされたビルド成果物**（npm 配布用 / CDN 版 Pixi を使う単一ファイル版） |
 
-## 新コンパイラ（`src/compiler/`、開発中）
+## 新コンパイラ（`src/compiler/`）
 
-旧トランスパイラを置き換える予定のコンパイラ。構文解析 → AST → 前処理 → 型検査 → コード生成（P1-1〜P1-5）。まだ `SketchManager` からは使っておらず、Node のテスト（`npm run test:lang`）でだけ実行している。モード処理の残り（P1-6）を足してから P1-9 で切り替える。
+旧トランスパイラを置き換えたコンパイラ（P1）。構文解析 → AST → 前処理 → 型検査 → コード生成。`SketchManager.transpileSketch()` が使い、Node のテスト（`npm run test:lang`）でも同じものを実行している。
 
 ```
 タブごとの { name, text }
@@ -159,63 +161,21 @@ const $ArrayList = $rt.classes["java.util.ArrayList"];
 
 制約: `src/compiler/`・`src/runtime/` と `tools/` は Node の型除去でそのまま実行されるため、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など JS に変換が必要な TS 構文を使わない。型チェックは DOM を含まない `src/compiler/tsconfig.json` と `src/runtime/tsconfig.json` で行う（`npm run typecheck`）。
 
-## トランスパイラの詳細
+## 旧トランスパイラ（`src/lib/transpiler/`、使用していない）
 
-### パイプライン（`Control.ts` の `transpile()`）
-
-1. `analyze_member()`: `ProcessingParser.processingSketch()` で構文木を作り、`MemberAnalyzer` で走査。
-   - メインスケッチ名のクラスを作り、トップレベルの関数・フィールドをそのメンバーとして登録。
-   - `class`/`interface` 宣言ごとに `ClassMember`（field/method/constructor/親クラス/インタフェース）を作る。
-   - `mergeByHierarchy()` で親クラス・インタフェースのメンバーを子にコピー（`extended: true`）。
-   - **静的モード（setup/draw のないスケッチ）は未対応**（`activeProcessingSketch` しか処理しない）。
-2. `solve_reference()`: `ReferenceSolver` がメソッド本体を JS に変換。
-   - メインスケッチのフィールドとユーザー定義のトップレベル関数は「グローバル」（`super` 擬似クラス）へ移動し、最終的に `let`/`function` として関数スコープに置かれる。
-   - `PApplet` に同名メンバーがある関数（setup/draw、イベントハンドラなど）はスケッチクラスのメソッドとして残す。`mousePressed` 等は `_mousePressed` にリネーム（変数 `mousePressed` との衝突回避）。
-   - 識別子の解決は **実際に `new PApplet(null)` したインスタンスへの `in` 判定**で行う（`applet_instance`）。API 関数は `__applet__.xxx(...)`、API 変数は `__applet__.width` などになる。
-   - ローカル変数のスコープは `vatiable_list`（スペルミスのまま）で文単位に追跡。
-   - キャストは捨てる（`(int)x` → `x`）。`#RRGGBB` → `0xRRGGBB`。配列生成は `Array(n).fill().map(...)`。匿名クラスはプロトタイプ継承の即時関数。ラムダは `FunctionalInterface.get(...)`。
-3. `convert()`: `Converter` が JS ソースを組み立てる。
-   - 同名メソッド/コンストラクタが複数あると `(...args)` で受けて `args.length` と `typeof`/`instanceof` で実行時に分岐。
-   - `__applet__.xxx(` を正規表現で数え、`PApplet` 側が `AsyncFunction` のもの（現状 `size`/`fullScreen` など）に `await` を付ける。`settings/setup/draw` は async。
-   - setup 本体の `size(...)` 呼び出し直後に、スケッチクラスのフィールド初期化を正規表現で挿入。
-   - 末尾に `const __applet__=new <Main>(__renderer__); <グローバル>; return __applet__;`。
-
-### 生成コードの形（例: tests/visual/cases/multi_tab の出力を抜粋）
-
-```js
-class multi_tab extends PApplet{
-  constructor(){ super(arguments[0]); }
-  async setup(){ await __applet__.size(320,240); shapes.add(new Box(40,40,60)); ... }
-  async draw(){ __applet__.background(245); for(let s of shapes){ s.display(); } ... }
-}
-class Box extends Shape{
-  constructor(...args){
-    if(args.length==3&&(typeof args[0]==="number"||...),&&(...)){ ... }   // ← バグ: map() の結果を join していない
-  }
-  display(){ __applet__.fill(this.c); __applet__.rect(this.x,this.y,this.s,this.s); }
-}
-const __applet__=new multi_tab(__renderer__);
-let shapes=new ArrayList();
-function describe(...args){ ... }
-return __applet__;
-```
-
-視覚テストの `run` は各ケースの変換結果を `tests/visual/out/<case>/transpiled.js` に保存する。
-
-### 計測
-
-`transpile()` は `performance.mark/measure` で各段の時間を `console.log` する（本番でも出力される）。
-ヘッドレス Chromium での実測（新しいページ＝コールド状態、SwiftShader）: 20〜50 行のスケッチで約 35〜90ms、199 行の `simple_shooter_game` で約 190〜250ms。
+ANTLR4 の Processing 文法（`antlr/Processing.g4`、生成物 `antlr/parser/`）→ MemberAnalyzer → ReferenceSolver → Converter で、型を見ずに文字列変換していた。整数除算・キャスト・char・オーバーロード・静的モードなどが Java と違っていた（STATUS.md の旧 T 番号）。現在は `npm run test:grammar`（新しい Lezer 文法との受理/拒否の比較）と `npm run bench` の parse の比較対象としてだけ使う。
 
 ## ランタイムの詳細
 
 ### 実行ループ（`DefaultRunner`）
 
-- `init()`: `new Function(...)` でスケッチを生成 → `settings()` → `setup()` → `loop()`。
+- `init()`: `new Function("$rt", "__renderer__", code)` でスケッチを生成 → `settings()` → `setup()` → `loop()`。`$rt.classes` は `javaClasses`（src/runtime/lang）と Processing のクラス（`processing.core.PVector` など）、`addDependency()` で足したクラス。
 - フレームは `setTimeout(1000/frameRate)`（rAF ではない）。ウィンドウ非フォーカス時は 1fps。
 - `step()`（今回追加）: 1 フレーム分（draw + イベント処理）を実行する。`SketchSettings.manual_step: true` のときはループを自動開始せず、`SketchManager.step(n)` で進める（視覚テスト用）。
 - `frameCount` は setup 中 0、**最初の draw() でも 0**（Processing は 1）。draw 後にインクリメント。
-- イベントは DOM イベントをキューに積み、draw の後でまとめて処理。`keyTyped` は keyPressed のたびに呼ばれる。
+- イベントは DOM イベントをキューに積み、draw の後でまとめて処理。`key` は文字コード（矢印などは CODED、Enter は 10）、`keyCode` は Java の VK コード。`keyTyped` は keyPressed のたびに呼ばれる。
+- 出力: 生成コードの print/println は `lang` の出力先（`Runner.write_output`）に文字列で届き、改行ごとに log listener へ 1 行ずつ渡す（改行の無い残りは `SketchManager.flushOutput()`）。
+- 例外: setup/draw から抜けた例外は `lang.toJava()` で Java の例外に読み替えて "java.lang.NullPointerException: ..." の形で error listener へ送り、Processing と同じくスケッチを止める。
 
 ### 描画（`PGraphics` + PixiJS v8）
 
@@ -224,7 +184,7 @@ return __applet__;
 - 変換行列は Pixi の `Graphics` の transform を直接使用。push/pop は `Graphics.save/restore`。
 - テキストは `BitmapFont.install` したフォントで `BitmapText` → `generateTexture` → `graphics.texture()`。テクスチャは文字列ごとにキャッシュ（60 フレーム未使用で破棄）。
 - `createGraphics()` は `RenderTexture`。`endDraw()` で描画して `loadPixels()`。
-- 色は `[r,g,b,a]` に変換して Pixi の色オブジェクトへ。**`color()` の返す int は ABGR 配置**（Processing は ARGB）。
+- 色は `[r,g,b,a]` に変換して Pixi の色オブジェクトへ。色の int は Processing と同じ ARGB（`#RRGGBB` は `0xFFRRGGBB`）。fill(x) などの 1 引数は、アルファのビットが無く範囲内なら灰色、それ以外は ARGB。メインの画面は灰色（204）で始まる。
 - P2D/P3D、シェーダー、ライト、カメラは未実装（`size(w,h,P3D)` の第 3 引数は無視）。
 
 ### ファイル IO（`IOBase` / `XHRIO`）
@@ -237,6 +197,6 @@ return __applet__;
 ## ビルドと配布
 
 - `npm run build` = `vite build`（ライブラリモード, `src/lib/index.ts`）+ `tsc`（型定義のみ `dist/types`）。
-- `vite-plugin-externalize-deps` で依存（pixi.js 等）を外部化。ただし antlr4 は同梱。
+- `vite-plugin-externalize-deps` で依存（pixi.js・@lezer）を外部化。ライブラリは新コンパイラ（gzip 約 119 KiB。うちライブラリモデル 36 KiB、Lezer 30 KiB）と言語ランタイム（19 KiB）を含む。EVALUATION.md の目標構成ではコンパイラを別のサブパスにする。
 - 独自プラグインが `dist/library.js` を生成（先頭の pixi import を `const X=PIXI.X` に置換し、CDN 版 Pixi のグローバルを使う形）。ルートの `library.js` はそのコピーで README からダウンロードさせている。
 - dev サーバ（`npm run dev`, port 8080, base `/processing-ts/`）起動時に `public/samples/*/*/sketch.properties` から `src/scripts/samples.json` を生成（カテゴリ/名前順）。ライブラリのビルドでは `public/` を出力に含めない（`copyPublicDir: false`）。

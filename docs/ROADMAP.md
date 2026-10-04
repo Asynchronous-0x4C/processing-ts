@@ -5,13 +5,12 @@
 ## 現在地（2026-10-04 時点。セッションの終わりに更新する）
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
-- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）、P1-5（コード生成と言語ランタイム）、P1-6（モードと前処理）、P1-7（java.util の互換層）、P1-8（stdout 適合テスト: `lang_*` 18 件）。P0-8（CI）は任意で未着手。
-- **次にやること: P1-9（`SketchManager` を新コンパイラに切り替える）**。手順の案: `SketchManager.transpileSketch` をタブごとの `compileSketch()` にし、診断を `Tab.pde:行:列` で error listener に渡す → `DefaultRunner.init` で `new Function("$rt", "__renderer__", code)($rt, renderer)`（`$rt = { lang, PApplet, classes: { ...javaClasses, "processing.core.PVector": PVector, ... } }`）→ `lang.setOutput` を log listener につなぐ → 実行時エラーを Source Map で .pde の行に戻す → vt の `lang_*`/`java_semantics`/`multi_tab`/`static_mode` を XPASS にする。旧ランタイムの PApplet・PVector のメソッド名と型（float の戻り値、`color` は int）を生成コードに合わせる必要がある。
-  - 生成コードは `compileSketch()`（`src/compiler/index.ts`）が返す `new Function("$rt", "__renderer__", code)` の本体。ランタイムとの約束（`$rt.lang`・`$rt.classes`・`$rt.PApplet`、上書きするメソッド名）は `codegen.ts` 冒頭と [ARCHITECTURE.md](ARCHITECTURE.md) の「生成コードの形」。`size()` などは前処理で生成した `settings()` の中で `await $p.size(...)` として呼ぶ（`settings` は async）。
-  - ケースは `lang_` で始め、`npm run test:visual:ref -- <case>` で参照を作る。モデル（`library.gen.ts`）にあってランタイムに無いクラスは、使った時点で `UnsupportedOperationException: ... is not available in processing-ts` になる（`$L.missingClass`）。
-  - 確認: `npm run test:lang`（Node、約 1 秒）で 16/17 PASS。Processing の挙動は `Processing cli --build` の出力（前処理後の Java）で確かめる。
-  - 速度の注意: 5k 行のウォームで解析からコード生成まで 54ms（うち Lezer の解析が約 23ms、コード生成は約 9ms）。P1-9 の目標（変換全体 50ms）には解析の高速化（文法の曖昧さの削減など）が要る（STATUS.md C4）。
-- 基準値: 視覚テスト 5 PASS / 33 XFAIL、stdout 適合 22 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 95/254（旧トランスパイラ）、新コンパイラでの変換 314/315（`node tools/lang/cli.ts --corpus`）、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,381/2,384（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`（新コンパイラ 118.8 KiB gz、言語ランタイム 19.0 KiB gz）。
+- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）、P1-5（コード生成と言語ランタイム）、P1-6（モードと前処理）、P1-7（java.util の互換層）、P1-8（stdout 適合テスト: `lang_*` 18 件）、P1-9（新コンパイラへの切り替え）。P0-8（CI）は任意で未着手。
+- **次にやること: P2（ランタイムの再構築と Canvas2D）。P2-1 から**。P1（コンパイラ）は完了し、`SketchManager` は新コンパイラで変換する（P1-9）。
+  - いまのランタイムは旧来の PApplet + PixiJS（`src/lib/runtime/`）に、言語ランタイム（`src/runtime/lang/`）を組み合わせたもの。生成コードとの約束は ARCHITECTURE.md の「全体像」「生成コードの形」と `codegen.ts` 冒頭（`$rt = { lang, PApplet, classes }`、上書きするメソッド名 `_mousePressed` など、`frameRate()` は `_frameRate`）。P2 で PApplet を作り直すときもこの約束を守るか、`codegen.ts`/`intrinsics.ts` と同時に変える。
+  - 視覚テストの XFAIL 9 件と互換性コーパスの失敗（`tests/corpus/report.md` の「多いエラー」）が、そのまま P2 の作業一覧になっている（createShape・loadShader・lights・loadPixels・PFont.list・PVector の static メソッドなど。noSmooth などの settings 系は P1-9 で受け付けるようにした）。
+  - 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。
+- 基準値: 視覚テスト 29 PASS / 9 XFAIL、stdout 適合 22 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 124/254（`npm run vt -- corpus`。変換できないのは `java.awt` の 1 本）、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,381/2,384（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`（ライブラリ 150 KiB gz（pixi 別）、うちコンパイラ 119 KiB・言語ランタイム 19 KiB）。
 
 ## 進め方
 
@@ -113,20 +112,26 @@
   → 結果（2026-10-04）: `npm run test:lang`（`tools/lang/`、全ケース約 1 秒、`--corpus` で全スケッチの変換確認）と `lang_*` 18 件（P1-5 の 11 件、boxing、java.util の 4 件、`lang_generics_inner`（ジェネリクスと内部クラス、インタフェースの既定/static メソッド、例外の連鎖）、`lang_flow_text`（ラベル付き break/continue、switch のフォールスルー、条件演算子の型、サロゲートペア、日本語、StringBuilder））。`lang` タグの 23 件中 22 件が本物の Processing と完全一致（`random_seed` は P2-7 の後）。
   - 見つけて直したもの: ジェネリッククラスの内部クラスのメンバーが外側の型引数で置換されていなかった（`Tree<Integer>.Node` の `value` が T のまま）、例外クラスの `getClass().getName()` にパッケージが無かった、vt の参照生成で `list.size()` の後ろにも `pixelDensity(1)` を挿入していた、Windows の Processing の標準出力（MS932）で日本語が化け、`é` などが `?` になっていた（参照生成時は System.out を UTF-8 のファイルに向ける）。
   - `printStackTrace` の出力（標準エラー）は比較していない。
-- [ ] **P1-9 切り替え**（M）
+- [x] **P1-9 切り替え**（M）
   `SketchManager` を新コンパイラに切り替え、旧 `transpiler/`・antlr4 依存・生成パーサを配布物から削除（オラクルとしては devDependency に残す）。
   完了条件: java_semantics / multi_tab / static_mode が PASS。コーパスの変換成功率 95% 以上。199 行のコールド変換 20ms 以下（ブラウザ）。5k 行ウォーム 50ms 以下。
+  → 結果（2026-10-04）: `SketchManager.transpileSketch()` はタブごとに `compileSketch()` を呼び、診断を `Tab.pde:行:列: error: ...` で error listener に渡す。`DefaultRunner` は `$rt = { lang, PApplet, classes }` で生成コードを実行し、print/println を 1 行ずつ log listener へ、捕捉されない例外を Java 形式（`java.lang.NullPointerException: ...`）で error listener へ送ってスケッチを止める（Processing と同じ）。旧トランスパイラと antlr4 は配布物から外した（antlr4 は devDependency。文法と速度の比較対象として残す）。デモのエディタもタブごとに渡す。
+  - 完了条件: java_semantics / multi_tab / static_mode は PASS。同梱 examples の変換成功 253/254（99.6%）。5k 行ウォーム 40ms（≤ 50ms）。199 行のコールド変換は 22ms で目標 20ms をわずかに超える（旧トランスパイラは約 170ms。STATUS.md C4）。
+  - 切り替えで直したランタイムの不一致: メイン画面の既定の背景 204（R1）、色の int を ARGB に（R2。`fill(int)` の灰色/ARGB 判定も）、`key` を文字コードに（R16 の大部分）、`random()`/`randomSeed()`/`randomGaussian()` を java.util.Random で Processing と同じ列に（R14 の random 部分）、`smooth()`/`noSmooth()`/`pixelDensity()`/`hint()` などを受け付ける（前処理で settings() に移るため）。
+  - 結果: 視覚テスト 5 PASS → 29 PASS（言語仕様の 22 件と hex_colors・default_style。random_seed は noise の違いで XFAIL のまま）、互換性コーパス 95 → 124 本（37% → 49%、JAVA2D 71%）。
 
 ## P2: ランタイムの再構築と Canvas2D（JAVA2D）
 
 - [ ] **P2-1 描画の抽象化**（M）— P3 の前提
   Processing の PGraphics のメソッド集合（P1-3 のマニフェスト）に沿った抽象クラスと、レンダラ非依存の状態（スタイルスタック、行列スタック、色モード）。`PGraphicsCanvas2D` を最初の実装にする。
 - [ ] **P2-2 色**（S, R2）ARGB の int、`colorMode`（RGB/HSB と最大値）、`fill(int)` の灰色/ARGB 判定、`hue/saturation/brightness`、`lerpColor`、`hex()`。
+  → 一部済み（P1-9）: ARGB の int、`fill(int)` の灰色/ARGB 判定、`red/green/blue/alpha`、`lerpColor`、`hex()`（コンパイラ）。残り: `color()` の colorMode 対応（HSB・最大値）、`hue/saturation/brightness`。
 - [ ] **P2-3 図形と既定値**（M, R1, R3, R4, R5, R15）既定の背景 204・白塗り・黒線 1px、各モード、arc の OPEN/CHORD/PIE、strokeCap/Join、beginShape の全種別、beginContour、bezier/curve 系と detail/tightness、`square`、size() 無しのスケッチ。
 - [ ] **P2-4 変換**（S）PMatrix2D、applyMatrix、shearX/Y、printMatrix、push/pop のスタイルと行列。
 - [ ] **P2-5 画像**（L, R8〜R10）Int32Array の pixels と CPU/キャンバス間の遅延同期、get/set/copy/blend/mask/filter/tint/resize、メインキャンバスの loadPixels/updatePixels、createGraphics（OffscreenCanvas）、save/saveFrame。
 - [ ] **P2-6 テキスト**（M, R6）createFont/loadFont(.vlw)/textFont/textSize/textAlign（縦方向も）/textLeading/textWidth/textAscent/textDescent/矩形内の折り返し、既定フォントは同梱の `src/lib/runtime/fonts/ProcessingSansPro-Regular.ttf`（288 KB の TTF）。text() が使われたときだけ FontFace で遅延読み込みし、ライブラリのビルドではライセンス文と一緒に dist へ出力する（`package.json` の `files` と THIRD_PARTY_NOTICES.md も確認）。WOFF2 化やサブセット化は OFL 上の Modified Version になるが、名前（Processing Sans Pro）に予約名 "Source" を含まないので可。その場合も OFL とコピーライト表記を残す。
 - [ ] **P2-7 乱数とノイズ**（S, R14）`java.util.Random` 互換、randomGaussian、Processing の noise と noiseDetail/noiseSeed。完了条件: random_seed が PASS（stdout の値まで一致）。
+  → 一部済み（P1-9）: random/randomSeed/randomGaussian は java.util.Random（`src/runtime/lang/util.ts`）で Processing と同じ値（random_seed の円 40 個が一致）。残り: noise。Processing の noise は LGPL の実装なので移植せず、出力から挙動を確かめて実装する（方針の判断が必要ならユーザーに確認）。
 - [ ] **P2-8 ループとイベント**（M, R12, R13, R16）requestAnimationFrame ベースで frameRate を守る、frameCount の意味、redraw()、mouseDragged/mouseClicked/keyTyped の発火条件、key/keyCode/CODED、mouseWheel の MouseEvent、focused、cursor/noCursor。イベントの再現テストは vt ハーネスに「入力スクリプト」（フレーム番号ごとのマウス/キー操作）を追加して行う。
 - [ ] **P2-9 VFS と fetch 事前読み込み（PWA 対応）**（M）`data/` の解決、マニフェスト/リテラル抽出による事前読み込み、画像の事前デコード、IndexedDB への保存、selectInput/selectOutput、未読み込みパスのエラーメッセージ。同期 XHR を削除。
   完了条件: Service Worker でキャッシュしたページをオフラインにしても data/ を使うケースが動く（vt ハーネスに `--offline` モードを追加して確認）。
