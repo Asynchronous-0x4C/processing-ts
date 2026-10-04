@@ -6,9 +6,21 @@
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
 - 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）、P1-5（コード生成と言語ランタイム）、P1-6（モードと前処理）、P1-7（java.util の互換層）、P1-8（stdout 適合テスト: `lang_*` 18 件）、P1-9（新コンパイラへの切り替え）。P0-8（CI）は任意で未着手。
-- **次にやること: P2（ランタイムの再構築と Canvas2D）。P2-1 から**。P1（コンパイラ）は完了し、`SketchManager` は新コンパイラで変換する（P1-9）。
-  - いまのランタイムは旧来の PApplet + PixiJS（`src/lib/runtime/`）に、言語ランタイム（`src/runtime/lang/`）を組み合わせたもの。生成コードとの約束は ARCHITECTURE.md の「全体像」「生成コードの形」と `codegen.ts` 冒頭（`$rt = { lang, PApplet, classes }`、上書きするメソッド名 `_mousePressed` など、`frameRate()` は `_frameRate`）。P2 で PApplet を作り直すときもこの約束を守るか、`codegen.ts`/`intrinsics.ts` と同時に変える。
-  - 視覚テストの XFAIL 9 件と互換性コーパスの失敗（`tests/corpus/report.md` の「多いエラー」）が、そのまま P2 の作業一覧になっている（createShape・loadShader・lights・loadPixels・PFont.list・PVector の static メソッドなど。noSmooth などの settings 系は P1-9 で受け付けるようにした）。
+- **次にやること: P2-1（描画の抽象化と Canvas 2D の JAVA2D レンダラ）の続き**。P1（コンパイラ）は完了し、`SketchManager` は新コンパイラで変換する（P1-9）。
+  - **途中の作業はブランチ `wip/p2-1-canvas2d`（コミット 6f7f2af、型チェックはまだ通らない）**。`git switch wip/p2-1-canvas2d` で続ける（本線に戻すときは作業を終えてからマージ）。入っているもの:
+    - `src/lib/runtime/PMatrix2D.ts`（新規）: Processing の 2D アフィン行列（右から掛ける）。
+    - `PImage.ts`（書き換え）: `pixels` は ARGB の Int32Array（生成コードの `int[]` と同じ型）、実体はキャンバス（OffscreenCanvas があればそれ）。loadPixels/updatePixels/get/set/copy/resize/mask。
+    - `PGraphics.ts`（書き換え、抽象クラス）: スタイル/行列スタック、colorMode 対応の colorCalc（RGB/HSB、ARGB の int 判定）、図形はパス（角丸 rect は 2 次ベジェの角、arc の OPEN/CHORD/PIE、bezier/curve と curveTightness）、beginShape の全種別と contour、image/text のレイアウト。レンダラは drawPath/drawPoint/backgroundImpl/backgroundImage/drawImage/drawTextLine/textWidthImpl/textAscentImpl/textDescentImpl/applyMatrixToRenderer/applyBlendMode を実装する。
+    - `PGraphicsJava2D.ts`（新規）: 上のフックを Canvas 2D で実装（Path2D、strokeCap/Join、tint は乗算したコピーをキャッシュ、blendMode → globalCompositeOperation、メイン画面の background は alpha を無視）。
+    - `PFont.ts`（書き換え）: CSS のフォントファミリ、同梱の Processing Sans Pro を FontFace で遅延読み込み。
+  - 残りの手順:
+    1. `PApplet.ts` から PixiJS（`Application`・`__app__`）を外し、`g = new PGraphicsJava2D(this, canvas, true)`。描画 API は `g` へ委譲（PGraphics の全メソッド: square/bezier/curve/strokeCap/strokeJoin/tint/shearX/applyMatrix/beginContour/textLeading/hue など新しいものも）。`createGraphics()` は `new PGraphicsJava2D(this, null)` + `setSize`、`createImage()` は `PImage`、`loadImage()` は `load_from_blob`（デコードは非同期のまま。R9 は P2-9）。
+    2. size の流れ: settings() 中の size()/fullScreen()/pixelDensity() は要求を記録 → runner が settings() の後に `__init_surface__`（無ければ 100x100、R15）→ 既定の背景 204。それ以降の size() は同じ大きさなら何もせず、違えば `IllegalStateException: size() cannot be used here, see https://processing.org/reference/size_.html`（Processing と同じ。確認済み）。既定の密度は `displayDensity()`（Processing 4.5 と同じく HiDPI で 2。テストの Chromium は 1）。
+    3. `PGraphicsContext.ts` と `util/PMatrix.ts` を削除、`PSurface` のカーソルは `g.canvas` へ、`DefaultRunner` の `update_resolution` は何もしない（解像度は密度で固定）。
+    4. 確認: `npm run typecheck` → `npm run test:visual`（いま PASS の 29 件を落とさない。2d の XFAIL のうち rect_ellipse_modes・shape_vertex・stroke_styles・bezier_curve が XPASS に近づくはず）→ `npm run vt -- corpus` → `npm run size`（pixi を外したライブラリの gzip）。
+  - 本物の Processing で確かめてから決めること（推測で実装しない）: strokeWeight 1 以下の point() の描き方（1 ピクセル?）、SQUARE キャップの point が描かれないか、角丸 rect の角の曲線、`text(float)` の書式（`nfs(x,0,3)`?。コンパイラの intrinsics で文字列にするのがよい）、`fill(300.0)` のように整数値の float が範囲外のときの扱い（いまは ARGB の int とみなす）、colorCalc の 255 倍の丸め（切り捨てにしている）、背景の alpha、textAscent/textDescent の値。
+  - いまのランタイム（本線）は旧来の PApplet + PixiJS（`src/lib/runtime/`）に言語ランタイム（`src/runtime/lang/`）を組み合わせたもの。生成コードとの約束は ARCHITECTURE.md の「全体像」「生成コードの形」と `codegen.ts` 冒頭（`$rt = { lang, PApplet, classes }`、上書きするメソッド名 `_mousePressed` など、`frameRate()` は `_frameRate`）。PApplet を作り直すときもこの約束を守るか、`codegen.ts`/`intrinsics.ts` と同時に変える。
+  - 視覚テストの XFAIL 9 件と互換性コーパスの失敗（`tests/corpus/report.md` の「多いエラー」）がそのまま P2 の作業一覧（createShape・loadShader・lights・loadPixels・PFont.list・PVector の static メソッドなど）。
   - 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。
 - 基準値: 視覚テスト 29 PASS / 9 XFAIL、stdout 適合 22 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 124/254（`npm run vt -- corpus`。変換できないのは `java.awt` の 1 本）、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,381/2,384（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`（ライブラリ 150 KiB gz（pixi 別）、うちコンパイラ 119 KiB・言語ランタイム 19 KiB）。
 
