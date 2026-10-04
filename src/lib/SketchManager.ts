@@ -2,7 +2,10 @@ import { transpile, TranspileErrorListener } from "./transpiler/Control";
 import { DefaultRunner, Runner } from "./runtime/runner/DefaultRunner";
 import { Token } from "antlr4";
 
-export type SketchSettings={frameRate?:number,thread?:"main",keep_aspect_ratio?:boolean};
+/**
+ * @property manual_step When true, the frame loop is not started automatically; advance frames with `SketchManager.step()`.
+ */
+export type SketchSettings={frameRate?:number,thread?:"main",keep_aspect_ratio?:boolean,manual_step?:boolean};
 export type SketchData={main:string,content:{name:string,content:string}[]};
 export type SketchFile={base_uri:string,main_sketch:string,sketches:string[],resources?:string[]}
 
@@ -146,6 +149,17 @@ export class SketchManager{
    */
   stopSketch(){
     this.runner.stop();
+  }
+
+  /**
+   * Advance the sketch by the given number of frames.
+   * Intended for sketches started with `manual_step: true` (deterministic tests).
+   * @param frames Number of draw() calls to run.
+   */
+  async step(frames:number=1){
+    for(let i=0;i<frames;i++){
+      if(await this.runner.step()!=0)break;
+    }
   }
 
   getAspectRatio(){

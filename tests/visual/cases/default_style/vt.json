@@ -1,0 +1,8 @@
+{
+  "tags": [
+    "2d"
+  ],
+  "note": "Processing defaults: background 204, white fill, black 1px stroke.",
+  "expect": "fail",
+  "knownIssue": "Default background (204) is not applied (canvas stays transparent) and the default stroke is not drawn."
+}

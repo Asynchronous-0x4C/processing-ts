@@ -1,0 +1,7 @@
+{
+  "tags": [
+    "2d"
+  ],
+  "expect": "fail",
+  "knownIssue": "strokeCap()/strokeJoin() are not implemented (default cap/join also differ)."
+}

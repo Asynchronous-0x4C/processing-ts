@@ -1,0 +1,8 @@
+{
+  "tags": [
+    "lang"
+  ],
+  "mode": "static",
+  "expect": "fail",
+  "knownIssue": "Static mode (no setup()/draw()) crashes in MemberAnalyzer."
+}

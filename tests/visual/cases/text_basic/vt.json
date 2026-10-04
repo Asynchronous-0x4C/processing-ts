@@ -1,0 +1,11 @@
+{
+  "tags": [
+    "2d",
+    "text"
+  ],
+  "threshold": 0.3,
+  "maxDiffRatio": 0.03,
+  "note": "Font rasterization differs between Java2D and Chromium; loose tolerance.",
+  "expect": "fail",
+  "knownIssue": "Text is a scaled BitmapFont: blurry, wrong default font and baseline."
+}

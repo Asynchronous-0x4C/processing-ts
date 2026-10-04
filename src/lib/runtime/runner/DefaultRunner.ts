@@ -21,6 +21,7 @@ export abstract class Runner{
 
   abstract init(sketch:string):void;
   abstract loop():void;
+  abstract step():Promise<number>;
   abstract stop():void;
   abstract on_focus():void;
   abstract on_blur():void;
@@ -130,7 +131,7 @@ export class DefaultRunner extends Runner{
       console.error(e)
     }
     this.set_scaling();
-    this.loop();
+    if(!this.manager.settings.manual_step)this.loop();
   }
 
   private async frame():Promise<void>{
@@ -141,6 +142,16 @@ export class DefaultRunner extends Runner{
       return;
     }
     const ID=setTimeout(async ()=>{this.frame();},this.content_display?1000/this.applet.__frameRate__:1000);
+    if(await this.step()!=0)clearTimeout(ID);
+  }
+
+  /**
+   * Run exactly one frame (draw + queued events) without scheduling the next one.
+   * Used directly when `SketchSettings.manual_step` is set (e.g. by the visual test harness).
+   * @returns Exit code of the sketch (0 while running).
+   */
+  async step():Promise<number>{
+    if(!this.applet)return 0;
     const now = performance.now();
     const deltaTime = now - this.last_time;
     this.last_time = now;
@@ -155,7 +166,6 @@ export class DefaultRunner extends Runner{
     }
     const code=this.applet.__end__();
     if(code!=0){
-      clearTimeout(ID);
       this.applet.__stop__();
       this.stop();
       console.log(`Sketch finished with exit code ${code}.`);
@@ -210,6 +220,7 @@ export class DefaultRunner extends Runner{
           console.error("Unknown event name: "+event.name);
       }
     }
+    return code;
   }
 
   loop(){

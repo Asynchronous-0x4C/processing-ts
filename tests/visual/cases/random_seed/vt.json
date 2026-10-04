@@ -1,0 +1,8 @@
+{
+  "tags": [
+    "lang"
+  ],
+  "note": "Needs java.util.Random and Processing noise() ports to match exactly.",
+  "expect": "fail",
+  "knownIssue": "randomSeed()/noiseSeed() missing; random() and noise() algorithms differ from Processing."
+}

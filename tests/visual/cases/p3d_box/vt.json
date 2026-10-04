@@ -1,0 +1,8 @@
+{
+  "tags": [
+    "3d"
+  ],
+  "maxDiffRatio": 0.02,
+  "expect": "fail",
+  "knownIssue": "P3D is not implemented (lights/box/sphere/rotateX...)."
+}

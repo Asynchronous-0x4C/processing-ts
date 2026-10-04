@@ -1,0 +1,7 @@
+{
+  "tags": [
+    "2d"
+  ],
+  "frames": 10,
+  "note": "No background() in draw(): checks frame count and alpha accumulation."
+}

@@ -1,0 +1,71 @@
+// Browser side of the visual test runner. tools/vt/browser.ts calls window.__vt__.run().
+import { SketchManager } from "../../../src/lib/index.ts";
+
+type RunOptions = {
+  main: string;
+  files: { name: string; content: string }[];
+  /** URL of the sketch's data/ folder (loadImage("a.png") resolves to dataBase + "a.png"). */
+  dataBase: string;
+  frames: number;
+};
+
+type Phase = "transpile" | "setup" | "draw" | "capture" | "done";
+
+function format(arg: unknown): string {
+  if (typeof arg === "string") return arg;
+  if (Array.isArray(arg)) return arg.map(format).join(" ");
+  return String(arg);
+}
+
+async function run(opts: RunOptions) {
+  const logs: string[] = [];
+  const errors: string[] = [];
+  const frameMs: number[] = [];
+  let phase: Phase = "transpile";
+  let transpileMs = 0;
+  let setupMs = 0;
+  let code: string | undefined;
+
+  const canvas = document.createElement("canvas");
+  document.body.appendChild(canvas);
+  const manager = new SketchManager({ frameRate: 60, thread: "main", keep_aspect_ratio: false, manual_step: true });
+  manager.mountPApplet(canvas);
+  manager.addEventListener("log", (args) => logs.push(format(args)));
+  manager.addEventListener("error", (e) => errors.push(`[${phase}] ${format(e)}`));
+  manager.base_uri = new URL(opts.dataBase, location.href).href;
+
+  try {
+    const t0 = performance.now();
+    const transpiled = manager.transpileSketch({ main: opts.main, content: opts.files });
+    transpileMs = performance.now() - t0;
+    code = transpiled.result;
+    if (transpiled.error?.error) {
+      return { ok: false, phase, width: 0, height: 0, logs, errors, transpileMs, setupMs, frameMs, code };
+    }
+    phase = "setup";
+    const t1 = performance.now();
+    await manager.runTranspiledSketch(transpiled);
+    setupMs = performance.now() - t1;
+    phase = "draw";
+    for (let i = 0; i < opts.frames; i++) {
+      const t = performance.now();
+      await manager.step(1);
+      frameMs.push(performance.now() - t);
+    }
+    phase = "capture";
+    const png = canvas.toDataURL("image/png");
+    phase = "done";
+    return { ok: errors.length === 0, phase, png, width: canvas.width, height: canvas.height, logs, errors, transpileMs, setupMs, frameMs, code };
+  } catch (e) {
+    errors.push(`[${phase}] ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
+    let png: string | undefined;
+    try {
+      png = canvas.toDataURL("image/png");
+    } catch {
+      // canvas unusable
+    }
+    return { ok: false, phase, png, width: canvas.width, height: canvas.height, logs, errors, transpileMs, setupMs, frameMs, code };
+  }
+}
+
+(window as unknown as { __vt__: { run: typeof run } }).__vt__ = { run };
