@@ -45,6 +45,7 @@ type CaseResult = {
   refSize: string | null;
   actualSize: string | null;
   transpileMs: number;
+  parseMs: number | null;
   setupMs: number;
   avgFrameMs: number;
   errors: string[];
@@ -258,7 +259,7 @@ function evaluate(
   return {
     name: c.name, outcome, expect, reasons, note: cfg.note, knownIssue: cfg.knownIssue, diffRatio, refSize,
     actualSize: actual ? `${actual.width}x${actual.height}` : null,
-    transpileMs: run.transpileMs, setupMs: run.setupMs, avgFrameMs: avg,
+    transpileMs: run.transpileMs, parseMs: run.timings?.parse ?? null, setupMs: run.setupMs, avgFrameMs: avg,
     errors: [...run.errors, ...run.console.filter((l) => l.startsWith("[pageerror]") || l.startsWith("[error]"))],
     logs: run.logs, stdoutDiff, files,
   };
@@ -279,11 +280,11 @@ function writeReport(results: CaseResult[]) {
     "",
     "Composite images: left = Processing (blue), middle = processing-ts (green), right = diff (red).",
     "",
-    "| case | outcome | diff | transpile ms | setup ms | frame ms | reasons |",
+    "| case | outcome | diff | transpile ms (parse) | setup ms | frame ms | reasons |",
     "|---|---|---|---|---|---|---|",
     ...results.map(
       (r) =>
-        `| [${r.name}](${rel(r.files.composite)}) | ${r.outcome.toUpperCase()} | ${r.diffRatio === null ? "-" : (r.diffRatio * 100).toFixed(2) + "%"} | ${r.transpileMs.toFixed(1)} | ${r.setupMs.toFixed(1)} | ${r.avgFrameMs.toFixed(1)} | ${r.reasons.join("<br>").replace(/\|/g, "\\|")} |`,
+        `| [${r.name}](${rel(r.files.composite)}) | ${r.outcome.toUpperCase()} | ${r.diffRatio === null ? "-" : (r.diffRatio * 100).toFixed(2) + "%"} | ${r.transpileMs.toFixed(1)} (${r.parseMs === null ? "-" : r.parseMs.toFixed(1)}) | ${r.setupMs.toFixed(1)} | ${r.avgFrameMs.toFixed(1)} | ${r.reasons.join("<br>").replace(/\|/g, "\\|")} |`,
     ),
     "",
   ];

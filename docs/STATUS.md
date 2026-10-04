@@ -7,14 +7,14 @@
 
 | 領域 | 状態 |
 |---|---|
-| 構文解析 | ANTLR4 + Processing 公式文法。構文の受理範囲は本家とほぼ同じ。**LL 予測モードのため遅い**（後述） |
+| 構文解析 | ANTLR4 + Processing 公式文法（Java 8 時代の古いコピー）。SLL 予測 + LL フォールバック（P0-1）。コールド時のコストが残る（T2） |
 | 意味解析（型） | **なし**。型情報を使わずに文字列変換しているため Java の意味論がずれる |
 | 静的モード | **未対応**（setup/draw の無いスケッチは変換時に例外） |
 | 2D 描画 | 基本図形・変換・色・createGraphics は概ね動く。細部（既定値、モード、stroke の端/結合、テキスト）にずれ |
 | P2D / P3D / PShader | **未実装** |
 | 画像 / pixels | PImage の読み込みと表示は可。メインキャンバスの `loadPixels()/pixels[]` は未実装。`updatePixels()` に致命的なデバッグ出力 |
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
-| 同梱サンプル | 21 本中 20 本がエラーなく実行（`create_image` は `updatePixels` のスタックオーバーフローで失敗） |
+| 同梱サンプル | 21 本すべてがエラーなく実行 |
 | 視覚テスト | 19 ケース: 5 PASS / 14 XFAIL（[TESTING.md](TESTING.md)） |
 | 単体テスト / CI / lint | なし |
 
@@ -29,8 +29,7 @@
 
 | # | 問題 | 場所 | 検出テスト |
 |---|---|---|---|
-| T1 | **構文解析が遅い**: 既定の LL 予測モード + エントリ規則 `processingSketch` の組み合わせで、入力末尾まで先読みする。Node 計測で 199 行（class で包んだ場合）277ms、5,000 行で約 8 秒（毎回）。`PredictionMode.SLL` で同一の木のまま 1〜30ms 台になる | `transpiler/Control.ts` の `analyze_member()` | （計測） |
-| T2 | コールド時の変換コスト: ブラウザの新規ページで 20〜50 行でも 35〜90ms、199 行で 190〜250ms（SLL にしても 40ms / 176ms 程度。ANTLR の予測キャッシュ構築と JIT のウォームアップが支配的） | ANTLR ランタイム | 全ケースの transpile ms |
+| T2 | コールド時の変換コスト: ブラウザの新規ページで 20〜50 行のスケッチでも変換全体 30〜40ms（うち構文解析 13〜23ms）、199 行で約 180ms。ANTLR の予測キャッシュ構築と JIT のウォームアップ、変換時の `new PApplet()` が主因。P1 の新コンパイラで解消する | ANTLR ランタイム | report.md の transpile ms (parse) |
 | T3 | キャストを捨てる（`(int)3.99` → `3.99`） | `ReferenceSolver.ts` visitExpression（`typeType()!=null`） | java_semantics |
 | T4 | 整数除算・int のオーバーフロー・`long` を再現しない（`7/2` → 3.5） | 型情報が無い | java_semantics |
 | T5 | `char` を文字列として扱う（`'a'+1` → `"a1"`） | 同上 | java_semantics |
@@ -44,7 +43,6 @@
 | T13 | 識別子解決のため変換時に `new PApplet(null)` を生成（Pixi の Application/Graphics/BitmapFont を作る）→ トランスパイラが DOM と描画ライブラリに依存し、Node / Worker で動かない | `Control.ts:19` | — |
 | T14 | 非同期化は `size/fullScreen` 等の `AsyncFunction` を正規表現で `await` するだけ。ユーザー関数経由の呼び出しは考慮されない | `Converter.ts` | — |
 | T15 | エラーは最後の 1 件のみ。全タブを `\n` で連結して解析するため行番号がタブと対応しない。意味エラー（未定義変数・型不一致）は検出しない | `Control.ts`, `SketchManager.transpileSketch` | — |
-| T16 | 本番コードにデバッグ出力（`performance.measure` の console.log、`console.log(ctx)` など） | `Control.ts:36`, `Transpiler.ts:49`, `ReferenceSolver.ts:282`, `Converter.ts:41` | — |
 | T17 | 文法がスイッチ式・パターン instanceof を受理しない（本家 4.5.2 の受理範囲は要確認） | `Processing.g4` | — |
 
 ## 既知のバグ（ランタイム / 描画）
@@ -58,7 +56,7 @@
 | R5 | `POINTS` が大きすぎる、`TRIANGLE_FAN` が誤り | `PGraphics.endShape` | shape_vertex |
 | R6 | テキストを BitmapFont から生成したテクスチャで描くためぼやける。既定フォント・ベースライン・textAlign の縦方向・textLeading 等が非対応 | `PGraphics.text` | text_basic |
 | R7 | `text()`/`image()` のたびに `app.render()` を呼ぶ（1 フレームに何度もレンダリング）。毎フレーム Graphics を作り直して再テッセレーション | `PGraphics.ts:270,299,444` | （性能） |
-| R8 | `PImage.updatePixels()` に `console.log(btoa(String.fromCharCode(...大きな配列)))` が残っており、画像が大きいとスタックオーバーフロー。さらに BMP エンコード → `createImageBitmap`（非同期）で反映が遅れる | `PImage.ts:74` | create_image サンプル |
+| R8 | `PImage.updatePixels()` は BMP にエンコード → `createImageBitmap`（非同期）で反映するため遅く、反映が次フレーム以降になる | `PImage.updatePixels` | pixels_basic |
 | R9 | `loadImage()` は PImage を同期で返すが中身は非同期にデコードされる（直後の `img.width` が 0） | `PApplet.loadImage`, `PImage.load_from_blob` | — |
 | R10 | `pixels[]` は Proxy 付きの通常の Array（遅い）。メインキャンバスの `loadPixels/updatePixels/get/set` 未実装 | `PImage.ts` | pixels_basic |
 | R11 | `int()` が `Math.floor`（Java は 0 方向への切り捨て: `int(-2.5)` = -2） | `PApplet.ts:523` | java_semantics |

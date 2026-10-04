@@ -279,7 +279,7 @@ function isMemberMethod(class_data:Map<string,ClassMember>,class_name:string,ctx
   if(class_name===_main_sketch)is_member=false;
   let is_applet_member=name in applet_instance&&(typeof applet_instance[name as keyof PApplet] === "function"||overloaded_functions.includes(name));
   class_data.get(_main_sketch)?.method.forEach((method)=>{
-    if(name===method.name){console.log(name,method,typeof applet_instance[name as keyof PApplet])
+    if(name===method.name){
       is_applet_member=true;
     }
   });

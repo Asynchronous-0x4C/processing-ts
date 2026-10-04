@@ -14,41 +14,34 @@ export let _main_sketch:string="";
 
 let error_listener:TranspileErrorListener<Token>;
 
+/** Milliseconds spent in each transpiler phase. */
+export type TranspileTimings={parse:number,analyze:number,solve:number,convert:number};
+
 export function transpile(sketch_content:string,main_sketch:string){
   _main_sketch=main_sketch;
   applet_instance=new PApplet(null as any);
-  performance.clearMarks();
-  performance.clearMeasures();
-  performance.mark("analyze_member()");
-  const class_data=analyze_member(sketch_content);
-  if(error_listener.error)return {result:"",error:error_listener};
-  performance.mark("solve_reference()");
+  const timings:TranspileTimings={parse:0,analyze:0,solve:0,convert:0};
+  const class_data=analyze_member(sketch_content,timings);
+  if(error_listener.error)return {result:"",error:error_listener,timings};
+  let t=performance.now();
   const solved_class_data=solve_reference(class_data);
-  performance.mark("convert()");
+  timings.solve=performance.now()-t;
+  t=performance.now();
   const converted_class_data=convert(solved_class_data);
-  performance.mark("end");
-  performance.measure("function analyze_member()","analyze_member()","solve_reference()");
-  performance.measure("analyze : new_instance","new_instance","read_stream");
-  performance.measure("analyze : read_stream","read_stream","parse_tree");
-  performance.measure("analyze : parse_tree","parse_tree","visit");
-  performance.measure("analyze : visit","visit","end_analyze");
-  performance.measure("function solve_reference()","solve_reference()","convert()");
-  performance.measure("function convert()","convert()","end");
-  performance.getEntriesByType("measure").forEach(e=>console.log(`${e.name} takes ${e.duration}ms`));
-  return {result:converted_class_data,error:error_listener};
+  timings.convert=performance.now()-t;
+  return {result:converted_class_data,error:error_listener,timings};
 }
 
-function analyze_member(sketch_content:string){
-  performance.mark("new_instance");
+function analyze_member(sketch_content:string,timings:TranspileTimings){
+  let t=performance.now();
   const member_analyzer=new MemberAnalyzer(_main_sketch);
-  performance.mark("read_stream");
   const parser = new ProcessingParser(new CommonTokenStream(new ProcessingLexer(CharStreams.fromString(sketch_content))));
   error_listener = new TranspileErrorListener<Token>();
-  performance.mark("parse_tree");
   const tree = parse(parser,error_listener);
-  performance.mark("visit");
+  timings.parse=performance.now()-t;
+  t=performance.now();
   member_analyzer.visit(tree);
-  performance.mark("end_analyze");
+  timings.analyze=performance.now()-t;
   return class_data;
 }
 

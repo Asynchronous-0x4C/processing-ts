@@ -38,7 +38,7 @@ export class Converter{
     replace_list.forEach((replace)=>{
       result=result.replace(replace.before,replace.after);
     });
-    result+=`\nconst __applet__=new ${_main_sketch}(__renderer__);\n${globals}\nconsole.log("sketch transpiled!");\nreturn __applet__;`;
+    result+=`\nconst __applet__=new ${_main_sketch}(__renderer__);\n${globals}\nreturn __applet__;`;
     return result;
   }
 }

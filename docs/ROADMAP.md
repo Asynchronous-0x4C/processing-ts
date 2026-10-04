@@ -25,7 +25,7 @@
 - [ ] **P0-1 構文解析の SLL 化**（S, T1）
   `Control.ts` で `PredictionMode.SLL` + `BailErrorStrategy` で解析し、失敗したら LL（既定のエラー戦略）で再解析する。
   完了条件: 視覚テストに回帰なし。docs/research/2026-10-measurements の 5k 行入力で、ウォーム解析が 100ms 未満（P0-4 の bench で計測）。
-- [ ] **P0-2 デバッグ出力の除去**（S, T16, R8）
+- [x] **P0-2 デバッグ出力の除去**（S, T16, R8）
   `PImage.updatePixels` の `console.log(btoa(...))`、`Transpiler.visitLastFormalParameter` / `ReferenceSolver.isMemberMethod` の console.log、`Control.ts` の計測ログ（オプション化）。
   完了条件: `npm run vt -- shot public/samples/Image/create_image` がエラーなしで完走。
 - [ ] **P0-3 リポジトリの整理**（S）

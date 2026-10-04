@@ -71,7 +71,7 @@ export class PImage extends PConstants{
         data[i*4+1]=(v>>8)&0xff;
         data[i*4+2]=(v>>16)&0xff;
         data[i*4+3]=v>>>24;
-      });console.log(btoa(String.fromCharCode(...convert(this.width,this.height,data))))
+      });
       this.load_from_blob(new Blob([convert(this.width,this.height,data)],{type:"image/bmp"}));
       this.__pixel_modified__=false;
     }

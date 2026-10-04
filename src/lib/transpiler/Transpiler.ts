@@ -46,7 +46,7 @@ export class Transpiler extends ProcessingVisitor<string>{
     return ctx.variableDeclaratorId().IDENTIFIER().getText();
   }
 
-  visitLastFormalParameter=(ctx: LastFormalParameterContext)=>{console.log(ctx)
+  visitLastFormalParameter=(ctx: LastFormalParameterContext)=>{
     return `...${ctx.variableDeclaratorId().IDENTIFIER().getText()}`;
   }
 

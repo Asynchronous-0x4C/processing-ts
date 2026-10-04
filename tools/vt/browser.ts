@@ -14,6 +14,8 @@ export type BrowserRunResult = {
   errors: string[];
   console: string[];
   transpileMs: number;
+  /** Per-phase transpiler timings reported by the transpiler (parse/analyze/solve/convert). */
+  timings?: Record<string, number>;
   setupMs: number;
   frameMs: number[];
   code?: string;

@@ -1,4 +1,4 @@
-import { transpile, TranspileErrorListener } from "./transpiler/Control";
+import { transpile, TranspileErrorListener, type TranspileTimings } from "./transpiler/Control";
 import { DefaultRunner, Runner } from "./runtime/runner/DefaultRunner";
 import { Token } from "antlr4";
 
@@ -109,7 +109,7 @@ export class SketchManager{
    * @param sketch_data Loaded sketch data
    * @returns Transpiled sketch.
    */
-  transpileSketch(sketch_data:SketchData):{result: string;error: TranspileErrorListener<Token>;}{
+  transpileSketch(sketch_data:SketchData):{result: string;error: TranspileErrorListener<Token>;timings?:TranspileTimings}{
     let transpiled=transpile(sketch_data.content.map(s=>s.content).join("\n"),sketch_data.main.replace(".pde",""));
     if(transpiled.error.error){
       this.runner.error_listeners.forEach(l=>l(transpiled.error.getErrorMessage()));

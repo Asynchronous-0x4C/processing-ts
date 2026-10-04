@@ -25,6 +25,7 @@ async function run(opts: RunOptions) {
   let transpileMs = 0;
   let setupMs = 0;
   let code: string | undefined;
+  let timings: Record<string, number> | undefined;
 
   const canvas = document.createElement("canvas");
   document.body.appendChild(canvas);
@@ -39,8 +40,9 @@ async function run(opts: RunOptions) {
     const transpiled = manager.transpileSketch({ main: opts.main, content: opts.files });
     transpileMs = performance.now() - t0;
     code = transpiled.result;
+    timings = transpiled.timings;
     if (transpiled.error?.error) {
-      return { ok: false, phase, width: 0, height: 0, logs, errors, transpileMs, setupMs, frameMs, code };
+      return { ok: false, phase, width: 0, height: 0, logs, errors, transpileMs, timings, setupMs, frameMs, code };
     }
     phase = "setup";
     const t1 = performance.now();
@@ -55,7 +57,7 @@ async function run(opts: RunOptions) {
     phase = "capture";
     const png = canvas.toDataURL("image/png");
     phase = "done";
-    return { ok: errors.length === 0, phase, png, width: canvas.width, height: canvas.height, logs, errors, transpileMs, setupMs, frameMs, code };
+    return { ok: errors.length === 0, phase, png, width: canvas.width, height: canvas.height, logs, errors, transpileMs, timings, setupMs, frameMs, code };
   } catch (e) {
     errors.push(`[${phase}] ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
     let png: string | undefined;
@@ -64,7 +66,7 @@ async function run(opts: RunOptions) {
     } catch {
       // canvas unusable
     }
-    return { ok: false, phase, png, width: canvas.width, height: canvas.height, logs, errors, transpileMs, setupMs, frameMs, code };
+    return { ok: false, phase, png, width: canvas.width, height: canvas.height, logs, errors, transpileMs, timings, setupMs, frameMs, code };
   }
 }
 
