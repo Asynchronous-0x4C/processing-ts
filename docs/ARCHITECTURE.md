@@ -51,17 +51,22 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 
 ## 新コンパイラ（`src/compiler/`、開発中）
 
-旧トランスパイラを置き換える予定のコンパイラ。現在はフロントエンド（構文解析 → AST）まで（P1-1〜P1-3）。型検査（P1-4）・コード生成（P1-5）・モード処理（P1-6）を足してから P1-9 で `SketchManager` を切り替える。
+旧トランスパイラを置き換える予定のコンパイラ。現在は構文解析 → AST → 前処理 → 型検査まで（P1-1〜P1-4）。コード生成（P1-5）とモード処理の残り（P1-6）を足してから P1-9 で `SketchManager` を切り替える。
 
 ```
 タブごとの { name, text }
-   │  parseSketch()  src/compiler/parse.ts
+   │  analyzeSketch()  src/compiler/index.ts
+   │  parseSketch()  parse.ts
    ├─ SketchSource（source.ts）: タブごとに通し番号の範囲を割り当てる
    ├─ タブごとに Lezer で解析（grammar/parser.ts）
    ├─ syntaxErrors()（syntax-errors.ts）: 構文エラーを複数件、メッセージ付きで
    └─ buildFile()（cst-to-ast.ts）: CST → 型付き AST（ast.ts）
+   │  checkSketch()  check.ts（構文エラーが無いときだけ）
+   ├─ buildSketch()（sketch.ts）: Processing の前処理。スケッチクラス（extends PApplet）の ClassDecl を合成
+   ├─ Library（library.ts）: api/library.gen.ts のクラスとシグネチャ（必要になったクラスだけ展開）
+   └─ Checker: クラスの登録 → ヘッダ解決 → メンバー登録 → 本体の検査（flow.ts / definite.ts）
    ▼
-{ source, files: SketchFile[]（タブごとの AST）, diagnostics }
+{ AST（型・シンボル・選ばれたオーバーロードを書き込み済み）, diagnostics }
 ```
 
 | ファイル | 内容 |
@@ -72,7 +77,13 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `syntax-errors.ts` | 構文エラーのメッセージ。字句の走査で未終端の文字列/コメントと括弧の対応を調べ、閉じられていない `{` は字下げから推定する。それより前の Lezer のエラーノードは「改行の前で式が終わっている → `Missing ';'`」「`for` の見出し → `Missing ';' in the 'for' header`」などの規則でメッセージにする。1 行に 1 件まで |
 | `literals.ts` | リテラルの解釈（整数の範囲と 16/8/2 進の 32/64 ビット折り返し、浮動小数の接尾辞、エスケープ、`#RRGGBB`、テキストブロック） |
 | `diagnostics.ts` | 診断の型（`code`・`message`・位置）と整形（`Tab.pde:行:列: error: ...`） |
-| `api/processing-core.json` | 本物の core jar（4.5.2）をリフレクションして得た public API（35 クラスのフィールド・コンストラクタ・メソッドのシグネチャ）。`npm run gen:manifest` で再生成。型検査とカバレッジ計測に使う |
+| `sketch.ts` | Processing の前処理に当たる部分（本物の `Processing cli --build` の出力と照合）。トップレベルにメソッドがあればアクティブモード（変数→フィールド、メソッド・クラス→メンバー）、無ければ静的モード（全文を `public void setup()` に入れ末尾に `noLoop()`）。インタフェース以外の全クラスのアクセス修飾子の無いメソッドを `public` にする。混在モードはエラー |
+| `types.ts` | 型（プリミティブ / クラス + 型引数 / 配列 / 型変数 / ワイルドカード / null / エラー）とシンボル（`ClassSymbol`・フィールド・メソッド・ローカル変数）、置換・消去・`asSuper` |
+| `typesystem.ts` | 型の関係: 部分型（型引数の包含）、代入・メソッド呼び出し（strict/loose）・キャストの各変換、数値昇格、ボクシング |
+| `library.ts` / `api/library.gen.ts` | ライブラリのクラス（Processing core と JDK の一部 216 クラス）。JVM のジェネリックシグネチャ形式の文字列から、使われたクラスだけをメンバーまで展開する。モデル外の型を使うメソッドは除外し、名前だけ残して「processing-ts では使えない」と報告する |
+| `check.ts` | 型検査器。名前解決（ローカル → 囲むクラスとその親 → static import、型はさらに import と既定の import）、式の型付け（Processing では接尾辞なしの小数は float）、定数畳み込み（`constants.ts`）、オーバーロード解決（strict → loose → 可変長、最も特定的なもの）、ジェネリックメソッドの型引数の推論（単一化）、ラムダ・メソッド参照、検査例外、上書きの規則、static 文脈、抽象メソッドの実装漏れ。結果を AST に書き込む（`ty`・`constant`・`sym`・`method`・`implicitThis` など） |
+| `flow.ts` / `definite.ts` | 到達可能性（`Unreachable code`・戻り値の欠落）と未初期化変数（JLS 16 章、条件の真偽ごとの状態を追う） |
+| `api/processing-core.json` | 本物の core jar（4.5.2）をリフレクションして得た public API の一覧（35 クラス）。カバレッジ計測（`npm run coverage`）用。`npm run gen:manifest` で `library.gen.ts` と一緒に再生成する |
 
 AST 構築時に Lezer 文法の解析結果を Java（Processing）の意味に合わせて組み直している所:
 

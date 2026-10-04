@@ -13,11 +13,28 @@
 // Parentheses are not kept: the tree structure carries the grouping.
 //
 // Plain object literals only (no classes/enums) so the module also runs under Node's type stripping.
+//
+// The checker (check.ts) records its results on the nodes: `ty`/`constant` on expressions, `sym` on
+// names and declarations, the chosen overload on calls. These fields are absent until checking.
+import type { ClassSymbol, ConstValue, FieldSymbol, LocalSymbol, MethodSymbol, Type } from "./types.ts";
 
 export interface NodeBase {
   start: number;
   end: number;
+  /** Created by the compiler (e.g. the sketch class, static mode's setup()), not written by the user. */
+  synthetic?: true;
 }
+
+/** Semantic information on expressions. */
+export interface ExprBase extends NodeBase {
+  /** Static type (after checking). */
+  ty?: Type;
+  /** Compile-time constant value, when the expression is a constant expression. */
+  constant?: ConstValue;
+}
+
+/** What a name in an expression refers to. A class symbol means the name is a type (static access). */
+export type NameRef = LocalSymbol | FieldSymbol | ClassSymbol | { kind: "package"; name: string };
 
 /** A name with its position (declaration names, member names, labels). */
 export interface Ident {
@@ -69,21 +86,26 @@ export interface Modified {
 // ---------------------------------------------------------------------------------------------------
 // Types
 
+/** Type nodes record the type they denote. */
+export interface TypeBase extends NodeBase {
+  resolved?: Type;
+}
+
 export type PrimitiveName = "byte" | "short" | "int" | "long" | "char" | "float" | "double" | "boolean";
 
-export interface PrimitiveType extends NodeBase {
+export interface PrimitiveType extends TypeBase {
   kind: "PrimitiveType";
   name: PrimitiveName;
   /** Written as Processing's `color` (an alias of int). */
   color?: true;
 }
 
-export interface VoidType extends NodeBase {
+export interface VoidType extends TypeBase {
   kind: "VoidType";
 }
 
 /** `var` in a local variable declaration (inferred type). */
-export interface VarType extends NodeBase {
+export interface VarType extends TypeBase {
   kind: "VarType";
 }
 
@@ -91,20 +113,20 @@ export interface VarType extends NodeBase {
  * `Name`, `pkg.Name`, `Outer.Inner<T>`, `Map.Entry<K, V>`. `qualifier` is the part before the last dot
  * (may be a package name; resolved by the checker). `typeArgs`: null = none, [] = diamond `<>`.
  */
-export interface ClassType extends NodeBase {
+export interface ClassType extends TypeBase {
   kind: "ClassType";
   qualifier: ClassType | null;
   name: Ident;
   typeArgs: TypeArgument[] | null;
 }
 
-export interface ArrayType extends NodeBase {
+export interface ArrayType extends TypeBase {
   kind: "ArrayType";
   element: TypeNode;
 }
 
 /** `?`, `? extends T`, `? super T` (type arguments only). */
-export interface WildcardType extends NodeBase {
+export interface WildcardType extends TypeBase {
   kind: "WildcardType";
   bound: TypeNode | null;
   /** true: `extends` (upper bound), false: `super`. */
@@ -117,14 +139,14 @@ export type TypeArgument = TypeNode | WildcardType;
 // ---------------------------------------------------------------------------------------------------
 // Expressions
 
-export interface IntLiteral extends NodeBase {
+export interface IntLiteral extends ExprBase {
   kind: "IntLiteral";
   /** Two's-complement value (hex/octal/binary literals wrap: 0xFFFFFFFF = -1). Longs beyond 2^53 lose precision. */
   value: number;
   long: boolean;
 }
 
-export interface FloatLiteral extends NodeBase {
+export interface FloatLiteral extends ExprBase {
   kind: "FloatLiteral";
   /** Exact decimal value as a double (the float rounding is applied by later passes). */
   value: number;
@@ -132,67 +154,78 @@ export interface FloatLiteral extends NodeBase {
   suffix: "f" | "d" | null;
 }
 
-export interface CharLiteral extends NodeBase {
+export interface CharLiteral extends ExprBase {
   kind: "CharLiteral";
   /** UTF-16 code unit. */
   value: number;
 }
 
-export interface StringLiteral extends NodeBase {
+export interface StringLiteral extends ExprBase {
   kind: "StringLiteral";
   value: string;
   textBlock?: true;
 }
 
-export interface BooleanLiteral extends NodeBase {
+export interface BooleanLiteral extends ExprBase {
   kind: "BooleanLiteral";
   value: boolean;
 }
 
-export interface NullLiteral extends NodeBase {
+export interface NullLiteral extends ExprBase {
   kind: "NullLiteral";
 }
 
-export interface Identifier extends NodeBase {
+export interface Identifier extends ExprBase {
   kind: "Identifier";
   name: string;
+  sym?: NameRef;
+  /** For an instance field: the (lexically enclosing) class whose `this` is the implicit qualifier. */
+  implicitThis?: ClassSymbol;
 }
 
 /** `this` or `Outer.this`. */
-export interface ThisExpr extends NodeBase {
+export interface ThisExpr extends ExprBase {
   kind: "This";
   qualifier: Expression | null;
 }
 
 /** `super` as the target of a field access, method call or method reference (`Iface.super` has a qualifier). */
-export interface SuperExpr extends NodeBase {
+export interface SuperExpr extends ExprBase {
   kind: "Super";
   qualifier: Expression | null;
 }
 
-export interface FieldAccess extends NodeBase {
+export interface FieldAccess extends ExprBase {
   kind: "FieldAccess";
   target: Expression;
   name: Ident;
+  /** A field, `length` of an array (no symbol), a member type or a package. */
+  sym?: NameRef;
 }
 
-export interface ArrayAccess extends NodeBase {
+export interface ArrayAccess extends ExprBase {
   kind: "ArrayAccess";
   array: Expression;
   index: Expression;
 }
 
-export interface MethodCall extends NodeBase {
+export interface MethodCall extends ExprBase {
   kind: "MethodCall";
   /** null for an unqualified call `f(x)`. */
   target: Expression | null;
   typeArgs: TypeArgument[] | null;
   name: Ident;
   args: Expression[];
+  /** Chosen overload. */
+  method?: MethodSymbol;
+  /** Called in variable-arity form (the trailing arguments are packed into an array). */
+  varargsCall?: boolean;
+  /** Unqualified instance method call: the (lexically enclosing) class whose `this` is the receiver. */
+  implicitThis?: ClassSymbol;
 }
 
 /** `new T(args)`, `outer.new Inner(args)`, anonymous classes (`body`). */
-export interface NewObject extends NodeBase {
+export interface NewObject extends ExprBase {
   kind: "NewObject";
   outer: Expression | null;
   /** Explicit constructor type arguments: `new <String>Foo()`. */
@@ -200,10 +233,14 @@ export interface NewObject extends NodeBase {
   type: ClassType;
   args: Expression[];
   body: Member[] | null;
+  ctor?: MethodSymbol;
+  varargsCall?: boolean;
+  /** Class of an anonymous class body. */
+  anonymous?: ClassSymbol;
 }
 
 /** `new int[n][]`, `new String[] {"a"}`. `dimensions` has one entry per `[]` (null when unsized). */
-export interface NewArray extends NodeBase {
+export interface NewArray extends ExprBase {
   kind: "NewArray";
   elementType: TypeNode;
   dimensions: (Expression | null)[];
@@ -211,19 +248,19 @@ export interface NewArray extends NodeBase {
 }
 
 /** `{a, b, c}` in a variable initializer or after `new T[]`. */
-export interface ArrayInit extends NodeBase {
+export interface ArrayInit extends ExprBase {
   kind: "ArrayInit";
   elements: Expression[];
 }
 
 export type UnaryOp = "+" | "-" | "!" | "~";
-export interface Unary extends NodeBase {
+export interface Unary extends ExprBase {
   kind: "Unary";
   op: UnaryOp;
   operand: Expression;
 }
 
-export interface Update extends NodeBase {
+export interface Update extends ExprBase {
   kind: "Update";
   op: "++" | "--";
   prefix: boolean;
@@ -234,28 +271,28 @@ export type BinaryOp =
   | "*" | "/" | "%" | "+" | "-" | "<<" | ">>" | ">>>"
   | "<" | ">" | "<=" | ">=" | "==" | "!="
   | "&" | "^" | "|" | "&&" | "||";
-export interface Binary extends NodeBase {
+export interface Binary extends ExprBase {
   kind: "Binary";
   op: BinaryOp;
   left: Expression;
   right: Expression;
 }
 
-export interface InstanceOf extends NodeBase {
+export interface InstanceOf extends ExprBase {
   kind: "InstanceOf";
   expr: Expression;
   type: TypeNode;
 }
 
 export type AssignOp = "=" | "*=" | "/=" | "%=" | "+=" | "-=" | "<<=" | ">>=" | ">>>=" | "&=" | "^=" | "|=";
-export interface Assign extends NodeBase {
+export interface Assign extends ExprBase {
   kind: "Assign";
   op: AssignOp;
   target: Expression;
   value: Expression;
 }
 
-export interface Conditional extends NodeBase {
+export interface Conditional extends ExprBase {
   kind: "Conditional";
   test: Expression;
   consequent: Expression;
@@ -263,43 +300,47 @@ export interface Conditional extends NodeBase {
 }
 
 /** `(T) x`, `(A & B) x` (extra interface bounds in `bounds`). */
-export interface Cast extends NodeBase {
+export interface Cast extends ExprBase {
   kind: "Cast";
   type: TypeNode;
   bounds: TypeNode[];
   expr: Expression;
 }
 
-export interface Lambda extends NodeBase {
+export interface Lambda extends ExprBase {
   kind: "Lambda";
   /** Parameters; `type` is null for inferred parameters (`x -> ...`, `(a, b) -> ...`). */
   params: Param[];
   body: Expression | Block;
+  /** The functional interface method the lambda implements. */
+  sam?: MethodSymbol;
 }
 
+
 /** `Type::name`, `expr::name`, `super::name`, `Type::new` (name.text === "new"). */
-export interface MethodRef extends NodeBase {
+export interface MethodRef extends ExprBase {
   kind: "MethodRef";
   target: Expression | TypeNode;
   typeArgs: TypeArgument[] | null;
   name: Ident;
+  method?: MethodSymbol;
 }
 
 /** `String.class`, `int[].class`. */
-export interface ClassLit extends NodeBase {
+export interface ClassLit extends ExprBase {
   kind: "ClassLit";
   type: TypeNode;
 }
 
 /** Processing's conversion functions on primitive type names: `int(x)`, `float(s)`, ... */
-export interface Conversion extends NodeBase {
+export interface Conversion extends ExprBase {
   kind: "Conversion";
   type: PrimitiveName;
   args: Expression[];
 }
 
 /** Placeholder for an expression that could not be parsed (a syntax error was reported). */
-export interface ErrorExpr extends NodeBase {
+export interface ErrorExpr extends ExprBase {
   kind: "ErrorExpr";
 }
 
@@ -320,6 +361,7 @@ export interface Block extends NodeBase {
 /** `int a = 1, b[] = {2};` — `dims` counts C-style brackets after the name (`b[]`). */
 export interface VarDeclarator extends NodeBase {
   kind: "VarDeclarator";
+  sym?: LocalSymbol | FieldSymbol;
   name: Ident;
   dims: number;
   init: Expression | null;
@@ -366,6 +408,7 @@ export interface For extends NodeBase {
 
 export interface ForEach extends NodeBase, Modified {
   kind: "ForEach";
+  sym?: LocalSymbol;
   type: TypeNode;
   name: Ident;
   dims: number;
@@ -420,6 +463,7 @@ export interface Assert extends NodeBase {
 
 export interface Catch extends NodeBase, Modified {
   kind: "Catch";
+  sym?: LocalSymbol;
   /** Alternatives of a multi-catch `catch (A | B e)`. */
   types: TypeNode[];
   name: Ident;
@@ -461,6 +505,7 @@ export interface TypeParam extends NodeBase {
 
 export interface Param extends NodeBase, Modified {
   kind: "Param";
+  sym?: LocalSymbol;
   /** null for inferred lambda parameters. */
   type: TypeNode | null;
   name: Ident;
@@ -470,6 +515,7 @@ export interface Param extends NodeBase, Modified {
 
 export interface MethodDecl extends NodeBase, Modified {
   kind: "MethodDecl";
+  sym?: MethodSymbol;
   typeParams: TypeParam[];
   returnType: TypeNode;
   name: Ident;
@@ -492,6 +538,7 @@ export interface ConstructorCall extends NodeBase {
 
 export interface ConstructorDecl extends NodeBase, Modified {
   kind: "ConstructorDecl";
+  sym?: MethodSymbol;
   typeParams: TypeParam[];
   name: Ident;
   params: Param[];
@@ -515,6 +562,7 @@ export interface Initializer extends NodeBase {
 
 export interface ClassDecl extends NodeBase, Modified {
   kind: "ClassDecl";
+  sym?: ClassSymbol;
   name: Ident;
   typeParams: TypeParam[];
   superclass: ClassType | null;
@@ -524,6 +572,7 @@ export interface ClassDecl extends NodeBase, Modified {
 
 export interface InterfaceDecl extends NodeBase, Modified {
   kind: "InterfaceDecl";
+  sym?: ClassSymbol;
   name: Ident;
   typeParams: TypeParam[];
   extends: ClassType[];
@@ -532,6 +581,7 @@ export interface InterfaceDecl extends NodeBase, Modified {
 
 export interface EnumConstant extends NodeBase, Modified {
   kind: "EnumConstant";
+  sym?: FieldSymbol;
   name: Ident;
   args: Expression[] | null;
   body: Member[] | null;
@@ -539,6 +589,7 @@ export interface EnumConstant extends NodeBase, Modified {
 
 export interface EnumDecl extends NodeBase, Modified {
   kind: "EnumDecl";
+  sym?: ClassSymbol;
   name: Ident;
   interfaces: ClassType[];
   constants: EnumConstant[];
@@ -681,7 +732,7 @@ export function printAst(node: Node, options: { positions?: boolean } = {}): str
     const parts: string[] = [o.kind as string];
     if (options.positions) parts.push(`@${o.start}-${o.end}`);
     for (const [key, value] of Object.entries(o)) {
-      if (key === "kind" || key === "start" || key === "end" || key === "annotations" && Array.isArray(value) && !value.length) continue;
+      if (key === "kind" || key === "start" || key === "end" || SEMANTIC_FIELDS.has(key) || key === "annotations" && Array.isArray(value) && !value.length) continue;
       if (key === "modifiers") {
         if (value) parts.push(`[${modifierText(value as number)}]`);
         continue;
@@ -705,6 +756,9 @@ export function printAst(node: Node, options: { positions?: boolean } = {}): str
   };
   return printNode(node as unknown as Record<string, unknown>);
 }
+
+// Checker results and markers; printAst shows the syntax only.
+const SEMANTIC_FIELDS = new Set(["ty", "constant", "sym", "method", "ctor", "anonymous", "sam", "resolved", "varargsCall", "implicitThis", "synthetic"]);
 
 // Fields whose node value is printed without a "(field ...)" wrapper because the kind already says it.
 const isNodeField = (key: string) => key === "type" || key === "expr" || key === "operand" || key === "target" || key === "body"

@@ -34,3 +34,6 @@ tests/corpus/out/
 
 # grammar conformance output
 tests/grammar/out/
+
+# type checker conformance output
+tests/check/out/

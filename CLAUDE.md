@@ -30,6 +30,7 @@ npm run vt -- shot <sketchDir> --ref --frames 30   # 任意のスケッチを pr
 npm run vt -- list           # テストケースと既知の問題の一覧
 npm run vt -- corpus         # Processing 同梱 examples 254 本の互換性集計（約 5 分）→ tests/corpus/report.md
 npm run test:grammar         # Lezer 文法と公式文法（ANTLR）の受理/拒否の一致を確認（文法を変えたら必ず実行）
+npm run test:check           # 新コンパイラの型検査を本物の Processing（cli --build）と比較（型検査を変えたら実行。初回のみ約 40 分）
 npm run gen:grammar          # src/compiler/grammar/processing.grammar → parser.ts を再生成
 npm run gen:manifest         # 本物の core jar から API マニフェスト（src/compiler/api/processing-core.json）を再生成
 npm run coverage             # リファレンスに対する実装済み API の一覧 → docs/api-coverage.md

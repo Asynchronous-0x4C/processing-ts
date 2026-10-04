@@ -5,11 +5,12 @@
 ## 現在地（2026-10-04 時点。セッションの終わりに更新する）
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
-- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）。P0-8（CI）は任意で未着手。
-- **次にやること: P1-4（シンボル表と型検査）** → P1-5（コード生成）→ P1-6（モード判定。混在モードの拒否規則は `tools/grammar/compare.ts` の `lezerVerdict` と同じにする）。
-  - 入力: `parseSketch()`（`src/compiler/parse.ts`）が返すタブごとの AST（`src/compiler/ast.ts`）と `src/compiler/api/processing-core.json`（API シグネチャ）。構成は [ARCHITECTURE.md](ARCHITECTURE.md) の「新コンパイラ」。DOM に依存させない（`src/compiler/tsconfig.json` に DOM が無いので型チェックで検出される）。
-  - P1-4 で決めること: 型・シンボルの結果を AST ノードに書き込むか別表に持つか（AST は現在プレーンなオブジェクトで、`kind` 以外の解析結果を持たない）。マニフェストの縮小形式。
-- 基準値: 視覚テスト 5 PASS / 15 XFAIL、互換性コーパス 95/254、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、サイズと時間の予算は `tools/bench/budget.json`。
+- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）。P1-6 のうちモード判定・静的モードの包み方・混在モードの拒否・`public` の付与は `sketch.ts` で実装済み。P0-8（CI）は任意で未着手。
+- **次にやること: P1-5（コード生成）** → P1-6 の残り（`size()` などの `settings()` への移動）→ P1-7 → P1-8 → P1-9。
+  - 入力: `analyzeSketch()`（`src/compiler/index.ts`）が返す型検査済みの AST。式には `ty`/`constant`、名前には `sym`（ローカル/フィールド/クラス）、修飾なしのメンバーには `implicitThis`、呼び出しには選ばれたオーバーロード `method` と `varargsCall`、ラムダには `sam` が書き込まれている（`ast.ts` 冒頭）。スケッチ全体は `sketch.decl`（`extends PApplet` の ClassDecl）。
+  - 構成は [ARCHITECTURE.md](ARCHITECTURE.md) の「新コンパイラ」。DOM に依存させない（`src/compiler/tsconfig.json` に DOM が無いので型チェックで検出される）。
+  - 速度の注意: 5k 行のウォームで解析から型検査まで 44ms（うち Lezer の解析が約 23ms）。P1-9 の目標（変換全体 50ms）にはコード生成を数 ms に収め、解析の高速化（文法の曖昧さの削減など）も要る。
+- 基準値: 視覚テスト 5 PASS / 15 XFAIL、互換性コーパス 95/254、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,220/2,223（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`。
 
 ## 進め方
 
@@ -71,12 +72,20 @@
   `tools/manifest/`: Processing 同梱 JDK（`C:/Program Files/Processing/app/resources/jdk`）で core jar をリフレクションし、PApplet/PGraphics/PImage/PVector/PShape/PShader/PFont/PMatrix*/IntList…/Table/XML/JSON* の public メソッド・フィールド・定数を JSON 化（`src/compiler/api/processing-core.json`、コミットする）。
   完了条件: PApplet のメソッド 316 名・716 オーバーロードが含まれる。ランタイムの実装状況との差分を出すスクリプト（カバレッジ表を STATUS.md に自動反映できる形）。
   → 結果: `npm run gen:manifest`（`tools/manifest/`）で 35 クラスを出力。PApplet は 351 名 / 715 オーバーロード（数え方の違いで調査時の 316/716 とずれるが、宣言された public メソッドはすべて含む）。`npm run coverage` が [docs/api-coverage.md](api-coverage.md) を生成（現状: リファレンスの関数 102/253 = 40%）。ブラウザ内コンパイラに載せる際は、このJSON（250 KB）から必要な情報だけを抜いた小さな形式を生成すること（P1-4）。
-- [ ] **P1-4 シンボル表と型検査**（L）
+- [x] **P1-4 シンボル表と型検査**（L）
   スケッチクラス/内部クラス/static ネスト/インタフェース/enum/ジェネリクス（消去）/配列、数値昇格、文字列連結、オーバーロード解決（完全一致 → 拡大 → ボクシング → 可変長）。未定義・型不一致などの意味エラーを複数件、位置つきで返す。
+  → 結果（2026-10-04）: `src/compiler/{sketch,types,typesystem,library,check,constants,flow,definite}.ts`。`analyzeSketch()` で解析から型検査まで。
+  - 判定基準として **本物の Processing の `cli --build`（前処理 + ECJ）** と比較する `npm run test:check` を追加（`tools/check/`）。入力は同梱 examples・リポジトリのスケッチ 297 本と、AST を使って作る意味エラーの変種 1,926 本（未定義の変数/関数、引数の追加、文字列の引数、float→int の宣言、到達不能コード、変数の重複、内部クラスの static メソッド、型の取り違え、return の削除）。Processing の結果はキャッシュ（初回は約 40 分）。
+  - 結果: **2,220/2,223 件一致、見逃し 0 件**。誤検出 3 件はすべて `java.awt.Polygon`（processing-ts では使えないクラス。`unsupported` として報告）。両方が拒否した 1,759 件のうち、Processing の最初のエラーの行を我々も報告 1,743 件、メッセージ完全一致 1,756 件（「適用できない候補」の選び方まで ECJ に合わせた）。
+  - Processing（Java とは別）の挙動を `--build` で確認して反映: 既定の import、接尾辞なしの小数は float、全クラスのアクセス修飾子なしのメソッドは public、静的モードは `setup()` に包んで `noLoop()`、内部クラスに static メンバーや enum を置けない（Java 16 未満の扱い）、ローカル enum は不可。
+  - API モデル: `npm run gen:manifest` が `src/compiler/api/library.gen.ts` も生成（Processing core + JDK の一部 216 クラス、ジェネリクスと throws 付きの JVM シグネチャ、宣言順。モデル外の型を使うメンバーと PApplet 以外の protected は除外し、名前だけ残して「使えない」と報告）。gzip 36 KiB。
+  - 速度（Node、warm、解析込み）: 199 行 2.5ms、5k 行 44ms（型検査は約 10ms、残りは Lezer の解析と AST 構築）。コンパイラ全体の gzip は 103 KiB（うちライブラリモデル 36 KiB）。
+  - 未対応（STATUS.md の C 番号）: 実引数位置のジェネリックメソッドの推論、final への再代入（definite unassignment）、キャプチャ変換。
 - [ ] **P1-5 コード生成**（L）
   EVALUATION.md §3 の表（整数演算、飽和キャスト、複合代入、char、float の表示、型付き配列、String、typed catch、予約語回避、オーバーロードの名前修飾）。Source Map v3。ランタイムヘルパは `src/runtime/lang/`。
 - [ ] **P1-6 モードとプリプロセッサ相当の処理**（M）
   静的/アクティブ/Java クラスの判定（T11）、小数リテラルの float 扱い、`#hex`、`settings()` への移動、静的モードの `noLoop()`。
+  → 一部済み（P1-2/P1-4）: モード判定・静的モードの `setup()` + `noLoop()`・混在モードのエラー・メソッドへの `public` 付与（`sketch.ts`）、小数リテラルの float（`check.ts`）、`#hex`（`cst-to-ast.ts`）。残り: `size()`/`fullScreen()`/`smooth()`/`pixelDensity()` の `settings()` への移動と Java モード（`public class ... extends PApplet` を含むスケッチ）。確認には `Processing cli --build` の出力を使う。
 - [ ] **P1-7 Java 標準ライブラリの互換層**（M）
   ArrayList, HashMap, HashSet, LinkedList, Collections, Arrays, StringBuilder, Integer/Float/Double/Boolean の parse/valueOf, Math, Iterator, Map.Entry, Character, String のメソッド。
 - [ ] **P1-8 stdout 適合テストの拡充と高速ランナー**（M）
@@ -141,7 +150,8 @@ CodeMirror 6 + Lezer Processing 文法のデモエディタ（ハイライト、
 | 済 | `tools/vt run/ref/shot/list` | Processing の参照画像・stdout と比較（[TESTING.md](TESTING.md)） |
 | 済 (P0-4) | `npm run bench` / `npm run size` | 変換時間・バンドルサイズの計測と予算チェック |
 | 済 (P0-5) | `npm run vt -- corpus` | 同梱 examples 254 本の互換性集計 |
-| P0-6 | `npm test`（Vitest） | コンパイラの単体テスト |
+| 済 (P0-6) | `npm test`（Vitest） | コンパイラの単体テスト |
+| 済 (P1-4) | `npm run test:check` | 型検査の受理/拒否・エラー行・メッセージを本物の Processing（`cli --build`）と比較（意味エラーの変種を含む） |
 | P1-8 | `npm run test:lang` | 描画しない stdout 適合テストを Node で高速実行 |
 | P2-8 | vt の入力スクリプト | フレームごとのマウス/キー操作を Processing 側（`java.awt.Robot` ではなくイベント関数の直接呼び出しを注入）と processing-ts 側の両方で再生して比較 |
 | P2-9 | vt `--offline` | Service Worker + オフラインでの data/ 読み込み確認 |

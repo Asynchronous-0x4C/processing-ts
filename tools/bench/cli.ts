@@ -99,24 +99,24 @@ console.log(JSON.stringify({ cold, warm: times[Math.floor(times.length / 2)], er
   return { md: table(`parse (Node ${process.version}, median of ${RUNS} warm runs)`, ["lines", "cold ms", "warm ms", "error"], rows), failed, data };
 }
 
-// --- compile: Node, the new compiler's front end (src/compiler/parse.ts: Lezer parse per tab, syntax
-// errors, AST), one fresh process per input
+// --- compile: Node, the new compiler (src/compiler/index.ts analyzeSketch: Lezer parse per tab, syntax
+// errors, AST, type checking), one fresh process per input
 async function benchCompile(): Promise<{ md: string; failed: boolean; data: unknown }> {
   fs.mkdirSync(path.join(CACHE, "inputs"), { recursive: true });
   await build({
-    entryPoints: [path.join(ROOT, "src/compiler/parse.ts")],
+    entryPoints: [path.join(ROOT, "src/compiler/index.ts")],
     bundle: true, format: "esm", platform: "node", outfile: path.join(CACHE, "compile.mjs"), logLevel: "silent",
   });
   const runner = path.join(CACHE, "compile-runner.mjs");
   fs.writeFileSync(runner, `import fs from "node:fs";
-import { parseSketch } from "./compile.mjs";
+import { analyzeSketch } from "./compile.mjs";
 const tabs = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const runs = Number(process.argv[3]);
 let t = performance.now();
-const first = parseSketch(tabs);
+const first = analyzeSketch(tabs);
 const cold = performance.now() - t;
 const times = [];
-for (let i = 0; i < runs; i++) { t = performance.now(); parseSketch(tabs); times.push(performance.now() - t); }
+for (let i = 0; i < runs; i++) { t = performance.now(); analyzeSketch(tabs); times.push(performance.now() - t); }
 times.sort((a, b) => a - b);
 console.log(JSON.stringify({ cold, warm: times[Math.floor(times.length / 2)], diagnostics: first.diagnostics.length }));
 `);
@@ -135,7 +135,7 @@ console.log(JSON.stringify({ cold, warm: times[Math.floor(times.length / 2)], di
     if (limit !== undefined && r.warm > limit) failed = true;
     rows.push({ name: input.name, values: { lines: input.lines, "cold ms": ms(r.cold), "warm ms": ms(r.warm), diagnostics: r.diagnostics || "" }, over });
   }
-  return { md: table(`compile: new compiler front end, parse + AST (Node ${process.version}, median of ${RUNS} warm runs)`, ["lines", "cold ms", "warm ms", "diagnostics"], rows), failed, data };
+  return { md: table(`compile: new compiler, parse + AST + type check (Node ${process.version}, median of ${RUNS} warm runs; cold includes loading the library model)`, ["lines", "cold ms", "warm ms", "diagnostics"], rows), failed, data };
 }
 
 // --- transpile: headless Chromium, the full transpiler through SketchManager, fresh page per input
@@ -181,6 +181,7 @@ const SIZE_ENTRIES = [
   { name: "parser (antlr4 + generated)", entry: "src/lib/transpiler/SketchParser.ts", external: [] },
   { name: "parser (lezer, src/compiler/grammar)", entry: "src/compiler/grammar/parser.ts", external: [] },
   { name: "compiler front end (lezer + AST, src/compiler/parse.ts)", entry: "src/compiler/parse.ts", external: [] },
+  { name: "compiler (front end + type checker + library model, src/compiler/index.ts)", entry: "src/compiler/index.ts", external: [] },
 ];
 
 async function benchSize(): Promise<{ md: string; failed: boolean; data: unknown }> {
@@ -220,7 +221,7 @@ function usage(): never {
   console.log(`processing-ts benchmarks
 
   node tools/bench/cli.ts parse      Parser speed in Node (cold = fresh process; warm = median)
-  node tools/bench/cli.ts compile    New compiler front end in Node (parse + AST per tab)
+  node tools/bench/cli.ts compile    New compiler in Node (parse + AST + type check)
   node tools/bench/cli.ts transpile  Full transpile in headless Chromium (cold = fresh page)
   node tools/bench/cli.ts size       Bundle sizes (min / gzip / brotli)
   node tools/bench/cli.ts all

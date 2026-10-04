@@ -6,6 +6,7 @@
 | 視覚 / 出力回帰テスト | `npm run test:visual` | 本物の Processing との画像・println 比較（以下） |
 | 型チェック | `npm run typecheck` | src/lib・tools・tests |
 | 文法の適合性 | `npm run test:grammar` | 新しい Lezer 文法、および新コンパイラのフロントエンド（構文解析 + AST 構築、`parseSketch`）と公式文法（ANTLR）の受理/拒否の一致を、同梱 examples・リポジトリのスケッチ・構文エラー変種（`;` `)` `}` を 1 つ消したもの）で比較。変種では構文エラーメッセージの質（消した記号を名指しするか、位置が合っているか）も集計する（結果: `tests/grammar/out/report.md`） |
+| 型検査の適合性 | `npm run test:check` | 新コンパイラの型検査（`analyzeSketch`）の受理/拒否・最初のエラーの行・メッセージを、本物の Processing の `cli --build`（前処理 + ECJ）と比較。入力は同梱 examples・リポジトリのスケッチと、AST を使って機械的に作る意味エラーの変種（`tools/check/mutations.ts`）。Processing の結果は `node_modules/.cache/processing-ts-check` にキャッシュ（初回は約 40 分、以後は数秒）。誤検出・見逃しがあると終了コード 1（結果: `tests/check/out/report.md`） |
 | 性能 / サイズ | `npm run bench` / `npm run size` | 変換時間・バンドルサイズ（後述「性能・サイズ計測」） |
 
 # 視覚 / 出力回帰テスト

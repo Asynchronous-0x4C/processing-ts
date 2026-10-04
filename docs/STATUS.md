@@ -8,7 +8,7 @@
 | 領域 | 状態 |
 |---|---|
 | 構文解析 | 実行パスは ANTLR4 + Processing 公式文法（Java 8 時代の古いコピー）。SLL 予測 + LL フォールバック（P0-1）。コールド時のコストが残る（T2）。新コンパイラ（`src/compiler/`、未接続）は Lezer 文法 + 型付き AST まで完成（P1-1/P1-2）: 同梱 examples 254 本を診断なしで AST 化、構文エラーはタブ・行・列つきで複数件 |
-| 意味解析（型） | **なし**。型情報を使わずに文字列変換しているため Java の意味論がずれる |
+| 意味解析（型） | 実行パスは**なし**（型情報を使わずに文字列変換しているため Java の意味論がずれる）。新コンパイラ（未接続）は型検査まで完成（P1-4）: 本物の Processing の `cli --build` と 2,220/2,223 件一致、見逃し 0（`npm run test:check`） |
 | 静的モード | **未対応**（setup/draw の無いスケッチは変換時に例外） |
 | 2D 描画 | 基本図形・変換・色・createGraphics は概ね動く。細部（既定値、モード、stroke の端/結合、テキスト）にずれ |
 | P2D / P3D / PShader | **未実装** |
@@ -17,7 +17,7 @@
 | 同梱サンプル | 21 本すべてがエラーなく実行 |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **95 本（37%）** がエラーなく完走（JAVA2D 54% / P2D 14% / P3D 3%）。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
 | 視覚テスト | 20 ケース: 5 PASS / 15 XFAIL（[TESTING.md](TESTING.md)） |
-| 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし |
+| 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`（本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
 
@@ -69,6 +69,18 @@
 | R15 | `size()` を呼ばないスケッチは描画系が初期化されない（Processing は 100x100 で動く） | `PApplet.size`, `PGraphics.init` | — |
 | R16 | キー入力が DOM の `keyCode`/`key` をそのまま使う（`key == CODED` や `UP`/`DOWN` 判定が Processing と異なる）。`keyTyped` の発火条件が違う | `DefaultRunner` | — |
 | R17 | 未実装の主な API: bezier/curve 系、strokeCap/Join、blendMode（空実装）、tint、filter、mask、copy/blend、get/set、PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、saveFrame、cursor()、delay、thread など | — | bezier_curve, p3d_box, pshader_filter, pixels_basic |
+
+## 既知の問題（新コンパイラ `src/compiler/`、未接続）
+
+型検査の基準は本物の Processing（`npm run test:check`）。以下は分かっている差。
+
+| # | 問題 | 場所 |
+|---|---|---|
+| C1 | ジェネリックメソッドの型引数を実引数・代入先から推論するのは単純な単一化だけ。実引数の位置にある `Collections.emptyList()` などは Object になり、`List<String>` の引数に渡すと誤ってエラーになる | `check.ts`（instantiate / unify） |
+| C2 | final 変数への 2 回目の代入（definite unassignment）と blank final フィールドの初期化漏れを検出しない | `definite.ts` |
+| C3 | キャプチャ変換をしない（ワイルドカードは境界として読む）。`List<? super T>` への書き込みなど一部で Java より緩い | `typesystem.ts` |
+| C4 | 構文解析が遅め: 5k 行のウォームで Lezer の解析だけで約 23ms（解析から型検査まで 44ms）。P1-9 の目標（変換全体 50ms）に向けて文法の曖昧さを減らす必要がある | `grammar/processing.grammar` |
+| C5 | `java.awt` など JDK のモデル外のクラスは使えない（`unsupported` で報告。同梱 examples では Yellowtail の `java.awt.Polygon` のみ） | `tools/manifest/ManifestGen.java`（LIBRARY_ROOTS） |
 
 ## 既知の問題（IO / PWA）
 

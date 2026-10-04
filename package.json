@@ -40,6 +40,7 @@
     "size": "node tools/bench/cli.ts size",
     "gen:grammar": "lezer-generator --typeScript src/compiler/grammar/processing.grammar -o src/compiler/grammar/parser.ts",
     "test:grammar": "node tools/grammar/compare.ts",
+    "test:check": "node tools/check/compare.ts",
     "gen:manifest": "node tools/manifest/generate.ts",
     "coverage": "node tools/manifest/coverage.ts"
   },
