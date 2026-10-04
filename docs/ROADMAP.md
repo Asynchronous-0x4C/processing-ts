@@ -57,9 +57,10 @@
   → 結果（2026-10-04）: `npm run test:grammar` で **1,186/1,186 件一致**（有効な入力 307: 同梱 examples 254 + リポジトリのスケッチ + Processing 固有構文のスニペット + 5k 行の合成スケッチ、構文エラーを入れた変種 879）。199 行のコールド解析 7.4ms / ウォーム 1.0ms、gzip 30.5 KiB（ANTLR 版は 69.0 KiB）。混在モード（静的な文とメソッド宣言の混在）は文法ではなくコンパイラで拒否する（compare.ts の `lezerVerdict` と同じ規則を P1-6 で実装する）。
 - [ ] **P1-2 AST と CST→AST 変換**（M）
   型付き AST（ノードごとにタブ・行・列）。複数タブはタブ単位で解析して位置を保持（T15）。
-- [ ] **P1-3 Processing API マニフェスト**（M）
+- [x] **P1-3 Processing API マニフェスト**（M）
   `tools/manifest/`: Processing 同梱 JDK（`C:/Program Files/Processing/app/resources/jdk`）で core jar をリフレクションし、PApplet/PGraphics/PImage/PVector/PShape/PShader/PFont/PMatrix*/IntList…/Table/XML/JSON* の public メソッド・フィールド・定数を JSON 化（`src/compiler/api/processing-core.json`、コミットする）。
   完了条件: PApplet のメソッド 316 名・716 オーバーロードが含まれる。ランタイムの実装状況との差分を出すスクリプト（カバレッジ表を STATUS.md に自動反映できる形）。
+  → 結果: `npm run gen:manifest`（`tools/manifest/`）で 35 クラスを出力。PApplet は 351 名 / 715 オーバーロード（数え方の違いで調査時の 316/716 とずれるが、宣言された public メソッドはすべて含む）。`npm run coverage` が [docs/api-coverage.md](api-coverage.md) を生成（現状: リファレンスの関数 102/253 = 40%）。ブラウザ内コンパイラに載せる際は、このJSON（250 KB）から必要な情報だけを抜いた小さな形式を生成すること（P1-4）。
 - [ ] **P1-4 シンボル表と型検査**（L）
   スケッチクラス/内部クラス/static ネスト/インタフェース/enum/ジェネリクス（消去）/配列、数値昇格、文字列連結、オーバーロード解決（完全一致 → 拡大 → ボクシング → 可変長）。未定義・型不一致などの意味エラーを複数件、位置つきで返す。
 - [ ] **P1-5 コード生成**（L）

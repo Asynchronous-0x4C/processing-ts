@@ -34,6 +34,7 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `src/lib/transpiler/antlr/Processing.g4` | Processing 公式プリプロセッサの文法（Java 1.7/8 ベース + `color` 型、`#RRGGBB`、`int()` 等の変換関数、静的/アクティブ/Java モード） |
 | `src/lib/transpiler/antlr/parser/` | ANTLR4 で生成された TS（**手で編集しない**。ProcessingParser.ts は約 12,000 行） |
 | `src/compiler/grammar/` | **新コンパイラ用**の Lezer 文法（@lezer/java のフォーク、MIT）。`processing.grammar` を編集して `npm run gen:grammar` で `parser.ts` を再生成する（生成物はコミット）。まだ実行パスでは使っていない（ROADMAP P1） |
+| `src/compiler/api/processing-core.json` | 本物の core jar（4.5.2）をリフレクションして得た public API（35 クラスのフィールド・コンストラクタ・メソッドのシグネチャ）。`npm run gen:manifest` で再生成。型検査とカバレッジ計測に使う |
 | `src/lib/runtime/PApplet.ts` | Processing API の本体（約 100 関数）。描画系は `this.g`（PGraphics）へ委譲 |
 | `src/lib/runtime/PGraphics.ts` | PixiJS による描画。`PImage` を継承 |
 | `src/lib/runtime/PGraphicsContext.ts` | fill/stroke/text のスタイル状態、pushStyle/popStyle |

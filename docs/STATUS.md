@@ -24,7 +24,7 @@
 - **PApplet（約 105）**: settings setup draw size fullScreen / background colorMode fill noFill stroke noStroke strokeWeight / rectMode ellipseMode imageMode / point line rect quad ellipse circle arc triangle beginShape vertex endShape / text textAlign textSize textWidth textFont createFont / image loadImage createImage createGraphics / translate rotate scale push pop pushMatrix popMatrix pushStyle popStyle resetMatrix / color red green blue alpha lerpColor / abs ceil floor min max sqrt pow exp sin cos tan asin acos atan atan2 radians degrees constrain map norm dist lerp random noise / int float str split join trim match matchAll nf nfc nfp nfs / year month day hour minute second millis / println / loadStrings saveStrings loadJSONObject saveJSONObject loadJSONArray saveJSONArray / loop noLoop exit getSurface
 - **変数**: width height mouseX mouseY pmouseX pmouseY mousePressed mouseButton key keyCode keyPressed frameCount frameRate
 - **クラス**: PVector（add sub mult div mag magSq normalize limit setMag set copy）、ArrayList（Array 継承）、HashMap、JSONObject、JSONArray、PImage（loadPixels updatePixels get）、PGraphics、PFont、PSurface（setCursor setTitle 等）、Runnable/Consumer/Supplier/Function
-- 本家 Processing の関数数との比較は [EVALUATION.md](EVALUATION.md) の「機能カバレッジ」を参照。
+- カテゴリ別の実装状況と未実装の一覧は [api-coverage.md](api-coverage.md)（`npm run coverage` で自動生成。リファレンスの関数 102/253 = 40%）。
 
 ## 既知のバグ（トランスパイラ）
 

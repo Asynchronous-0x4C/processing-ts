@@ -38,7 +38,9 @@
     "bench": "node tools/bench/cli.ts parse transpile",
     "size": "node tools/bench/cli.ts size",
     "gen:grammar": "lezer-generator --typeScript src/compiler/grammar/processing.grammar -o src/compiler/grammar/parser.ts",
-    "test:grammar": "node tools/grammar/compare.ts"
+    "test:grammar": "node tools/grammar/compare.ts",
+    "gen:manifest": "node tools/manifest/generate.ts",
+    "coverage": "node tools/manifest/coverage.ts"
   },
   "devDependencies": {
     "@lezer/generator": "^1.8.1",

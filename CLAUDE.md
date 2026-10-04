@@ -31,6 +31,8 @@ npm run vt -- list           # テストケースと既知の問題の一覧
 npm run vt -- corpus         # Processing 同梱 examples 254 本の互換性集計（約 5 分）→ tests/corpus/report.md
 npm run test:grammar         # Lezer 文法と公式文法（ANTLR）の受理/拒否の一致を確認（文法を変えたら必ず実行）
 npm run gen:grammar          # src/compiler/grammar/processing.grammar → parser.ts を再生成
+npm run gen:manifest         # 本物の core jar から API マニフェスト（src/compiler/api/processing-core.json）を再生成
+npm run coverage             # リファレンスに対する実装済み API の一覧 → docs/api-coverage.md
 npm run bench                # 変換時間（Node の構文解析 + ブラウザでの変換全体）。予算超過で終了コード 1
 npm run size                 # バンドルサイズ（min / gzip / brotli）。予算: tools/bench/budget.json
 npm run build                # リリース時のみ（dist/ と library.js はコミットされた成果物）
