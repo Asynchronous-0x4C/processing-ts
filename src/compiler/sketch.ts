@@ -4,11 +4,15 @@
 //     become members, methods without an access modifier become public;
 //   static mode: every top-level statement, local classes included, goes into `public void setup()`,
 //     followed by `noLoop()`.
-// Imports are hoisted. Mixing the two modes is an error. Synthesized nodes are marked `synthetic`.
-// Like Processing, every method declared in a class body (member, local and anonymous classes; not
-// interfaces) without an access modifier becomes public, so `void display()` can implement an
-// interface method.
-// Not done here yet (ROADMAP P1-6): moving size()/fullScreen()/smooth()/pixelDensity() to settings().
+//   Java mode (only type declarations at the top level, one of them declaring `public static void
+//     main`): the code is a Java file as it is; the class named like the sketch is the sketch class and
+//     the other types stay top-level classes.
+// Imports are hoisted. Mixing the active and static modes is an error. Synthesized nodes are marked
+// `synthetic`. Like Processing, every method declared in a class body (member, local and anonymous
+// classes; not interfaces) without an access modifier becomes public, so `void display()` can
+// implement an interface method; Processing's literals and `color` work in all modes (check.ts).
+// size()/fullScreen()/pixelDensity()/noSmooth()/smooth() calls written directly in a setup() body move
+// to a generated `settings()` (moveSettingsCalls).
 import type * as A from "./ast.ts";
 import { Modifier, walk } from "./ast.ts";
 import { error, type Diagnostic } from "./diagnostics.ts";
@@ -16,10 +20,12 @@ import { error, type Diagnostic } from "./diagnostics.ts";
 export interface Sketch {
   /** Class name: the main tab's file name without ".pde". */
   name: string;
-  mode: "active" | "static";
+  mode: "active" | "static" | "java";
   imports: A.ImportDecl[];
   /** The sketch class (superclass PApplet). */
   decl: A.ClassDecl;
+  /** Java mode: the other top-level types, kept in `decl.body` as static members for scoping. */
+  topLevel: Set<A.Member>;
 }
 
 /** Top-level nodes that are class members in active mode. */
@@ -39,8 +45,31 @@ export function buildSketch(files: A.SketchFile[], diagnostics: Diagnostic[]): S
   const end = files[files.length - 1]?.end ?? 0;
   const firstMethod = top.find((m) => m.kind === "MethodDecl");
   const body: A.Member[] = [];
+  const topLevel = new Set<A.Member>();
   let mode: Sketch["mode"];
-  if (firstMethod) {
+  if (isJavaMode(top)) {
+    mode = "java";
+    const types = top.filter((m): m is A.TypeDecl => m.kind !== "Empty");
+    const main = types.find((t): t is A.ClassDecl => t.kind === "ClassDecl" && t.name.text === name);
+    for (const t of types) {
+      if (t === main) continue;
+      if (t.modifiers & Modifier.Public) diagnostics.push(error("public-type", `The public type ${t.name.text} must be defined in its own file`, t.name.start, t.name.end));
+      t.modifiers |= Modifier.Static;
+      topLevel.add(t);
+      body.push(t);
+    }
+    if (main) {
+      for (const m of main.body) {
+        if (m.kind === "ConstructorDecl") diagnostics.push(error("unsupported", `A constructor of the sketch class ${name} is not supported in processing-ts`, m.start, m.end));
+      }
+      // The sketch class is the user's own; the other top-level types are kept in its body.
+      main.body.push(...body);
+      makeMethodsPublic(main);
+      moveSettingsCalls(main, false);
+      return { name, mode, imports, decl: main, topLevel };
+    }
+    diagnostics.push(error("unsupported", `Java mode: the sketch has no class named ${name} (the sketch class, extending PApplet)`, start, start));
+  } else if (firstMethod) {
     mode = "active";
     for (const m of top) {
       if (!isMember(m)) {
@@ -87,8 +116,80 @@ export function buildSketch(files: A.SketchFile[], diagnostics: Diagnostic[]): S
     interfaces: [], body, start, end,
   };
   makeMethodsPublic(decl);
-  return { name, mode, imports, decl };
+  moveSettingsCalls(decl, true);
+  return { name, mode, imports, decl, topLevel };
 }
+
+/**
+ * Java mode: the top level is only type declarations (and stray `;`), and a top-level type declares
+ * `public static void main`. Processing then compiles the code as written (otherwise a sketch made of
+ * classes is static mode: the classes become local classes of setup()).
+ */
+function isJavaMode(top: (A.Statement | A.MethodDecl)[]): boolean {
+  const types = top.filter((m) => m.kind !== "Empty");
+  if (!types.length || !types.every((m) => m.kind === "ClassDecl" || m.kind === "InterfaceDecl" || m.kind === "EnumDecl")) return false;
+  const both = Modifier.Public | Modifier.Static;
+  return (types as A.TypeDecl[]).some((t) => t.body.some((m) => m.kind === "MethodDecl" && m.name.text === "main" && (m.modifiers & both) === both && m.returnType.kind === "VoidType"));
+}
+
+/** settings() gets the last call of each kind in this order (fullScreen() takes the size slot). */
+const SETTINGS_ORDER = ["size", "pixelDensity", "noSmooth", "smooth"];
+
+/**
+ * Processing moves size()/fullScreen()/pixelDensity()/noSmooth()/smooth() to `settings()` when the call
+ * is a statement written directly in the body of a method named setup (of any class: Processing's
+ * preprocessor only looks at the method name; static mode's statements are in setup()). A size() whose
+ * width or height uses a name (`size(w, 300)`, `size(displayWidth, 400)`) stays where it is (it then
+ * fails at run time unless it keeps the current size). The moved statements are blanked; settings()
+ * gets the last call of each kind, fullScreen() winning over size() whatever the order. Java mode
+ * blanks them without generating settings() (`withSettings` false), as Processing does.
+ */
+function moveSettingsCalls(decl: A.ClassDecl, withSettings: boolean) {
+  const last = new Map<string, A.ExprStmt>();
+  let full: A.ExprStmt | null = null;
+  walk(decl, (n) => {
+    if (n.kind !== "MethodDecl" || n.name.text !== "setup" || !n.body) return true;
+    const stmts = n.body.body;
+    for (let i = 0; i < stmts.length; i++) {
+      const st = stmts[i];
+      if (st.kind !== "ExprStmt" || st.expr.kind !== "MethodCall") continue;
+      const call = st.expr;
+      if (call.target !== null && call.target.kind !== "This") continue;
+      const fn = call.name.text;
+      if (fn === "size") {
+        if (call.args.slice(0, 2).some(usesName)) continue;
+        last.set("size", st);
+      } else if (fn === "fullScreen") full = st;
+      else if (fn === "pixelDensity" || fn === "noSmooth" || fn === "smooth") last.set(fn, st);
+      else continue;
+      stmts[i] = { kind: "Empty", start: st.start, end: st.end };
+    }
+    return true;
+  });
+  if (full) last.set("size", full);
+  if (!withSettings || !last.size) return;
+  const calls = SETTINGS_ORDER.map((k) => last.get(k)).filter((x): x is A.ExprStmt => !!x);
+  const at = calls[0].start;
+  // First in the body, so that a user-written settings() is the one reported as a duplicate.
+  decl.body.unshift({
+    kind: "MethodDecl", synthetic: true, modifiers: Modifier.Public, annotations: [], typeParams: [],
+    returnType: { kind: "VoidType", synthetic: true, start: at, end: at },
+    name: { text: "settings", start: at, end: at }, params: [], dims: 0, throws: [],
+    body: { kind: "Block", synthetic: true, body: calls, start: at, end: at },
+    start: at, end: at,
+  });
+}
+
+/** Does an expression use a name (variable, field, method, class)? Otherwise it is literals and operators. */
+function usesName(e: A.Expression): boolean {
+  let found = false;
+  walk(e, (n) => {
+    if (NAMED.has(n.kind)) found = true;
+    return !found;
+  });
+  return found;
+}
+const NAMED = new Set(["Identifier", "FieldAccess", "MethodCall", "Conversion", "ClassType", "NewObject", "NewArray", "This", "Super", "Lambda", "MethodRef", "ClassLit"]);
 
 const ACCESS = Modifier.Public | Modifier.Protected | Modifier.Private;
 

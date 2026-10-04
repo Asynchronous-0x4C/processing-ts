@@ -222,7 +222,7 @@ export function libraryCall(g: Gen, m: MethodSymbol, recv: Emit | null, as: A.Ex
     }
     return null;
   }
-  if ((owner === "java.lang.Object" || owner === "java.lang.Comparable" || owner === "java.lang.CharSequence") && recv && recv.c !== "super" && recv.c !== "$p") {
+  if ((owner === "java.lang.Object" || owner === "java.lang.Comparable" || owner === "java.lang.CharSequence") && recv && recv.c !== "super") {
     const xs = args(g, m, as);
     switch (`${name}(${sig})`) {
       case "equals(java.lang.Object)": return call(`${g.h("jequals")}(${recv.c}, ${xs[0].c})`);

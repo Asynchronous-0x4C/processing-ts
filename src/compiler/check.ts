@@ -119,6 +119,8 @@ class Checker {
   readonly ts: TypeSystem;
   readonly diags: Diagnostic[];
   private sketch!: ClassSymbol;
+  /** Java mode: types declared at the top level of the file (not members of the sketch class). */
+  private topLevel = new Set<A.Member>();
   private readonly singleImports = new Map<string, ClassSymbol>();
   private readonly onDemand: string[] = [];
   private readonly staticImports: { cls: ClassSymbol; name: string | null }[] = [];
@@ -148,6 +150,7 @@ class Checker {
     sym.decl = sk.decl;
     sk.decl.sym = sym;
     this.sketch = sym;
+    this.topLevel = sk.topLevel;
     this.declareMembers(sym, sk.decl.body);
     const top = new Scope(null, "class", sym, null);
     this.resolveHeaders(sym, top);
@@ -207,7 +210,7 @@ class Checker {
           if (m.kind !== "ClassDecl") this.err("static-in-inner", `The member ${m.kind === "EnumDecl" ? "enum" : "interface"} ${m.name.text} must be defined inside a static member type`, m.name);
           else if (m.modifiers & Modifier.Static) this.err("static-in-inner", `The member type ${m.name.text} cannot be declared static; static types can only be declared in static or top level types`, m.name);
         }
-        const c = this.declareClass(m, owner, 0);
+        const c = this.declareClass(m, owner, this.topLevel.has(m) ? Flags.TopLevel : 0);
         if (owner.memberTypes.has(c.name)) this.err("duplicate", `The type ${c.name} is already defined`, m.name);
         else owner.memberTypes.set(c.name, c);
       }
@@ -223,7 +226,7 @@ class Checker {
     if (d.modifiers & Modifier.Final) flags |= Flags.Final;
     if (outer.isInterface) flags |= Flags.Static; // member types of interfaces are static
     if (!(flags & Flags.Static)) flags |= Flags.Inner;
-    const sym = new ClassSymbol(`${outer.fullName}$${d.name.text}`, d.name.text, flags);
+    const sym = new ClassSymbol(flags & Flags.TopLevel ? d.name.text : `${outer.fullName}$${d.name.text}`, d.name.text, flags);
     sym.outer = outer;
     sym.decl = d;
     d.sym = sym;

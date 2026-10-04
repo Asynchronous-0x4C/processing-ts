@@ -51,6 +51,8 @@ export const Flags = {
   Package: 1 << 16,
   /** Library class that is not public (only present as a supertype, e.g. AbstractStringBuilder). */
   NonPublic: 512,
+  /** Java mode: a top-level class of the sketch's file other than the sketch class (kept as a static member). */
+  TopLevel: 1 << 17,
 } as const;
 
 export interface TypeVarSymbol {
@@ -156,7 +158,7 @@ export class ClassSymbol {
 
   /** Name as ECJ prints it in messages: "Map.Entry", "PVector", "Sketch.Ball" (member classes of the sketch are qualified). */
   get displayName(): string {
-    return this.outer && !(this.flags & (Flags.Local | Flags.Anonymous)) ? `${this.outer.displayName}.${this.name}` : this.name;
+    return this.outer && !(this.flags & (Flags.Local | Flags.Anonymous | Flags.TopLevel)) ? `${this.outer.displayName}.${this.name}` : this.name;
   }
 
   /** The class generated for the sketch itself. */

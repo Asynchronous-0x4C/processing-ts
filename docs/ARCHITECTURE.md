@@ -82,7 +82,7 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `syntax-errors.ts` | 構文エラーのメッセージ。字句の走査で未終端の文字列/コメントと括弧の対応を調べ、閉じられていない `{` は字下げから推定する。それより前の Lezer のエラーノードは「改行の前で式が終わっている → `Missing ';'`」「`for` の見出し → `Missing ';' in the 'for' header`」などの規則でメッセージにする。1 行に 1 件まで |
 | `literals.ts` | リテラルの解釈（整数の範囲と 16/8/2 進の 32/64 ビット折り返し、浮動小数の接尾辞、エスケープ、`#RRGGBB`、テキストブロック） |
 | `diagnostics.ts` | 診断の型（`code`・`message`・位置）と整形（`Tab.pde:行:列: error: ...`） |
-| `sketch.ts` | Processing の前処理に当たる部分（本物の `Processing cli --build` の出力と照合）。トップレベルにメソッドがあればアクティブモード（変数→フィールド、メソッド・クラス→メンバー）、無ければ静的モード（全文を `public void setup()` に入れ末尾に `noLoop()`）。インタフェース以外の全クラスのアクセス修飾子の無いメソッドを `public` にする。混在モードはエラー |
+| `sketch.ts` | Processing の前処理に当たる部分（本物の `Processing cli --build` の出力と照合）。トップレベルにメソッドがあればアクティブモード（変数→フィールド、メソッド・クラス→メンバー）、無ければ静的モード（全文を `public void setup()` に入れ末尾に `noLoop()`）。トップレベルが型宣言だけで `public static void main` があれば Java モード（書いたとおりのクラスを使う）。インタフェース以外の全クラスのアクセス修飾子の無いメソッドを `public` にする。`setup()` の本体に直接書かれた `size()`/`fullScreen()`/`pixelDensity()`/`noSmooth()`/`smooth()` を生成した `settings()` に移す（規則は ROADMAP P1-6）。混在モードはエラー |
 | `types.ts` | 型（プリミティブ / クラス + 型引数 / 配列 / 型変数 / ワイルドカード / null / エラー）とシンボル（`ClassSymbol`・フィールド・メソッド・ローカル変数）、置換・消去・`asSuper` |
 | `typesystem.ts` | 型の関係: 部分型（型引数の包含）、代入・メソッド呼び出し（strict/loose）・キャストの各変換、数値昇格、ボクシング |
 | `library.ts` / `api/library.gen.ts` | ライブラリのクラス（Processing core と JDK の一部 216 クラス）。JVM のジェネリックシグネチャ形式の文字列から、使われたクラスだけをメンバーまで展開する。モデル外の型を使うメソッドは除外し、名前だけ残して「processing-ts では使えない」と報告する |

@@ -233,3 +233,15 @@ describe("checker: types and constants", () => {
     expect(calls).toEqual(["PApplet.fill(int)", "PApplet.fill(float)", "PApplet.fill(float,float,float)", "PApplet.noLoop()"].slice(0, 3));
   });
 });
+
+describe("checker: settings() and Java mode", () => {
+  it("reports a settings() written next to moved size() calls as a duplicate (like Processing)", () => {
+    expect(errors("void setup() {\n  size(400, 300);\n}\nvoid settings() { pixelDensity(1); }\n")).toEqual(["4: Duplicate method settings() in type sketch"]);
+    expect(errors("void settings() {\n  size(400, 300);\n}\nvoid setup() { }\n")).toEqual([]);
+  });
+
+  it("checks a Java mode sketch with its top-level classes", () => {
+    const r = check([{ name: "J.pde", text: "public class J extends PApplet {\n  Helper h = new Helper();\n  public void setup() { float f = 1.5; println(h.name(), f); }\n  public static void main(String[] a) { PApplet.main(\"J\"); }\n}\nclass Helper {\n  String name() { return \"helper\"; }\n}\nclass Bad { void f() { undefinedName(); } }\n" }]);
+    expect(r.messages).toEqual(["9: The function undefinedName() does not exist."]); // Processing 4.5.2 (cli --build)
+  });
+});

@@ -61,6 +61,20 @@ describe("compileSketch", () => {
   });
 });
 
+describe("sketch modes", () => {
+  it("runs size() moved to settings() before setup()", async () => {
+    const r = await run("void setup() {\n  size(400, 300);\n  println(width, height);\n}\n");
+    expect(r.stdout).toBe("400 300\n");
+    expect(r.code).toMatch(/async settings\(\.\.\.a\)/);
+  });
+
+  it("runs a Java mode sketch with a top-level class", async () => {
+    const r = await runSketch([{ name: "J.pde", text: "public class J extends PApplet {\n  Helper h = new Helper();\n  int n = 2;\n  public void setup() { println(h, h.getClass().getName(), n * 1.5, getClass().getName()); }\n  public static void main(String[] a) { PApplet.main(\"J\"); }\n}\nclass Helper {\n  public String toString() { return \"H\"; }\n}\n" }]);
+    expect(r.errors).toEqual([]);
+    expect(r.stdout).toBe("H Helper 3.0 J\n");
+  });
+});
+
 describe("generated code keeps Java semantics", () => {
   it("int and float arithmetic", async () => {
     const r = await run(`

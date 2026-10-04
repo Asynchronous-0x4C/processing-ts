@@ -5,9 +5,10 @@
 ## 現在地（2026-10-04 時点。セッションの終わりに更新する）
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
-- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）、P1-5（コード生成と言語ランタイム）。P1-6 のうちモード判定・静的モードの包み方・混在モードの拒否・`public` の付与は `sketch.ts` で実装済み。P1-8 のうち `npm run test:lang` と `lang_*` ケース 12 件は済み。P0-8（CI）は任意で未着手。
-- **次にやること: P1-6 の残り（`size()`/`fullScreen()`/`smooth()`/`pixelDensity()` の `settings()` への移動、Java モード）** → P1-7 → P1-8 の残り → P1-9。
-  - 生成コードは `compileSketch()`（`src/compiler/index.ts`）が返す `new Function("$rt", "__renderer__", code)` の本体。ランタイムとの約束（`$rt.lang`・`$rt.classes`・`$rt.PApplet`、上書きするメソッド名）は `codegen.ts` 冒頭と [ARCHITECTURE.md](ARCHITECTURE.md) の「生成コードの形」。今は `size()` を `setup()` の中で `await $p.size(...)` として呼んでいる。
+- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）、P1-5（コード生成と言語ランタイム）、P1-6（モードと前処理）。P1-8 のうち `npm run test:lang` と `lang_*` ケース 12 件は済み。P0-8（CI）は任意で未着手。
+- **次にやること: P1-7（Java 標準ライブラリの互換層: LinkedList・TreeMap・Iterator・Map.Entry などを `src/runtime/lang/util.ts` に足し、ケースで本物の Processing と照合）** → P1-8 の残り → P1-9。
+  - 生成コードは `compileSketch()`（`src/compiler/index.ts`）が返す `new Function("$rt", "__renderer__", code)` の本体。ランタイムとの約束（`$rt.lang`・`$rt.classes`・`$rt.PApplet`、上書きするメソッド名）は `codegen.ts` 冒頭と [ARCHITECTURE.md](ARCHITECTURE.md) の「生成コードの形」。`size()` などは前処理で生成した `settings()` の中で `await $p.size(...)` として呼ぶ（`settings` は async）。
+  - java.util のクラスの型は `src/compiler/api/library.gen.ts`（JDK のモデル）にすでにあるので、P1-7 はランタイム側（`util.ts` と `index.ts` の `javaClasses`）を足す作業。ケースは `lang_` で始め、`npm run test:visual:ref -- <case>` で参照を作る。
   - 確認: `npm run test:lang`（Node、約 1 秒）で 16/17 PASS。Processing の挙動は `Processing cli --build` の出力（前処理後の Java）で確かめる。
   - 速度の注意: 5k 行のウォームで解析からコード生成まで 54ms（うち Lezer の解析が約 23ms、コード生成は約 9ms）。P1-9 の目標（変換全体 50ms）には解析の高速化（文法の曖昧さの削減など）が要る（STATUS.md C4）。
 - 基準値: 視覚テスト 5 PASS / 27 XFAIL、stdout 適合 16 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 95/254（旧トランスパイラ）、新コンパイラでの変換 308/309（`node tools/lang/cli.ts --corpus`）、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,330/2,333（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`。
@@ -89,9 +90,15 @@
   - 型検査の修正: `Character` と `char`、`Integer` と `Float` の条件演算子を数値の条件式として型付け（JLS 15.25）。
   - 速度（Node、warm）: 199 行 3.0ms、5k 行 54ms（コード生成は約 9ms）。コンパイラ全体の gzip は 117.6 KiB。
   - 未対応（STATUS.md C6〜C8）: 2^53 を超える long、JDK 17 の Float.toString の一部、整数ボックスの同一性。
-- [ ] **P1-6 モードとプリプロセッサ相当の処理**（M）
+- [x] **P1-6 モードとプリプロセッサ相当の処理**（M）
   静的/アクティブ/Java クラスの判定（T11）、小数リテラルの float 扱い、`#hex`、`settings()` への移動、静的モードの `noLoop()`。
-  → 一部済み（P1-2/P1-4）: モード判定・静的モードの `setup()` + `noLoop()`・混在モードのエラー・メソッドへの `public` 付与（`sketch.ts`）、小数リテラルの float（`check.ts`）、`#hex`（`cst-to-ast.ts`）。残り: `size()`/`fullScreen()`/`smooth()`/`pixelDensity()` の `settings()` への移動と Java モード（`public class ... extends PApplet` を含むスケッチ）。確認には `Processing cli --build` の出力を使う。
+  → 一部済み（P1-2/P1-4）: モード判定・静的モードの `setup()` + `noLoop()`・混在モードのエラー・メソッドへの `public` 付与（`sketch.ts`）、小数リテラルの float（`check.ts`）、`#hex`（`cst-to-ast.ts`）。
+  → 結果（2026-10-04）: `settings()` への移動と Java モードを `sketch.ts` に追加。規則はすべて `Processing cli --build` の出力（約 40 個の小さなスケッチ）から決めた:
+  - 移動するのは、`setup` という名前のメソッド（どのクラスでも。静的モードは全文が setup の中）の本体に直接書かれた `size`/`fullScreen`/`pixelDensity`/`noSmooth`/`smooth` の文（`this.` 付きも）。`if` の中や他のメソッドの中は移動しない。
+  - `size()` の幅か高さに名前（変数・定数・`displayWidth`・メソッド呼び出し・`int()`）を含むものは移動しない（実行時に `size() cannot be used here` になる。ランタイムの課題）。リテラルと演算子だけなら移動する（`300+100`、`(int) 300.5`、`-1`）。3 番目以降の引数は問わない。
+  - `settings()` には種類ごとに最後の呼び出しを固定の順（size/fullScreen → pixelDensity → noSmooth → smooth）で置く。`fullScreen()` は順序によらず `size()` に勝つ。ユーザーが `settings()` も書いていると `Duplicate method settings()` になる（Processing と同じ）。
+  - Java モード: トップレベルが型宣言だけで、そのどれかが `public static void main` を宣言しているとき（`main` が無ければクラスだけのスケッチも静的モード）。書いたとおりの Java として扱い、スケッチ名のクラスがスケッチ本体、他の型はトップレベルのクラス（`getClass().getName()` は `Helper`）。Processing のリテラル・`color`・メソッドの `public` 化は Java モードでも行われる。`size()` などは消されるが `settings()` は生成されない（Processing の挙動をそのまま再現）。
+  - 単体テスト（`compiler-sketch.test.ts` の移動規則 11 件、Java モード、`compiler-check.test.ts` の重複エラー、`compiler-codegen.test.ts` の実行）。
 - [ ] **P1-7 Java 標準ライブラリの互換層**（M）
   ArrayList, HashMap, HashSet, LinkedList, Collections, Arrays, StringBuilder, Integer/Float/Double/Boolean の parse/valueOf, Math, Iterator, Map.Entry, Character, String のメソッド。
 - [ ] **P1-8 stdout 適合テストの拡充と高速ランナー**（M）
