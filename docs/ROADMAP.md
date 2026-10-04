@@ -5,10 +5,11 @@
 ## 現在地（2026-10-04 時点。セッションの終わりに更新する）
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
-- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-3（API マニフェスト）。P0-8（CI）は任意で未着手。
-- **次にやること: P1-2（型付き AST と CST→AST 変換）** → P1-4（型検査）→ P1-5（コード生成）→ P1-6（モード判定。混在モードの拒否規則は `tools/grammar/compare.ts` の `lezerVerdict` と同じにする）。
-  - 入力: `src/compiler/grammar/parser.ts`（Lezer）、`src/compiler/api/processing-core.json`（API シグネチャ）。新コンパイラは `src/compiler/` に置き、DOM に依存させない（Vitest で Node から単体テストする）。
-- 基準値: 視覚テスト 5 PASS / 14 XFAIL、互換性コーパス 95/254、API カバレッジ（関数）102/253、文法一致 1,186/1,186、サイズと時間の予算は `tools/bench/budget.json`。
+- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）。P0-8（CI）は任意で未着手。
+- **次にやること: P1-4（シンボル表と型検査）** → P1-5（コード生成）→ P1-6（モード判定。混在モードの拒否規則は `tools/grammar/compare.ts` の `lezerVerdict` と同じにする）。
+  - 入力: `parseSketch()`（`src/compiler/parse.ts`）が返すタブごとの AST（`src/compiler/ast.ts`）と `src/compiler/api/processing-core.json`（API シグネチャ）。構成は [ARCHITECTURE.md](ARCHITECTURE.md) の「新コンパイラ」。DOM に依存させない（`src/compiler/tsconfig.json` に DOM が無いので型チェックで検出される）。
+  - P1-4 で決めること: 型・シンボルの結果を AST ノードに書き込むか別表に持つか（AST は現在プレーンなオブジェクトで、`kind` 以外の解析結果を持たない）。マニフェストの縮小形式。
+- 基準値: 視覚テスト 5 PASS / 15 XFAIL、互換性コーパス 95/254、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、サイズと時間の予算は `tools/bench/budget.json`。
 
 ## 進め方
 
@@ -63,8 +64,9 @@
   検証: 公式文法の ANTLR パーサ（開発時専用オラクル）と、同梱 examples 254 本 + テストケース + 構文エラーを含む入力群で受理/拒否を比較するスクリプト。
   完了条件: 受理/拒否の一致率 99% 以上、199 行のコールド解析 15ms 以下（Node）。満たせない場合は **手書き再帰下降パーサに切り替える**ことを ROADMAP に記録して P1-1b として実施。
   → 結果（2026-10-04）: `npm run test:grammar` で **1,186/1,186 件一致**（有効な入力 307: 同梱 examples 254 + リポジトリのスケッチ + Processing 固有構文のスニペット + 5k 行の合成スケッチ、構文エラーを入れた変種 879）。199 行のコールド解析 7.4ms / ウォーム 1.0ms、gzip 30.5 KiB（ANTLR 版は 69.0 KiB）。混在モード（静的な文とメソッド宣言の混在）は文法ではなくコンパイラで拒否する（compare.ts の `lezerVerdict` と同じ規則を P1-6 で実装する）。
-- [ ] **P1-2 AST と CST→AST 変換**（M）
+- [x] **P1-2 AST と CST→AST 変換**（M）
   型付き AST（ノードごとにタブ・行・列）。複数タブはタブ単位で解析して位置を保持（T15）。
+  → 結果（2026-10-04）: `src/compiler/{ast,source,cst-to-ast,syntax-errors,literals,diagnostics,parse}.ts`。位置はタブごとに範囲を割り当てた通し番号（`start`/`end`）で持ち、`SketchSource.locate()` でタブ・行・列に戻す。`npm run test:grammar` でフロントエンド（解析 + AST 構築）の受理/拒否も ANTLR と **1,190/1,190 件一致**、内部エラー 0。同梱 examples 254 本（58,563 ノード）が診断なしで AST 化でき、全ノードの範囲が親の範囲内。構文エラーは複数件・タブ名と行列つき: `;` `)` `}` を消した変種 882 件すべてで最初のメッセージが消した記号を名指しし、`;`/`)` は 594/594 件で 1 行以内、`}` は 286/288 件で閉じられていない `{` の行を指す。Lezer 文法と Java の解釈の差（`==` と `<` の優先順位、`instanceof`、`(N) - 1`、`(color) -1`）は AST 構築時に組み直す。テキストブロックは本物の Processing で調べた値（Java とは異なる）にした（`literals_processing` ケースを追加、T18/T19）。速度（Node、warm）: 199 行 1.7ms、5k 行 32ms（うち Lezer 23ms）。`npm run bench` に `compile` を追加。
 - [x] **P1-3 Processing API マニフェスト**（M）
   `tools/manifest/`: Processing 同梱 JDK（`C:/Program Files/Processing/app/resources/jdk`）で core jar をリフレクションし、PApplet/PGraphics/PImage/PVector/PShape/PShader/PFont/PMatrix*/IntList…/Table/XML/JSON* の public メソッド・フィールド・定数を JSON 化（`src/compiler/api/processing-core.json`、コミットする）。
   完了条件: PApplet のメソッド 316 名・716 オーバーロードが含まれる。ランタイムの実装状況との差分を出すスクリプト（カバレッジ表を STATUS.md に自動反映できる形）。

@@ -2,10 +2,10 @@
 
 | 種類 | コマンド | 対象 |
 |---|---|---|
-| 単体テスト | `npm test`（Vitest, `tests/unit/*.test.ts`） | Node で動く純粋なロジック（構文解析 `SketchParser`、PVector など、tools/vt の補助関数）。トランスパイラ全体は現状 `new PApplet()`（Pixi/DOM）に依存するため対象外（P1 の新コンパイラで Node 対応） |
+| 単体テスト | `npm test`（Vitest, `tests/unit/*.test.ts`） | Node で動く純粋なロジック（新コンパイラ `src/compiler/` のリテラル・AST・構文エラー、旧構文解析 `SketchParser`、PVector など、tools/vt の補助関数）。旧トランスパイラ全体は `new PApplet()`（Pixi/DOM）に依存するため対象外 |
 | 視覚 / 出力回帰テスト | `npm run test:visual` | 本物の Processing との画像・println 比較（以下） |
 | 型チェック | `npm run typecheck` | src/lib・tools・tests |
-| 文法の適合性 | `npm run test:grammar` | 新しい Lezer 文法と公式文法（ANTLR）の受理/拒否の一致を、同梱 examples・リポジトリのスケッチ・構文エラー変種で比較（結果: `tests/grammar/out/report.md`） |
+| 文法の適合性 | `npm run test:grammar` | 新しい Lezer 文法、および新コンパイラのフロントエンド（構文解析 + AST 構築、`parseSketch`）と公式文法（ANTLR）の受理/拒否の一致を、同梱 examples・リポジトリのスケッチ・構文エラー変種（`;` `)` `}` を 1 つ消したもの）で比較。変種では構文エラーメッセージの質（消した記号を名指しするか、位置が合っているか）も集計する（結果: `tests/grammar/out/report.md`） |
 | 性能 / サイズ | `npm run bench` / `npm run size` | 変換時間・バンドルサイズ（後述「性能・サイズ計測」） |
 
 # 視覚 / 出力回帰テスト
@@ -37,7 +37,7 @@ npm run vt -- list                  # ケース一覧（参照の有無・期待
 
 `run` のその他のオプション: `--update`（先に参照を再生成）、`--frames n`（フレーム数を上書き）、`--headed`（ブラウザを表示）、`--gpu`（SwiftShader ではなく GPU を使う）、`--json`（結果を JSON で標準出力）、`--out <dir>`。
 
-所要時間の目安（このリポジトリの開発機）: `run` 全 19 ケースで約 9 秒、`ref` 全ケースで約 50 秒（JAVA2D 約 2 秒/件、P2D/P3D 約 5 秒/件）。
+所要時間の目安（このリポジトリの開発機）: `run` 全 20 ケースで約 10 秒、`ref` 全ケースで約 50 秒（JAVA2D 約 2 秒/件、P2D/P3D 約 5 秒/件）。
 
 ## 出力の見方
 
@@ -141,7 +141,7 @@ npm run vt -- corpus --filter Basics/Shape   # 絞り込み（結果は tests/co
 ## 性能・サイズ計測（tools/bench）
 
 ```sh
-npm run bench                      # parse（Node）+ transpile（ブラウザ）。= node tools/bench/cli.ts parse transpile
+npm run bench                      # parse（Node）+ compile（Node）+ transpile（ブラウザ）。= node tools/bench/cli.ts parse compile transpile
 npm run size                       # バンドルサイズ（esbuild で minify した ESM の min / gzip / brotli）
 node tools/bench/cli.ts parse --filter synthetic --runs 50
 node tools/bench/cli.ts all --update-budget   # 意図した変更でサイズ/時間が変わったら予算を更新してコミット
@@ -149,11 +149,12 @@ node tools/bench/cli.ts all --update-budget   # 意図した変更でサイズ/�
 
 - 入力: `public/samples` の全スケッチ、`tests/visual/cases` の全ケース、生成した約 5,000 行のスケッチ（`synthetic-5k`、`tools/bench/inputs.ts`）。
 - parse: `src/lib/transpiler/SketchParser.ts` を esbuild で Node 用にバンドルし、入力ごとに新しいプロセスで「最初の 1 回（cold）」と「その後の中央値（warm）」を測る。
+- compile: 新コンパイラのフロントエンド（`src/compiler/parse.ts` の `parseSketch`: タブごとの Lezer 解析 + 構文エラー + AST）を同じ方法で測る。P1-4 以降で型検査・コード生成が加わったらここに含める。
 - transpile: ヘッドレス Chromium の新しいページで `SketchManager.transpileSketch` を繰り返し、1 回目（cold）と 2 回目以降の中央値（warm）、およびそのうちの構文解析時間を出す。
 - 予算: `tools/bench/budget.json`。超えると終了コード 1（回帰検出用）。サイズは +5%、時間は +50%（最低 5ms）の余裕で `--update-budget` が書き換える。
 - 結果: `tests/bench/out/<command>.md` と `.json`（gitignore 済み）。
 
-2026-10-04 時点の主な値: `synthetic-5k` の warm 解析 15ms（SLL 化前は約 8 秒）、`simple_shooter_game`（199 行）のブラウザでの cold 変換 約 150ms（うち解析 135ms）、ライブラリ本体 87 KiB gz（pixi 込み 228 KiB gz）。
+2026-10-04 時点の主な値: `synthetic-5k` の warm 解析 15ms（SLL 化前は約 8 秒）、`simple_shooter_game`（199 行）のブラウザでの cold 変換 約 150ms（うち解析 135ms）、ライブラリ本体 87 KiB gz（pixi 込み 228 KiB gz）。新コンパイラのフロントエンド（compile）は `simple_shooter_game` の warm 1.7ms・`synthetic-5k` の warm 32ms（うち Lezer の解析 23ms、AST 構築 5ms）、バンドル 40.7 KiB gz（Lezer パーサ単体 30.5 KiB）。
 
 ## 今後追加すべきテスト（ROADMAP 参照）
 

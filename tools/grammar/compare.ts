@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Grammar conformance: compare accept/reject of the Lezer Processing grammar (src/compiler/grammar)
-// with the official Processing ANTLR grammar used by the current transpiler (the oracle).
+// and of the new compiler's front end (parse + AST building, src/compiler/parse.ts) with the official
+// Processing ANTLR grammar used by the current transpiler (the oracle). Also rates the front end's
+// syntax error messages on the mutated inputs.
 // Usage: node tools/grammar/compare.ts [--filter text] [--no-mutations] [--show n]
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -9,6 +11,7 @@ import { parseArgs } from "node:util";
 import { build } from "esbuild";
 import type { Tree } from "@lezer/common";
 import { parser } from "../../src/compiler/grammar/parser.ts";
+import { parseTab } from "../../src/compiler/parse.ts";
 import { syntheticSketch } from "../bench/inputs.ts";
 import { findExamples, findSketches } from "../vt/corpus.ts";
 import { findProcessing } from "../vt/processing.ts";
@@ -27,7 +30,7 @@ const { values: flags } = parseArgs({
   },
 });
 
-type Input = { name: string; source: string; kind: "valid" | "mutated" };
+type Input = { name: string; source: string; kind: "valid" | "mutated"; removed?: { ch: string; at: number } };
 
 // Top-level nodes allowed in active mode besides MethodDeclaration (fields, types, initializers).
 const ACTIVE_OK = new Set(["MethodDeclaration", "LocalVariableDeclaration", "ClassDeclaration", "InterfaceDeclaration", "EnumDeclaration",
@@ -49,6 +52,19 @@ export function lezerVerdict(source: string): { ok: boolean; reason?: string; po
   return { ok: true };
 }
 
+/**
+ * Front end verdict: no diagnostics from parseTab (syntax errors and the structural checks of the AST
+ * builder), with the same mixed-mode rule as lezerVerdict until the compiler implements it (P1-6).
+ */
+function frontendVerdict(source: string) {
+  const r = parseTab(source);
+  const internal = r.diagnostics.filter((d) => d.code === "internal");
+  const first = r.diagnostics[0];
+  if (first) return { ok: false, reason: `${first.code}: ${first.message}`, pos: first.start, diagnostics: r.diagnostics, internal };
+  const mixed = lezerVerdict(source);
+  return { ...mixed, diagnostics: r.diagnostics, internal };
+}
+
 /** Deterministic syntax-error variants: drop the middle ";", ")" and "}" (outside comments/strings). */
 function mutations(name: string, source: string): Input[] {
   const blank = blankCommentsAndStrings(source);
@@ -58,7 +74,7 @@ function mutations(name: string, source: string): Input[] {
     for (let i = 0; i < blank.length; i++) if (blank[i] === ch) idx.push(i);
     if (idx.length === 0) continue;
     const at = idx[Math.floor(idx.length / 2)];
-    out.push({ name: `${name} [-'${ch}'@${at}]`, source: source.slice(0, at) + source.slice(at + 1), kind: "mutated" });
+    out.push({ name: `${name} [-'${ch}'@${at}]`, source: source.slice(0, at) + source.slice(at + 1), kind: "mutated", removed: { ch, at } });
   }
   return out;
 }
@@ -148,19 +164,56 @@ console.log(JSON.stringify({ load, cold, warm: xs[15] }));`;
 
 const inputs = collect();
 const antlr = await antlrVerdicts(inputs);
-const rows = inputs.map((input, i) => ({ input, antlr: antlr[i], lezer: lezerVerdict(input.source) }));
+const rows = inputs.map((input, i) => ({ input, antlr: antlr[i], lezer: lezerVerdict(input.source), front: frontendVerdict(input.source) }));
 const agree = rows.filter((r) => r.antlr.ok === r.lezer.ok);
 const mismatches = rows.filter((r) => r.antlr.ok !== r.lezer.ok);
-const byKind = (k: Input["kind"]) => {
+const frontMismatches = rows.filter((r) => r.antlr.ok !== r.front.ok);
+const internal = rows.filter((r) => r.front.internal.length > 0);
+const byKind = (k: Input["kind"], v: "lezer" | "front" = "lezer") => {
   const rs = rows.filter((r) => r.input.kind === k);
-  return `${rs.filter((r) => r.antlr.ok === r.lezer.ok).length}/${rs.length}`;
+  return `${rs.filter((r) => r.antlr.ok === r[v].ok).length}/${rs.length}`;
 };
+
+// Syntax error messages on the mutated inputs the front end rejects: does the first message name the
+// removed token, and is it reported near the removal (";" and ")": within one line; "}": on the line of
+// the "{" it closed, where the unclosed-brace heuristic should point)?
+const rated = rows.filter((r) => r.input.removed && !r.front.ok && r.front.diagnostics.length);
+const quality = { total: rated.length, named: 0, near: 0, nearTotal: 0, brace: 0, braceTotal: 0 };
+const badMessages: string[] = [];
+for (const r of rated) {
+  const { ch, at } = r.input.removed!;
+  const d = r.front.diagnostics[0];
+  const named = d.message.includes(`'${ch}'`);
+  if (named) quality.named++;
+  let near: boolean;
+  if (ch !== "}") {
+    quality.nearTotal++;
+    near = Math.abs(lineOf(r.input.source, d.start) - lineOf(r.input.source, Math.min(at, r.input.source.length))) <= 1;
+    if (near) quality.near++;
+  } else {
+    // The "{" that the removed "}" closed, found in the original source.
+    quality.braceTotal++;
+    const original = blankCommentsAndStrings(r.input.source.slice(0, at) + ch + r.input.source.slice(at));
+    const stack: number[] = [];
+    let opener = -1;
+    for (let i = 0; i <= at; i++) {
+      if (original[i] === "{") stack.push(i);
+      else if (original[i] === "}") opener = stack.pop() ?? -1;
+    }
+    near = opener >= 0 && lineOf(r.input.source, d.start) === lineOf(r.input.source, opener);
+    if (near) quality.brace++;
+  }
+  if (!named || !near) badMessages.push(`| ${r.input.name} | line ${lineOf(r.input.source, d.start)}: ${d.message.replace(/\|/g, "\\|")} |`);
+}
 
 const lines = [
   "# Grammar conformance: Lezer vs ANTLR (official Processing grammar)",
   "",
   `agreement: **${agree.length}/${rows.length} (${((agree.length / rows.length) * 100).toFixed(2)}%)** — valid inputs ${byKind("valid")}, mutated inputs ${byKind("mutated")}`,
   `ANTLR accepts / Lezer rejects: ${mismatches.filter((r) => r.antlr.ok).length}, ANTLR rejects / Lezer accepts: ${mismatches.filter((r) => !r.antlr.ok).length}`,
+  "",
+  `front end (parse + AST): **${rows.length - frontMismatches.length}/${rows.length}** — valid inputs ${byKind("valid", "front")}, mutated inputs ${byKind("mutated", "front")}; inputs with internal compiler errors: ${internal.length}`,
+  `syntax error messages (mutated inputs): first message names the removed token ${quality.named}/${quality.total}, reported within one line of the removal (";" and ")") ${quality.near}/${quality.nearTotal}, missing "}" reported at the unclosed "{" ${quality.brace}/${quality.braceTotal}`,
   "",
 ];
 const shooter = inputs.find((i) => i.name.endsWith("simple_shooter_game"));
@@ -174,6 +227,14 @@ for (const r of mismatches.slice(0, Number(flags.show))) {
   const an = r.antlr.ok ? "accept" : `reject (${(r.antlr.message ?? "").replace(/\n/g, " ").replace(/\|/g, "\\|").slice(0, 80)})`;
   lines.push(`| ${r.input.name} | ${an} | ${lz} |`);
 }
+lines.push("", "## Front end mismatches", "", "| input | ANTLR | front end |", "|---|---|---|");
+for (const r of frontMismatches.slice(0, Number(flags.show))) {
+  const fe = r.front.ok ? "accept" : `reject (${(r.front.reason ?? "").replace(/\|/g, "\\|")}${r.front.pos !== undefined ? ` at line ${lineOf(r.input.source, r.front.pos)}` : ""})`;
+  const an = r.antlr.ok ? "accept" : `reject (${(r.antlr.message ?? "").replace(/\n/g, " ").replace(/\|/g, "\\|").slice(0, 80)})`;
+  lines.push(`| ${r.input.name} | ${an} | ${fe} |`);
+}
+for (const r of internal.slice(0, Number(flags.show))) lines.push(`| ${r.input.name} | (internal) | ${r.front.internal.map((d) => d.message).join("; ")} |`);
+lines.push("", "## Syntax error messages that miss the removed token or its line", "", "| input | first message |", "|---|---|", ...badMessages.slice(0, Number(flags.show)));
 const md = lines.join("\n") + "\n";
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, "report.md"), md);

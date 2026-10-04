@@ -11,6 +11,9 @@
     },
     "parser (lezer, src/compiler/grammar)": {
       "gzipKiB": 32.1
+    },
+    "compiler front end (lezer + AST, src/compiler/parse.ts)": {
+      "gzipKiB": 42.8
     }
   },
   "parse": {
@@ -19,6 +22,14 @@
     },
     "samples/simple_shooter_game": {
       "warmMs": 5
+    }
+  },
+  "compile": {
+    "samples/simple_shooter_game": {
+      "warmMs": 5
+    },
+    "synthetic-5k": {
+      "warmMs": 48.6
     }
   },
   "transpile": {

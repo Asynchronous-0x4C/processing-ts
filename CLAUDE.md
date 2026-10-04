@@ -21,7 +21,7 @@ Processing.js（古い Processing が対象・構文解析エラー・シェー�
 ```sh
 npm install
 npm run dev                  # デモ（ライブエディタ）: http://localhost:8080/processing-ts/
-npm run typecheck            # 型チェック（src/lib・tools・tests。何も書き出さない）。`npx tsc` を直接使うと dist/types が書き換わるので使わない
+npm run typecheck            # 型チェック（src/lib・src/compiler・tools・tests。何も書き出さない）。`npx tsc` を直接使うと dist/types が書き換わるので使わない
 npm test                     # 単体テスト（Vitest, tests/unit/。Node で動くものだけ）
 npm run test:visual          # 視覚/出力回帰テスト（全ケース、約 10 秒）。終了コード 0 = 回帰なし
 npm run test:visual -- <名前の前方一致...> [--tag 2d]
@@ -33,7 +33,7 @@ npm run test:grammar         # Lezer 文法と公式文法（ANTLR）の受理/�
 npm run gen:grammar          # src/compiler/grammar/processing.grammar → parser.ts を再生成
 npm run gen:manifest         # 本物の core jar から API マニフェスト（src/compiler/api/processing-core.json）を再生成
 npm run coverage             # リファレンスに対する実装済み API の一覧 → docs/api-coverage.md
-npm run bench                # 変換時間（Node の構文解析 + ブラウザでの変換全体）。予算超過で終了コード 1
+npm run bench                # 変換時間（Node の旧構文解析 + 新コンパイラのフロントエンド + ブラウザでの変換全体）。予算超過で終了コード 1
 npm run size                 # バンドルサイズ（min / gzip / brotli）。予算: tools/bench/budget.json
 npm run build                # リリース時のみ（dist/ と library.js はコミットされた成果物）
 ```
@@ -52,6 +52,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 ## 構成（要点）
 
 - `src/lib/SketchManager.ts` … 公開 API（読み込み → 変換 → 実行）
+- `src/compiler/` … 新コンパイラ（P1、開発中で未接続）。`parse.ts` の `parseSketch()` がタブごとに解析して型付き AST（`ast.ts`）と診断を返す。DOM 非依存（[ARCHITECTURE.md](docs/ARCHITECTURE.md) の「新コンパイラ」）
 - `src/compiler/grammar/` … 新コンパイラ用の Lezer 文法（`processing.grammar` を編集 → `npm run gen:grammar`。`parser.ts` は生成物なので手で編集しない）
 - `src/lib/transpiler/` … ANTLR4（`antlr/Processing.g4` から生成した `antlr/parser/*` は **手で編集しない**）→ MemberAnalyzer → ReferenceSolver → Converter
 - `src/lib/runtime/` … PApplet（API）, PGraphics（PixiJS v8 で描画）, PImage, DefaultRunner（フレームループ）
@@ -74,5 +75,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 
 - Processing 4.5 は HiDPI 画面で既定 `pixelDensity(2)`。参照生成では `pixelDensity(1)` を注入している。
 - Windows では P2D/P3D の小さいウィンドウが OS に広げられる（200px 幅 → 232px）。テストは幅 320 以上で作る。
-- 変換時に `new PApplet(null)` を作るため、トランスパイラ単体では Node で動かない（ブラウザが必要。ROADMAP で解消予定）。
+- 変換時に `new PApplet(null)` を作るため、旧トランスパイラ単体では Node で動かない（ブラウザが必要。新コンパイラ `src/compiler/` は Node で動く）。
+- `src/compiler/` と `tools/` は Node の型除去でそのまま実行されるので、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など変換が必要な TS 構文を使わない。import には `.ts` 拡張子を付ける。
+- Processing は Java と挙動が違うことがある（例: テキストブロックは字下げを除去しない）。Java の仕様から推測せず本物で確かめる。
 - Git Bash の heredoc で `'` を含む長い内容を書くと失敗することがある。ファイル作成は Write ツールを使う。

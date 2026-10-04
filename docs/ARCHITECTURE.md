@@ -33,8 +33,8 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `src/lib/transpiler/SketchParser.ts` | 構文解析（SLL → 失敗時 LL の 2 段階）とエラーリスナー。ランタイムに依存しないので Node でテスト可能 |
 | `src/lib/transpiler/antlr/Processing.g4` | Processing 公式プリプロセッサの文法（Java 1.7/8 ベース + `color` 型、`#RRGGBB`、`int()` 等の変換関数、静的/アクティブ/Java モード） |
 | `src/lib/transpiler/antlr/parser/` | ANTLR4 で生成された TS（**手で編集しない**。ProcessingParser.ts は約 12,000 行） |
-| `src/compiler/grammar/` | **新コンパイラ用**の Lezer 文法（@lezer/java のフォーク、MIT）。`processing.grammar` を編集して `npm run gen:grammar` で `parser.ts` を再生成する（生成物はコミット）。まだ実行パスでは使っていない（ROADMAP P1） |
-| `src/compiler/api/processing-core.json` | 本物の core jar（4.5.2）をリフレクションして得た public API（35 クラスのフィールド・コンストラクタ・メソッドのシグネチャ）。`npm run gen:manifest` で再生成。型検査とカバレッジ計測に使う |
+| `src/compiler/` | **新コンパイラ**（ROADMAP P1、開発中。まだ実行パスでは使っていない）。DOM 非依存で Node / Worker でも動く。詳細は下の「新コンパイラ」 |
+| `src/compiler/grammar/` | 新コンパイラ用の Lezer 文法（@lezer/java のフォーク、MIT）。`processing.grammar` を編集して `npm run gen:grammar` で `parser.ts` を再生成する（生成物はコミット） |
 | `src/lib/runtime/PApplet.ts` | Processing API の本体（約 100 関数）。描画系は `this.g`（PGraphics）へ委譲 |
 | `src/lib/runtime/PGraphics.ts` | PixiJS による描画。`PImage` を継承 |
 | `src/lib/runtime/PGraphicsContext.ts` | fill/stroke/text のスタイル状態、pushStyle/popStyle |
@@ -48,6 +48,39 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `tools/vt/` | 視覚/出力回帰テスト CLI（[TESTING.md](TESTING.md)） |
 | `tests/visual/` | 視覚テストのケースと参照画像 |
 | `dist/`, `library.js` | **コミットされたビルド成果物**（npm 配布用 / CDN 版 Pixi を使う単一ファイル版） |
+
+## 新コンパイラ（`src/compiler/`、開発中）
+
+旧トランスパイラを置き換える予定のコンパイラ。現在はフロントエンド（構文解析 → AST）まで（P1-1〜P1-3）。型検査（P1-4）・コード生成（P1-5）・モード処理（P1-6）を足してから P1-9 で `SketchManager` を切り替える。
+
+```
+タブごとの { name, text }
+   │  parseSketch()  src/compiler/parse.ts
+   ├─ SketchSource（source.ts）: タブごとに通し番号の範囲を割り当てる
+   ├─ タブごとに Lezer で解析（grammar/parser.ts）
+   ├─ syntaxErrors()（syntax-errors.ts）: 構文エラーを複数件、メッセージ付きで
+   └─ buildFile()（cst-to-ast.ts）: CST → 型付き AST（ast.ts）
+   ▼
+{ source, files: SketchFile[]（タブごとの AST）, diagnostics }
+```
+
+| ファイル | 内容 |
+|---|---|
+| `ast.ts` | AST のノード型（`kind` で判別するプレーンなオブジェクト）、`forEachChild` / `walk`、デバッグ表示 `printAst` |
+| `source.ts` | 位置の管理。各ノードは `start`/`end` だけを持ち、値はタブごとに割り当てた範囲（`base + タブ内オフセット`）の通し番号。`SketchSource.locate(pos)` でタブ・行・列（1 始まり）に戻す。ノードをタブをまたいで移しても位置を失わない |
+| `cst-to-ast.ts` | CST → AST。括弧は木の構造に吸収して捨てる。`color` 型は `PrimitiveType int`（`color: true`）、`#RRGGBB` は ARGB の `IntLiteral` にする。Lezer 文法が Java より緩い所（ブロック内の `import`、ローカル変数の `static` 等の修飾子、文にならない式、配列生成の形、リテラルの範囲、コンストラクタ名）をここでエラーにする |
+| `syntax-errors.ts` | 構文エラーのメッセージ。字句の走査で未終端の文字列/コメントと括弧の対応を調べ、閉じられていない `{` は字下げから推定する。それより前の Lezer のエラーノードは「改行の前で式が終わっている → `Missing ';'`」「`for` の見出し → `Missing ';' in the 'for' header`」などの規則でメッセージにする。1 行に 1 件まで |
+| `literals.ts` | リテラルの解釈（整数の範囲と 16/8/2 進の 32/64 ビット折り返し、浮動小数の接尾辞、エスケープ、`#RRGGBB`、テキストブロック） |
+| `diagnostics.ts` | 診断の型（`code`・`message`・位置）と整形（`Tab.pde:行:列: error: ...`） |
+| `api/processing-core.json` | 本物の core jar（4.5.2）をリフレクションして得た public API（35 クラスのフィールド・コンストラクタ・メソッドのシグネチャ）。`npm run gen:manifest` で再生成。型検査とカバレッジ計測に使う |
+
+AST 構築時に Lezer 文法の解析結果を Java（Processing）の意味に合わせて組み直している所:
+
+- 二項演算の連鎖は一度平坦化して Java の優先順位で組み直す。文法では `==`/`!=` と `<`/`>`、`instanceof` が同じ優先順位なので `f == a < b` や `a + b instanceof C` がずれるため。
+- `(N) - 1`（N は大文字始まりの名前）は文法上は `-1` のキャストになるが、Java では参照型へのキャストの後に単項 +/- は来ないので減算に戻す。逆に `(color) -1` は文法上は減算になるが、Processing では int へのキャストなのでキャストに戻す。
+- テキストブロックは Java の規則（共通の字下げの除去）ではなく、Processing 4.5.2 の実際の値（開始行の次の行からの生の内容に先頭の改行を付けたもの）にする。
+
+制約: `src/compiler/` と `tools/` は Node の型除去でそのまま実行されるため、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など JS に変換が必要な TS 構文を使わない。型チェックは DOM を含まない `src/compiler/tsconfig.json` で行う（`npm run typecheck`）。
 
 ## トランスパイラの詳細
 

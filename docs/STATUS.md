@@ -7,7 +7,7 @@
 
 | 領域 | 状態 |
 |---|---|
-| 構文解析 | ANTLR4 + Processing 公式文法（Java 8 時代の古いコピー）。SLL 予測 + LL フォールバック（P0-1）。コールド時のコストが残る（T2） |
+| 構文解析 | 実行パスは ANTLR4 + Processing 公式文法（Java 8 時代の古いコピー）。SLL 予測 + LL フォールバック（P0-1）。コールド時のコストが残る（T2）。新コンパイラ（`src/compiler/`、未接続）は Lezer 文法 + 型付き AST まで完成（P1-1/P1-2）: 同梱 examples 254 本を診断なしで AST 化、構文エラーはタブ・行・列つきで複数件 |
 | 意味解析（型） | **なし**。型情報を使わずに文字列変換しているため Java の意味論がずれる |
 | 静的モード | **未対応**（setup/draw の無いスケッチは変換時に例外） |
 | 2D 描画 | 基本図形・変換・色・createGraphics は概ね動く。細部（既定値、モード、stroke の端/結合、テキスト）にずれ |
@@ -16,8 +16,8 @@
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
 | 同梱サンプル | 21 本すべてがエラーなく実行 |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **95 本（37%）** がエラーなく完走（JAVA2D 54% / P2D 14% / P3D 3%）。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 19 ケース: 5 PASS / 14 XFAIL（[TESTING.md](TESTING.md)） |
-| 単体テスト / CI / lint | なし |
+| 視覚テスト | 20 ケース: 5 PASS / 15 XFAIL（[TESTING.md](TESTING.md)） |
+| 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし |
 
 ## 実装済み API（ランタイム）
 
@@ -43,8 +43,10 @@
 | T12 | `#RRGGBB` → `0xRRGGBB`（Processing は `0xFFRRGGBB`）。アルファ 0 になる | `ReferenceSolver.ts:182`, `Transpiler.ts:70` | hex_colors |
 | T13 | 識別子解決のため変換時に `new PApplet(null)` を生成（Pixi の Application/Graphics/BitmapFont を作る）→ トランスパイラが DOM と描画ライブラリに依存し、Node / Worker で動かない | `Control.ts:19` | — |
 | T14 | 非同期化は `size/fullScreen` 等の `AsyncFunction` を正規表現で `await` するだけ。ユーザー関数経由の呼び出しは考慮されない | `Converter.ts` | — |
-| T15 | エラーは最後の 1 件のみ。全タブを `\n` で連結して解析するため行番号がタブと対応しない。意味エラー（未定義変数・型不一致）は検出しない | `Control.ts`, `SketchManager.transpileSketch` | — |
-| T17 | 文法がスイッチ式・パターン instanceof を受理しない（本家 4.5.2 の受理範囲は要確認） | `Processing.g4` | — |
+| T15 | エラーは最後の 1 件のみ。全タブを `\n` で連結して解析するため行番号がタブと対応しない。意味エラー（未定義変数・型不一致）は検出しない。新コンパイラでは構文エラー（タブ単位の位置・複数件）は解決済み（P1-2）。意味エラーは P1-4、切り替えは P1-9 | `Control.ts`, `SketchManager.transpileSketch` | — |
+| T17 | 文法がスイッチ式・パターン instanceof を受理しない（本家 4.5.2 の受理範囲は要確認。`var` は 4.5.2 で使えることを確認済み） | `Processing.g4` | — |
+| T18 | 新コンパイラの Lezer 文法は、開始の `"""` と同じ行に内容があるテキストブロック（`"""abc"""`）を拒否する。Processing 4.5.2 は受理して `"abc"` を返す（確認済み） | `src/compiler/grammar/processing.grammar`（textBlockStart） | — |
+| T19 | テキストブロックと `var` を変換できない（SyntaxError）。なお Processing 4.5.2 のテキストブロックは Java と違い、先頭の改行と各行の字下げをそのまま残す（新コンパイラの `literals.ts` は対応済み） | 旧トランスパイラ | literals_processing |
 
 ## 既知のバグ（ランタイム / 描画）
 
