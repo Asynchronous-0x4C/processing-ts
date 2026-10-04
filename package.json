@@ -36,9 +36,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false && tsc -p tools && tsc -p tests",
     "test": "vitest run",
     "bench": "node tools/bench/cli.ts parse transpile",
-    "size": "node tools/bench/cli.ts size"
+    "size": "node tools/bench/cli.ts size",
+    "gen:grammar": "lezer-generator --typeScript src/compiler/grammar/processing.grammar -o src/compiler/grammar/parser.ts",
+    "test:grammar": "node tools/grammar/compare.ts"
   },
   "devDependencies": {
+    "@lezer/generator": "^1.8.1",
     "@types/node": "^24.0.3",
     "@types/pngjs": "^6.0.5",
     "esbuild": "^0.25.12",
@@ -51,6 +54,8 @@
     "vitest": "^3.2.7"
   },
   "dependencies": {
+    "@lezer/common": "^1.5.3",
+    "@lezer/lr": "^1.4.10",
     "antlr4": "^4.13.2",
     "pixi.js": "^8.9.1"
   },

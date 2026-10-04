@@ -5,6 +5,7 @@
 | 単体テスト | `npm test`（Vitest, `tests/unit/*.test.ts`） | Node で動く純粋なロジック（構文解析 `SketchParser`、PVector など、tools/vt の補助関数）。トランスパイラ全体は現状 `new PApplet()`（Pixi/DOM）に依存するため対象外（P1 の新コンパイラで Node 対応） |
 | 視覚 / 出力回帰テスト | `npm run test:visual` | 本物の Processing との画像・println 比較（以下） |
 | 型チェック | `npm run typecheck` | src/lib・tools・tests |
+| 文法の適合性 | `npm run test:grammar` | 新しい Lezer 文法と公式文法（ANTLR）の受理/拒否の一致を、同梱 examples・リポジトリのスケッチ・構文エラー変種で比較（結果: `tests/grammar/out/report.md`） |
 | 性能 / サイズ | `npm run bench` / `npm run size` | 変換時間・バンドルサイズ（後述「性能・サイズ計測」） |
 
 # 視覚 / 出力回帰テスト

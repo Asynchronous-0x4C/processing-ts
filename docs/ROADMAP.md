@@ -50,10 +50,11 @@
 
 `src/compiler/` に新規作成し、完成まで旧トランスパイラと併存させる。DOM に依存しないこと（Node で単体テストできること）。
 
-- [ ] **P1-1 Lezer による Processing 文法のスパイク**（M）— **判断ゲート**
+- [x] **P1-1 Lezer による Processing 文法のスパイク**（M）— **判断ゲート → Lezer で続行**
   @lezer/java（MIT）をフォークし、トップレベルのメソッド/フィールド/文、`#RRGGBB`、`color` 型、`int(` `float(` 等の変換関数、default メソッド、テキストブロックを追加（`src/compiler/grammar/processing.grammar`、@lezer/generator でビルド）。
   検証: 公式文法の ANTLR パーサ（開発時専用オラクル）と、同梱 examples 254 本 + テストケース + 構文エラーを含む入力群で受理/拒否を比較するスクリプト。
   完了条件: 受理/拒否の一致率 99% 以上、199 行のコールド解析 15ms 以下（Node）。満たせない場合は **手書き再帰下降パーサに切り替える**ことを ROADMAP に記録して P1-1b として実施。
+  → 結果（2026-10-04）: `npm run test:grammar` で **1,186/1,186 件一致**（有効な入力 307: 同梱 examples 254 + リポジトリのスケッチ + Processing 固有構文のスニペット + 5k 行の合成スケッチ、構文エラーを入れた変種 879）。199 行のコールド解析 7.4ms / ウォーム 1.0ms、gzip 30.5 KiB（ANTLR 版は 69.0 KiB）。混在モード（静的な文とメソッド宣言の混在）は文法ではなくコンパイラで拒否する（compare.ts の `lezerVerdict` と同じ規則を P1-6 で実装する）。
 - [ ] **P1-2 AST と CST→AST 変換**（M）
   型付き AST（ノードごとにタブ・行・列）。複数タブはタブ単位で解析して位置を保持（T15）。
 - [ ] **P1-3 Processing API マニフェスト**（M）

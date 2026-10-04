@@ -29,6 +29,8 @@ npm run test:visual:ref -- <case>   # 本物の Processing で参照画像と st
 npm run vt -- shot <sketchDir> --ref --frames 30   # 任意のスケッチを processing-ts と Processing の両方で撮って比較
 npm run vt -- list           # テストケースと既知の問題の一覧
 npm run vt -- corpus         # Processing 同梱 examples 254 本の互換性集計（約 5 分）→ tests/corpus/report.md
+npm run test:grammar         # Lezer 文法と公式文法（ANTLR）の受理/拒否の一致を確認（文法を変えたら必ず実行）
+npm run gen:grammar          # src/compiler/grammar/processing.grammar → parser.ts を再生成
 npm run bench                # 変換時間（Node の構文解析 + ブラウザでの変換全体）。予算超過で終了コード 1
 npm run size                 # バンドルサイズ（min / gzip / brotli）。予算: tools/bench/budget.json
 npm run build                # リリース時のみ（dist/ と library.js はコミットされた成果物）
@@ -48,6 +50,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 ## 構成（要点）
 
 - `src/lib/SketchManager.ts` … 公開 API（読み込み → 変換 → 実行）
+- `src/compiler/grammar/` … 新コンパイラ用の Lezer 文法（`processing.grammar` を編集 → `npm run gen:grammar`。`parser.ts` は生成物なので手で編集しない）
 - `src/lib/transpiler/` … ANTLR4（`antlr/Processing.g4` から生成した `antlr/parser/*` は **手で編集しない**）→ MemberAnalyzer → ReferenceSolver → Converter
 - `src/lib/runtime/` … PApplet（API）, PGraphics（PixiJS v8 で描画）, PImage, DefaultRunner（フレームループ）
 - `src/main.ts` ほか … デモ用エディタ。`public/samples/` はデモのサンプル

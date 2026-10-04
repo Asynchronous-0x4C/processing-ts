@@ -139,6 +139,7 @@ const SIZE_ENTRIES = [
   { name: "library (pixi.js external)", entry: "src/lib/index.ts", external: ["pixi.js"] },
   { name: "library + pixi.js", entry: "src/lib/index.ts", external: [] },
   { name: "parser (antlr4 + generated)", entry: "src/lib/transpiler/SketchParser.ts", external: [] },
+  { name: "parser (lezer, src/compiler/grammar)", entry: "src/compiler/grammar/parser.ts", external: [] },
 ];
 
 async function benchSize(): Promise<{ md: string; failed: boolean; data: unknown }> {
