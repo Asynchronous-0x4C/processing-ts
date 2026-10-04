@@ -1,0 +1,8 @@
+# Binary assets: never touch line endings (core.autocrlf is enabled on the main dev machine).
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.gif binary

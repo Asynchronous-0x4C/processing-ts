@@ -166,7 +166,7 @@ SketchManager            既存の公開 API は互換レイヤとして維持�
 | tint | オフスクリーンキャンバスで乗算して描画（結果をキャッシュ） |
 | loadPixels/pixels[]/updatePixels | getImageData/putImageData を Uint32Array で読み書き（RGBA ↔ ARGB 変換） |
 | filter(GRAY/INVERT/THRESHOLD/POSTERIZE/BLUR/ERODE/DILATE/OPAQUE) | CPU で実装（仕様から実装） |
-| text/textFont/createFont | fillText + CSS フォント + FontFace。既定フォントは core 同梱の `ProcessingSansPro-Regular.ttf`（同梱して配布できるかはライセンス要確認） |
+| text/textFont/createFont | fillText + CSS フォント + FontFace。既定フォントは core 同梱の `ProcessingSansPro-Regular.ttf` を同梱（SIL OFL 1.1、確認済み・2026-10-04 決定。`src/lib/runtime/fonts/`） |
 | loadFont(.vlw) | VLW 形式（グリフのビットマップ）を解析して描画（Processing と同じグリフになる） |
 | createGraphics(JAVA2D) | OffscreenCanvas |
 

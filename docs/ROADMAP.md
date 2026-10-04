@@ -2,6 +2,14 @@
 
 2026-10-04 作成。方針の根拠は [EVALUATION.md](EVALUATION.md)、現状の問題は [STATUS.md](STATUS.md)（T*/R* は STATUS.md の問題 ID）。
 
+## 現在地（2026-10-04 時点。セッションの終わりに更新する）
+
+- ブランチ: `feat/next-gen-foundation`（main には未マージ）。
+- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-3（API マニフェスト）。P0-8（CI）は任意で未着手。
+- **次にやること: P1-2（型付き AST と CST→AST 変換）** → P1-4（型検査）→ P1-5（コード生成）→ P1-6（モード判定。混在モードの拒否規則は `tools/grammar/compare.ts` の `lezerVerdict` と同じにする）。
+  - 入力: `src/compiler/grammar/parser.ts`（Lezer）、`src/compiler/api/processing-core.json`（API シグネチャ）。新コンパイラは `src/compiler/` に置き、DOM に依存させない（Vitest で Node から単体テストする）。
+- 基準値: 視覚テスト 5 PASS / 14 XFAIL、互換性コーパス 95/254、API カバレッジ（関数）102/253、文法一致 1,186/1,186、サイズと時間の予算は `tools/bench/budget.json`。
+
 ## 進め方
 
 - 上から順に、**未完了の最初のタスク**に取り組む。タスクを終えたらチェックを付け、STATUS.md の該当行を更新する。
@@ -39,9 +47,9 @@
   完了条件: 全 254 本の集計が出る。現状の数値を STATUS.md に記録。→ 結果: 95/254（37%）。参照画像との比較（`--ref`）は未実装（決定的なスケッチの見分けと合わせて後で追加）。
 - [x] **P0-6 単体テスト基盤**（S）
   Vitest を導入（`npm test`）。最初はトランスパイラの小さなテスト数件。
-- [ ] **P0-7 ライセンスの判断**
+- [x] **P0-7 ライセンスの判断**
   - [x] (a) GPL の `Processing.g4`/`JavaParser.g4` 由来の生成パーサ → 推奨構成の採用により P1 で Lezer（MIT）+ 自作拡張に置き換える。置き換えまでは現状のまま。ANTLR 版は開発時専用のオラクルとしてのみ残す。
-  - [ ] (b) 既定フォント `ProcessingSansPro-Regular.ttf` を同梱するか（P2-6 までに **ユーザー確認が必要**）。
+  - [x] (b) 既定フォント `ProcessingSansPro-Regular.ttf` → **同梱する**（2026-10-04 ユーザー決定）。SIL OFL 1.1（Adobe の Source Sans を Processing が改名したもの。Reserved Font Name は "Source"）。core 4.5.2 から無改変でコピーし、`src/lib/runtime/fonts/` にライセンス文と一緒に置いた。表記は [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
   - [x] (c) Processing core / p5.js（LGPL）のコードはコピー・移植しない（CLAUDE.md の作業ルール 6）。
 - [ ] **P0-8 CI**（S、任意）
   GitHub Actions で `npm ci` → `npx playwright-core install chromium` → `npm run typecheck` → `npm run test:visual`（参照はコミット済みなので Processing は不要）。
@@ -83,7 +91,7 @@
 - [ ] **P2-3 図形と既定値**（M, R1, R3, R4, R5, R15）既定の背景 204・白塗り・黒線 1px、各モード、arc の OPEN/CHORD/PIE、strokeCap/Join、beginShape の全種別、beginContour、bezier/curve 系と detail/tightness、`square`、size() 無しのスケッチ。
 - [ ] **P2-4 変換**（S）PMatrix2D、applyMatrix、shearX/Y、printMatrix、push/pop のスタイルと行列。
 - [ ] **P2-5 画像**（L, R8〜R10）Int32Array の pixels と CPU/キャンバス間の遅延同期、get/set/copy/blend/mask/filter/tint/resize、メインキャンバスの loadPixels/updatePixels、createGraphics（OffscreenCanvas）、save/saveFrame。
-- [ ] **P2-6 テキスト**（M, R6）createFont/loadFont(.vlw)/textFont/textSize/textAlign（縦方向も）/textLeading/textWidth/textAscent/textDescent/矩形内の折り返し、既定フォント（P0-7 の判断に従う）。
+- [ ] **P2-6 テキスト**（M, R6）createFont/loadFont(.vlw)/textFont/textSize/textAlign（縦方向も）/textLeading/textWidth/textAscent/textDescent/矩形内の折り返し、既定フォントは同梱の `src/lib/runtime/fonts/ProcessingSansPro-Regular.ttf`（288 KB の TTF）。text() が使われたときだけ FontFace で遅延読み込みし、ライブラリのビルドではライセンス文と一緒に dist へ出力する（`package.json` の `files` と THIRD_PARTY_NOTICES.md も確認）。WOFF2 化やサブセット化は OFL 上の Modified Version になるが、名前（Processing Sans Pro）に予約名 "Source" を含まないので可。その場合も OFL とコピーライト表記を残す。
 - [ ] **P2-7 乱数とノイズ**（S, R14）`java.util.Random` 互換、randomGaussian、Processing の noise と noiseDetail/noiseSeed。完了条件: random_seed が PASS（stdout の値まで一致）。
 - [ ] **P2-8 ループとイベント**（M, R12, R13, R16）requestAnimationFrame ベースで frameRate を守る、frameCount の意味、redraw()、mouseDragged/mouseClicked/keyTyped の発火条件、key/keyCode/CODED、mouseWheel の MouseEvent、focused、cursor/noCursor。イベントの再現テストは vt ハーネスに「入力スクリプト」（フレーム番号ごとのマウス/キー操作）を追加して行う。
 - [ ] **P2-9 VFS と fetch 事前読み込み（PWA 対応）**（M）`data/` の解決、マニフェスト/リテラル抽出による事前読み込み、画像の事前デコード、IndexedDB への保存、selectInput/selectOutput、未読み込みパスのエラーメッセージ。同期 XHR を削除。

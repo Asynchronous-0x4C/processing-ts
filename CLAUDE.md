@@ -11,7 +11,7 @@ Processing.js（古い Processing が対象・構文解析エラー・シェー�
 | ファイル | 内容 |
 |---|---|
 | [docs/STATUS.md](docs/STATUS.md) | 現状・実装済み API・**既知のバグ一覧（ID 付き）** |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | 実装ロードマップ。**作業はここのフェーズ/タスク ID に沿って進める** |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | 実装ロードマップ。**冒頭の「現在地」に次のタスクがある**。作業はここのフェーズ/タスク ID に沿って進める |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | 構文解析・描画などのライブラリ選定の検討（サイズ・速度の実測あり） |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 現行コードの構造と処理の流れ |
 | [docs/TESTING.md](docs/TESTING.md) | 視覚/出力回帰テスト CLI の使い方と仕組み |
@@ -66,7 +66,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 3. 変更後は `npm run typecheck`・`npm test`・`npm run test:visual` を通す。FAIL（回帰）を残さない。
 4. 既知のバグを直したら [docs/STATUS.md](docs/STATUS.md) の該当行を消し、ROADMAP のタスクにチェックを付ける。新しく見つけた問題は STATUS.md に ID 付きで追記する。
 5. `dist/` と `library.js` はリリース時以外に変更しない（コミットしない）。
-6. ライセンス: 本プロジェクトは MIT。Processing core（processing4 の `core/`）と p5.js は **LGPL-2.1** なので、コードをそのまま移植・コピーしない。仕様・リファレンス・実際の出力から実装する（判断が必要なら作業前にユーザーに確認）。
+6. ライセンス: 本プロジェクトは MIT。Processing core（processing4 の `core/`）と p5.js は **LGPL-2.1** なので、コードをそのまま移植・コピーしない。仕様・リファレンス・実際の出力から実装する（判断が必要なら作業前にユーザーに確認）。第三者のファイルを取り込むときは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に追記する（既定フォント Processing Sans Pro は SIL OFL 1.1 で同梱済み）。
 7. `PApplet` の内部用メンバーは `__name__` 形式にする（スケッチ側の識別子との衝突を避けるため。既存の慣例）。
 8. 依存ライブラリを追加するときは gzip 後のサイズを確認し、EVALUATION.md の方針（ランタイムを小さく保つ）に沿うか判断する。
 
