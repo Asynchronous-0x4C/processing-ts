@@ -5,13 +5,13 @@
 ## 現在地（2026-10-04 時点。セッションの終わりに更新する）
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
-- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）、P1-5（コード生成と言語ランタイム）、P1-6（モードと前処理）、P1-7（java.util の互換層）。P1-8 のうち `npm run test:lang` と `lang_*` ケース 16 件は済み。P0-8（CI）は任意で未着手。
-- **次にやること: P1-8 の残り（下記）→ P1-9（`SketchManager` を新コンパイラに切り替える。旧ランタイムの PApplet を生成コードの約束 `$rt.PApplet`/`$rt.classes`/`$rt.lang` に合わせ、vt の `lang_*` ケースを XPASS にする）**。
+- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）、P1-5（コード生成と言語ランタイム）、P1-6（モードと前処理）、P1-7（java.util の互換層）、P1-8（stdout 適合テスト: `lang_*` 18 件）。P0-8（CI）は任意で未着手。
+- **次にやること: P1-9（`SketchManager` を新コンパイラに切り替える）**。手順の案: `SketchManager.transpileSketch` をタブごとの `compileSketch()` にし、診断を `Tab.pde:行:列` で error listener に渡す → `DefaultRunner.init` で `new Function("$rt", "__renderer__", code)($rt, renderer)`（`$rt = { lang, PApplet, classes: { ...javaClasses, "processing.core.PVector": PVector, ... } }`）→ `lang.setOutput` を log listener につなぐ → 実行時エラーを Source Map で .pde の行に戻す → vt の `lang_*`/`java_semantics`/`multi_tab`/`static_mode` を XPASS にする。旧ランタイムの PApplet・PVector のメソッド名と型（float の戻り値、`color` は int）を生成コードに合わせる必要がある。
   - 生成コードは `compileSketch()`（`src/compiler/index.ts`）が返す `new Function("$rt", "__renderer__", code)` の本体。ランタイムとの約束（`$rt.lang`・`$rt.classes`・`$rt.PApplet`、上書きするメソッド名）は `codegen.ts` 冒頭と [ARCHITECTURE.md](ARCHITECTURE.md) の「生成コードの形」。`size()` などは前処理で生成した `settings()` の中で `await $p.size(...)` として呼ぶ（`settings` は async）。
   - ケースは `lang_` で始め、`npm run test:visual:ref -- <case>` で参照を作る。モデル（`library.gen.ts`）にあってランタイムに無いクラスは、使った時点で `UnsupportedOperationException: ... is not available in processing-ts` になる（`$L.missingClass`）。
   - 確認: `npm run test:lang`（Node、約 1 秒）で 16/17 PASS。Processing の挙動は `Processing cli --build` の出力（前処理後の Java）で確かめる。
   - 速度の注意: 5k 行のウォームで解析からコード生成まで 54ms（うち Lezer の解析が約 23ms、コード生成は約 9ms）。P1-9 の目標（変換全体 50ms）には解析の高速化（文法の曖昧さの削減など）が要る（STATUS.md C4）。
-- 基準値: 視覚テスト 5 PASS / 31 XFAIL、stdout 適合 20 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 95/254（旧トランスパイラ）、新コンパイラでの変換 312/313（`node tools/lang/cli.ts --corpus`）、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,363/2,366（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`（新コンパイラ 118.8 KiB gz、言語ランタイム 19.0 KiB gz）。
+- 基準値: 視覚テスト 5 PASS / 33 XFAIL、stdout 適合 22 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 95/254（旧トランスパイラ）、新コンパイラでの変換 314/315（`node tools/lang/cli.ts --corpus`）、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,381/2,384（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`（新コンパイラ 118.8 KiB gz、言語ランタイム 19.0 KiB gz）。
 
 ## 進め方
 
@@ -108,9 +108,11 @@
   - java.util のインタフェース（List/Set/Map/Deque…）を登録して `instanceof` が動く。スケッチのクラスがライブラリのクラスを継承できる（`class Bag extends ArrayList<String>`、コンストラクタ引数は `$init` で受け渡し）。ランタイム内部のメンバー名は `$` 付き（継承したクラスの名前と衝突しない）。
   - あわせて直したもの: ジェネリックメソッドの推論を上下限つきにした（`Collections.sort(list, Collections.reverseOrder())` が通る）、`println(a, b, ...)` は全引数を評価してから文字列にする（Java の可変長引数と同じ。文字列連結は ECJ と同じく左から順に変換）、継承した SAM（`BinaryOperator`）のラムダの戻り値型。
   - 未対応（STATUS.md C10・C11）: TreeMap/TreeSet のナビゲーションのビュー（コピーを返す）、`Set.of`/`Map.of` の順序、ストリーム、Scanner/Date/Calendar/BitSet/Optional など。
-- [ ] **P1-8 stdout 適合テストの拡充と高速ランナー**（M）
+- [x] **P1-8 stdout 適合テストの拡充と高速ランナー**（M）
   `lang` タグのケースを追加（文字列、配列、クラスと継承、例外、switch、ジェネリクス、ラムダ、static、内部クラス、整数/浮動小数の境界値）。描画不要のケースは Node で実行する `npm run test:lang`（参照の stdout は vt の `ref` で生成したものを共用）。
-  → 一部済み（P1-5/P1-7）: `npm run test:lang`（`tools/lang/`、全ケース約 1 秒）と `lang_*` 16 件、`--corpus` で全スケッチの変換確認。残り: 内部クラスとジェネリクスの組み合わせ、ユーザー定義インタフェースの既定メソッド、文字列の Unicode（サロゲートペア）、ラベル付き break/continue と switch のフォールスルーの組み合わせ、例外の連鎖（`getCause`）と `printStackTrace` の出力。
+  → 結果（2026-10-04）: `npm run test:lang`（`tools/lang/`、全ケース約 1 秒、`--corpus` で全スケッチの変換確認）と `lang_*` 18 件（P1-5 の 11 件、boxing、java.util の 4 件、`lang_generics_inner`（ジェネリクスと内部クラス、インタフェースの既定/static メソッド、例外の連鎖）、`lang_flow_text`（ラベル付き break/continue、switch のフォールスルー、条件演算子の型、サロゲートペア、日本語、StringBuilder））。`lang` タグの 23 件中 22 件が本物の Processing と完全一致（`random_seed` は P2-7 の後）。
+  - 見つけて直したもの: ジェネリッククラスの内部クラスのメンバーが外側の型引数で置換されていなかった（`Tree<Integer>.Node` の `value` が T のまま）、例外クラスの `getClass().getName()` にパッケージが無かった、vt の参照生成で `list.size()` の後ろにも `pixelDensity(1)` を挿入していた、Windows の Processing の標準出力（MS932）で日本語が化け、`é` などが `?` になっていた（参照生成時は System.out を UTF-8 のファイルに向ける）。
+  - `printStackTrace` の出力（標準エラー）は比較していない。
 - [ ] **P1-9 切り替え**（M）
   `SketchManager` を新コンパイラに切り替え、旧 `transpiler/`・antlr4 依存・生成パーサを配布物から削除（オラクルとしては devDependency に残す）。
   完了条件: java_semantics / multi_tab / static_mode が PASS。コーパスの変換成功率 95% 以上。199 行のコールド変換 20ms 以下（ブラウザ）。5k 行ウォーム 50ms 以下。

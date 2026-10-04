@@ -4,7 +4,7 @@
 
 export class Throwable extends Error {
   /** Binary class name used by toString(), e.g. "java.lang.ArithmeticException". */
-  static javaName = "java.lang.Throwable";
+  static $javaName = "java.lang.Throwable";
   cause: Throwable | null = null;
 
   constructor(message?: string | null, cause?: Throwable | null) {
@@ -36,7 +36,7 @@ export class Throwable extends Error {
   }
 
   override toString(): string {
-    const name = (this.constructor as typeof Throwable).javaName;
+    const name = (this.constructor as typeof Throwable).$javaName;
     const m = this.getLocalizedMessage();
     return m !== null && m !== undefined ? `${name}: ${m}` : name;
   }
@@ -55,19 +55,19 @@ export function setErrorPrinter(f: (s: string) => void) {
 
 const define = (base: typeof Throwable, javaName: string): typeof Throwable => {
   const c = class extends base {};
-  c.javaName = javaName;
+  c.$javaName = javaName;
   Object.defineProperty(c, "name", { value: javaName.slice(javaName.lastIndexOf(".") + 1) });
   return c;
 };
 
 export class Exception extends Throwable {
-  static override javaName = "java.lang.Exception";
+  static override $javaName = "java.lang.Exception";
 }
 export class JError extends Throwable {
-  static override javaName = "java.lang.Error";
+  static override $javaName = "java.lang.Error";
 }
 export class RuntimeException extends Exception {
-  static override javaName = "java.lang.RuntimeException";
+  static override $javaName = "java.lang.RuntimeException";
 }
 export const ArithmeticException = define(RuntimeException, "java.lang.ArithmeticException");
 export const IndexOutOfBoundsException = define(RuntimeException, "java.lang.IndexOutOfBoundsException");

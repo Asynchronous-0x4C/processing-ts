@@ -11,7 +11,11 @@ export interface PrimType { tag: "prim"; name: PrimName }
 export interface VoidType { tag: "void" }
 export interface NullType { tag: "null" }
 export interface ErrorType { tag: "error" }
-export interface ClassType { tag: "class"; sym: ClassSymbol; args: readonly Type[] }
+/**
+ * `outer` is the parameterization of the enclosing class for an inner class of a generic class
+ * (`Tree<Integer>.Node`): the inner class's members may use the outer type variables.
+ */
+export interface ClassType { tag: "class"; sym: ClassSymbol; args: readonly Type[]; outer?: ClassType }
 export interface ArrayType { tag: "array"; elem: Type }
 export interface TypeVar { tag: "tvar"; sym: TypeVarSymbol }
 /** Only as a type argument. */
@@ -199,7 +203,10 @@ export function typeToString(t: Type): string {
     case "array": return typeToString(t.elem) + "[]";
     case "tvar": return t.sym.name;
     case "wild": return t.bound ? `? ${t.upper ? "extends" : "super"} ${typeToString(t.bound)}` : "?";
-    case "class": return t.args.length ? `${t.sym.displayName}<${t.args.map(typeToString).join(",")}>` : t.sym.displayName;
+    case "class": {
+      const name = t.outer?.args.length ? `${typeToString(t.outer)}.${t.sym.name}` : t.sym.displayName;
+      return t.args.length ? `${name}<${t.args.map(typeToString).join(",")}>` : name;
+    }
   }
 }
 
@@ -235,7 +242,12 @@ export function substitute(t: Type, s: Subst | null): Type {
       const e = substitute(t.elem, s);
       return e === t.elem ? t : { tag: "array", elem: e };
     }
-    case "class": return t.args.length ? { tag: "class", sym: t.sym, args: t.args.map((a) => substitute(a, s)) } : t;
+    case "class": {
+      if (!t.args.length && !t.outer) return t;
+      const r: ClassType = { tag: "class", sym: t.sym, args: t.args.map((a) => substitute(a, s)) };
+      if (t.outer) r.outer = substitute(t.outer, s) as ClassType;
+      return r;
+    }
     case "wild": return t.bound ? { tag: "wild", bound: substitute(t.bound, s), upper: t.upper } : t;
     default: return t;
   }
@@ -244,8 +256,9 @@ export function substitute(t: Type, s: Subst | null): Type {
 /** Substitution that maps the class's type parameters to the arguments of `t` (none for raw types). */
 export function substOf(t: ClassType): Subst | null {
   const params = t.sym.load().typeParams;
-  if (!params.length || t.args.length !== params.length) return null;
-  const s: Subst = new Map();
+  const outer = t.outer ? substOf(t.outer) : null;
+  if (!params.length || t.args.length !== params.length) return outer;
+  const s: Subst = new Map(outer ?? []);
   params.forEach((p, i) => s.set(p, t.args[i]));
   return s;
 }
@@ -258,7 +271,7 @@ export function erasure(t: Type): Type {
   switch (t.tag) {
     case "tvar": return t.sym.bounds.length ? erasure(t.sym.bounds[0]) : objectTypeOf(t.sym);
     case "array": return { tag: "array", elem: erasure(t.elem) };
-    case "class": return t.args.length ? { tag: "class", sym: t.sym, args: [] } : t;
+    case "class": return t.args.length || t.outer ? { tag: "class", sym: t.sym, args: [] } : t;
     case "wild": return t.bound && t.upper ? erasure(t.bound) : T.error;
     default: return t;
   }

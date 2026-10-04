@@ -96,6 +96,8 @@ type Resolved<T> = { method: T; subst: Subst | null; varargs: boolean };
 type Arg = { node: A.Expression; ty: Type | null /* null: poly expression typed against the parameter */ };
 type FoundField = { field: FieldSymbol; ty: Type; cls: ClassSymbol; staticCtx: boolean };
 /** Bounds collected for one type variable during inference (check.ts instantiate/unify). */
+/** Does the class or an enclosing class declare type parameters? */
+const hasTypeParams = (c: ClassSymbol): boolean => c.typeParams.length > 0 || (!!c.outer && hasTypeParams(c.outer));
 type InferBounds = { eq: Type | null; lower: Type[]; upper: Type[]; expected: Type | null };
 
 function depthOf(c: ClassSymbol): number {
@@ -473,7 +475,10 @@ class Checker {
           return { tag: "tvar", sym };
         }
         sym.load();
-        if (!n.typeArgs) return classType(sym);
+        // An inner class of a generic class named inside it carries the outer parameterization.
+        const outer = !n.qualifier && sym.isInner && sym.isSource && sym.outer && !(sym.flags & (Flags.Local | Flags.Anonymous)) && hasTypeParams(sym.outer) ? sym.outer.thisType : undefined;
+        const withOuter = (t: ClassType): ClassType => (outer ? { ...t, outer } : t);
+        if (!n.typeArgs) return withOuter(classType(sym));
         const args = n.typeArgs.map((a) => (a.kind === "WildcardType" ? { tag: "wild" as const, bound: a.bound ? this.resolveType(a.bound, scope) : null, upper: a.upper } : this.resolveType(a, scope)));
         for (const [i, a] of args.entries()) if (a.tag === "prim") this.err("type-mismatch", `Syntax error, insert "Dimensions" to complete ReferenceType`, n.typeArgs[i]);
         if (n.typeArgs.length === 0) return { tag: "class", sym, args: [] }; // diamond: inferred by the creation expression
@@ -483,7 +488,7 @@ class Checker {
             : `Incorrect number of arguments for type ${sym.displayName}<${sym.typeParams.map((p) => p.name).join(",")}>; it cannot be parameterized with arguments <${args.map(typeToString).join(", ")}>`, n);
           return classType(sym);
         }
-        return classType(sym, args.map((a) => (a.tag === "prim" ? T.error : a)));
+        return withOuter(classType(sym, args.map((a) => (a.tag === "prim" ? T.error : a))));
       }
     }
   }
@@ -2167,6 +2172,18 @@ class Checker {
       const b = bounds.get(tp);
       const lower = b?.lower.reduce<Type | null>((acc, t) => (acc === null || sameType(acc, t) ? t : this.ts.lub(acc, t)), null) ?? null;
       map.set(tp, b?.eq ?? lower ?? b?.expected ?? b?.upper[0] ?? (tp.bounds.length ? substitute(erasure(tp.bounds[0]), null) : this.ts.object));
+    }
+    // An inferred type outside its declared bound (<T extends Number> given List<String>) is replaced by
+    // the bound, so that the arguments no longer fit and the method is reported as not applicable.
+    for (const tp of tps) {
+      const t = map.get(tp)!;
+      for (const bound of tp.bounds) {
+        const bt = substitute(bound, map);
+        if (t.tag !== "error" && bt.tag !== "error" && !this.ts.isSubtype(t, bt)) {
+          map.set(tp, erasure(bt));
+          break;
+        }
+      }
     }
     return map;
   }

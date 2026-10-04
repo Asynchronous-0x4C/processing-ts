@@ -52,8 +52,9 @@ export async function renderReference(
   fs.mkdirSync(sketchDir);
   const mode = opts.mode ?? detectMode(sketch.files);
   const tmpPng = path.join(work, "frame.png");
+  const tmpStdout = path.join(work, "stdout.txt");
   for (const f of sketch.files) {
-    const content = f.name === sketch.main ? injectForReference(f.content, mode, opts.frames, tmpPng) : f.content;
+    const content = f.name === sketch.main ? injectForReference(f.content, mode, opts.frames, tmpPng, tmpStdout) : f.content;
     fs.writeFileSync(path.join(sketchDir, f.name), content);
   }
   const dataDir = path.join(sketch.dir, "data");
@@ -62,9 +63,11 @@ export async function renderReference(
   const args = ["cli", `--sketch=${sketchDir}`, `--output=${path.join(work, "build")}`, "--force", "--run"];
   const { output, timedOut } = await runWithTimeout(opts.processing, args, opts.timeoutMs ?? 90_000);
   const lines = output.split(/\r?\n/).filter((l) => l.length > 0);
-  const doneAt = lines.indexOf(DONE_MARKER);
-  const body = doneAt === -1 ? lines : lines.slice(0, doneAt);
-  const messages = body.filter((l) => PROCESSING_NOISE.some((re) => re.test(l)));
+  // The sketch's System.out went to tmpStdout in UTF-8; the console has Processing's own messages.
+  const outLines = fs.existsSync(tmpStdout) ? fs.readFileSync(tmpStdout, "utf8").split(/\r?\n/).filter((l) => l.length > 0) : lines;
+  const doneAt = outLines.indexOf(DONE_MARKER);
+  const body = doneAt === -1 ? outLines : outLines.slice(0, doneAt);
+  const messages = [...lines, ...body].filter((l) => PROCESSING_NOISE.some((re) => re.test(l)));
   const stdout = body.filter((l) => !PROCESSING_NOISE.some((re) => re.test(l)));
   const result: ReferenceResult = { ok: false, stdout, messages, durationMs: Date.now() - started };
 

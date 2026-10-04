@@ -108,8 +108,9 @@ tests/visual/refs/<name>.png / .stdout.txt / .meta.json   ← `ref` が生成。
    - アクティブモード: `handleDraw()` をオーバーライドし、`frames` 回の draw() 後に `save()` → `exit()`。
      （`sketchPixelDensity()` は final でオーバーライドできない。`noLoop()` のスケッチは 1 回目の draw 後に保存）
    - 静的モード: 末尾に `save(); exit();` を追記。
+   - スケッチの `System.out` を一時ファイルへ UTF-8 で出す（フィールド初期化子 / 静的モードは先頭の文）。Windows のコンソールは MS932 なので、そのままでは日本語が化け、`é` などは `?` になる。
 2. `Processing.exe cli --sketch=<dir> --output=<dir> --force --run` を実行（画面に一瞬ウィンドウが出る）。
-3. stdout からマーカー `__VT_DONE__` より前をスケッチの出力として保存（Processing 自身の警告行は除外）。
+3. そのファイル（無ければコンソール）からマーカー `__VT_DONE__` より前をスケッチの出力として保存（Processing 自身の警告行は除外）。
 
 ### 実行（processing-ts 側）: `tools/vt/browser.ts`, `tools/vt/harness/`
 
@@ -126,7 +127,7 @@ pixelmatch（`includeAA: false` でアンチエイリアス差を無視）で不
 
 ## 現在のケースと状態
 
-`npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 36 ケース中 5 PASS / 31 XFAIL。うち `lang` タグの 21 件（`lang_*` 16 件を含む）は旧トランスパイラでは XFAIL だが、新コンパイラの `npm run test:lang` では 20 件 PASS（`random_seed` だけ XFAIL）。
+`npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 38 ケース中 5 PASS / 33 XFAIL。うち `lang` タグの 23 件（`lang_*` 18 件を含む）は旧トランスパイラでは XFAIL だが、新コンパイラの `npm run test:lang` では 22 件 PASS（`random_seed` だけ XFAIL）。
 各 XFAIL の原因は `vt.json` の `knownIssue` と [STATUS.md](STATUS.md) にある。
 
 ## 互換性コーパス（Processing 同梱 examples）

@@ -8,8 +8,8 @@
 | 領域 | 状態 |
 |---|---|
 | 構文解析 | 実行パスは ANTLR4 + Processing 公式文法（Java 8 時代の古いコピー）。SLL 予測 + LL フォールバック（P0-1）。コールド時のコストが残る（T2）。新コンパイラ（`src/compiler/`、未接続）は Lezer 文法 + 型付き AST まで完成（P1-1/P1-2）: 同梱 examples 254 本を診断なしで AST 化、構文エラーはタブ・行・列つきで複数件 |
-| 意味解析（型） | 実行パスは**なし**（型情報を使わずに文字列変換しているため Java の意味論がずれる）。新コンパイラ（未接続）は型検査まで完成（P1-4）: 本物の Processing の `cli --build` と 2,330/2,333 件一致、見逃し 0（`npm run test:check`） |
-| コード生成 | 新コンパイラ（未接続）のコード生成と言語ランタイム（`src/runtime/lang/`）が完成（P1-5）: `lang` タグの 21 ケース中 20 件で println 出力が本物の Processing と完全一致（`npm run test:lang`、残り 1 件は Node のスタブに `random()` が無いため）。java.util の互換層あり（P1-7）。同梱 examples とリポジトリのスケッチ 313 本中 312 本が構文エラーの無い JS に変換され（1 本は `java.awt` を使うため拒否）、多くは Node のスタブ上で 3 フレーム実行できる（残りはスタブに PVector・PImage などが無いため） |
+| 意味解析（型） | 実行パスは**なし**（型情報を使わずに文字列変換しているため Java の意味論がずれる）。新コンパイラ（未接続）は型検査まで完成（P1-4）: 本物の Processing の `cli --build` と 2,381/2,384 件一致、見逃し 0（`npm run test:check`） |
+| コード生成 | 新コンパイラ（未接続）のコード生成と言語ランタイム（`src/runtime/lang/`）が完成（P1-5）: `lang` タグの 23 ケース中 22 件で println 出力が本物の Processing と完全一致（`npm run test:lang`、残り 1 件は Node のスタブに `random()` が無いため）。java.util の互換層あり（P1-7）。同梱 examples とリポジトリのスケッチ 315 本中 314 本が構文エラーの無い JS に変換され（1 本は `java.awt` を使うため拒否）、多くは Node のスタブ上で 3 フレーム実行できる（残りはスタブに PVector・PImage などが無いため） |
 | 静的モード | **未対応**（setup/draw の無いスケッチは変換時に例外） |
 | 2D 描画 | 基本図形・変換・色・createGraphics は概ね動く。細部（既定値、モード、stroke の端/結合、テキスト）にずれ |
 | P2D / P3D / PShader | **未実装** |
@@ -17,7 +17,7 @@
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
 | 同梱サンプル | 21 本すべてがエラーなく実行 |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **95 本（37%）** がエラーなく完走（JAVA2D 54% / P2D 14% / P3D 3%）。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 36 ケース: 5 PASS / 31 XFAIL（[TESTING.md](TESTING.md)）。XFAIL のうち 21 件は新コンパイラでは通る言語仕様のケース |
+| 視覚テスト | 38 ケース: 5 PASS / 33 XFAIL（[TESTING.md](TESTING.md)）。XFAIL のうち 23 件は新コンパイラでは通る言語仕様のケース |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）

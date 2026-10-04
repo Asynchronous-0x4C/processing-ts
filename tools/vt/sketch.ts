@@ -109,18 +109,25 @@ export const DONE_MARKER = "__VT_DONE__";
 /**
  * Produce the main tab for the reference run:
  * - forces pixelDensity(1) (Processing 4.5 defaults to 2 on HiDPI screens),
- * - saves the frame after `frames` draw() calls and exits.
- * Only appends code / inserts on the size() line, so compiler line numbers stay valid.
+ * - saves the frame after `frames` draw() calls and exits,
+ * - with `outStdout`, sends System.out to that file in UTF-8 (the console uses the system code page,
+ *   which loses or garbles non-ASCII text on Windows).
+ * Only appends code / inserts on the size() line (or the first line), so compiler line numbers stay valid.
  */
 export function injectForReference(
   main: string,
   mode: "static" | "active",
   frames: number,
   outPng: string,
+  outStdout?: string,
 ): string {
   let code = main;
+  const redirect = outStdout
+    ? `try { System.setOut(new java.io.PrintStream(new java.io.FileOutputStream("${javaPath(outStdout)}"), true, "UTF-8")); } catch (Exception e) { }`
+    : "";
   const blanked = blankCommentsAndStrings(code);
-  const sizeCall = /\b(size|fullScreen)\s*\([^;]*\)\s*;/.exec(blanked);
+  // A call of the sketch's own size()/fullScreen(), not a method such as list.size().
+  const sizeCall = /(?<![.\w$])(size|fullScreen)\s*\([^;]*\)\s*;/.exec(blanked);
   if (sizeCall) {
     const at = sizeCall.index + sizeCall[0].length;
     code = code.slice(0, at) + " pixelDensity(1);" + code.slice(at);
@@ -135,6 +142,7 @@ export function injectForReference(
   } else {
     code = "pixelDensity(1); " + code;
   }
+  if (redirect && mode === "static") code = redirect + " " + code;
 
   const out = javaPath(outPng);
   if (mode === "active") {
@@ -144,7 +152,12 @@ export function injectForReference(
     code += `
 
 // ---- injected by tools/vt (reference capture) ----
-@Override
+${redirect ? `boolean __vtStdout = __vtRedirectStdout();
+boolean __vtRedirectStdout() {
+  ${redirect}
+  return true;
+}
+` : ""}@Override
 public void handleDraw() {
   super.handleDraw();
   if (frameCount > ${frames} || (!isLooping() && frameCount > 1)) {

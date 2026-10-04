@@ -1,0 +1,13 @@
+square with area 4.00
+shape with area 3.14
+square with area 1.00
+(x, 1) (x, 2.5) (1, x) 3.5 (x, true)
+[brown, dog, fox, jumps, lazy, over, quick, the, the] 9
+[1, 3, 5, 8] 11
+2.5 1.0 0.0 3
+none 7 pear 9
+[encyclopedia, elephant, hippopotamus, cat] true
+run 1 true
+run 2 true
+wrapped true java.lang.ClassCastException
+java.lang.IllegalStateException: outer inner

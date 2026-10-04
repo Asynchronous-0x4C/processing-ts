@@ -1,0 +1,12 @@
+3,2
+4
+zero one | one | two | many two | zero one | one | 
+early week
+12 false true true 1 big
+A 1 x y 2.0
+4 128512 true 3 2
+7 語 テキスト 3 true 26085
+tab	here quote"s back\slash unié 195 b ab
+y 121 true Y 7 true
+<olleh 6 2 o
+4 6 pad| xxx

@@ -245,3 +245,15 @@ describe("checker: settings() and Java mode", () => {
     expect(r.messages).toEqual(["9: The function undefinedName() does not exist."]); // Processing 4.5.2 (cli --build)
   });
 });
+
+describe("checker: generics", () => {
+  it("types members of an inner class of a generic class through the outer type arguments", () => {
+    expect(errors("class Box<T> {\n  class Item { T v; }\n  Item make() { return new Item(); }\n}\nvoid setup() {\n  Box<String> b = new Box<String>();\n  int n = b.make().v.length();\n}\n")).toEqual([]);
+  });
+
+  it("rejects a call whose inferred type argument is outside its bound", () => {
+    const src = (arg: string) => `import java.util.*;\n<T extends Number> double mean(List<T> xs) { return 0; }\nvoid setup() {\n  println(mean(${arg}));\n}\n`;
+    expect(errors(src("Arrays.asList(1, 2.5)"))).toEqual([]);
+    expect(errors(src("Arrays.asList(1, \"x\")"))).toEqual(["4: The method mean(List<T>) in the type sketch is not applicable for the arguments (List<Object>)"]);
+  });
+});
