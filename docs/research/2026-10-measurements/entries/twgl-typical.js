@@ -1,0 +1,10 @@
+import { createProgramInfo, createBufferInfoFromArrays, setBuffersAndAttributes, setUniforms, drawBufferInfo, resizeCanvasToDisplaySize, createTexture, m4 } from 'twgl.js';
+const gl = document.createElement('canvas').getContext('webgl2');
+const pi = createProgramInfo(gl, ['vs', 'fs']);
+const bi = createBufferInfoFromArrays(gl, { position: [0, 0, 0, 1, 0, 0, 0, 1, 0] });
+resizeCanvasToDisplaySize(gl.canvas);
+const tex = createTexture(gl, { src: [255, 0, 0, 255] });
+gl.useProgram(pi.program);
+setBuffersAndAttributes(gl, pi, bi);
+setUniforms(pi, { u_m: m4.identity(), u_tex: tex });
+drawBufferInfo(gl, bi);

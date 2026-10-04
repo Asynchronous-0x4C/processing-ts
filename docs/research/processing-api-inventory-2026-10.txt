@@ -1,0 +1,111 @@
+TYPES {"function":343,"class":24,"method":272,"other":24,"field":8}
+
+## Control (19)
+  - Conditionals [8; function:8]: ?: (conditional), break, case, continue, default, else, if, switch
+  - Iteration [2; function:2]: for, while
+  - Logical Operators [3; function:3]: ! (logical NOT), && (logical AND), || (logical OR)
+  - Relational Operators [6; function:6]: != (inequality), < (less than), <= (less than or equal to), == (equality), > (greater than), >= (greater than or equal to)
+
+## Data (19)
+  - Composite [5; class:5]: Array, ArrayList, HashMap, Object, String
+  - Conversion [6; function:6]: boolean(), byte(), char(), float(), int(), str()
+  - Primitive [8; function:8]: boolean, byte, char, color, double, float, int, long
+
+## Rendering (1)
+  - (no sub) [1; function:1]: hint()
+
+## color (16)
+  - creating & reading [9; function:9]: alpha(), blue(), brightness(), color(), green(), hue(), lerpColor(), red(), saturation()
+  - setting [7; function:7]: background(), clear(), colorMode(), fill(), noFill(), noStroke(), stroke()
+
+## constants (5)
+  - (no sub) [5; other:5]: HALF_PI, PI, QUARTER_PI, TAU, TWO_PI
+
+## data (34)
+  - array functions [9; function:9]: append(), arrayCopy(), concat(), expand(), reverse(), shorten(), sort(), splice(), subset()
+  - composite [11; class:11]: FloatDict, FloatList, IntDict, IntList, JSONArray, JSONObject, StringDict, StringList, Table, TableRow, XML
+  - conversion [4; function:4]: binary(), hex(), unbinary(), unhex()
+  - string_functions [10; function:10]: join(), match(), matchAll(), nf(), nfc(), nfp(), nfs(), split(), splitTokens(), trim()
+
+## environment (27)
+  - (no sub) [27; function:18,other:9]: cursor(), delay(), displayDensity(), displayHeight, displayWidth, focused, frameCount, frameRate, frameRate(), fullScreen(), height, noCursor(), noSmooth(), pixelDensity(), pixelHeight, pixelWidth, settings(), size(), smooth(), width, windowMove(), windowMoved(), windowRatio(), windowResizable(), windowResize(), windowResized(), windowTitle()
+
+## image (20)
+  - (no sub) [2; function:1,class:1]: createImage(), PImage
+  - loading & displaying [6; function:6]: image(), imageMode(), loadImage(), noTint(), requestImage(), tint()
+  - pixels [9; function:8,other:1]: blend(), copy(), filter(), get(), loadPixels(), mask(), pixels[], set(), updatePixels()
+  - textures [3; function:3]: texture(), textureMode(), textureWrap()
+
+## input (40)
+  - files [15; class:1,function:14]: BufferedReader, createInput(), createReader(), launch(), loadBytes(), loadJSONArray(), loadJSONObject(), loadStrings(), loadTable(), loadXML(), parseJSONArray(), parseJSONObject(), parseXML(), selectFolder(), selectInput()
+  - keyboard [6; other:3,function:3]: key, keyCode, keyPressed, keyPressed(), keyReleased(), keyTyped()
+  - mouse [12; other:6,function:6]: mouseButton, mouseClicked(), mouseDragged(), mouseMoved(), mousePressed, mousePressed(), mouseReleased(), mouseWheel(), mouseX, mouseY, pmouseX, pmouseY
+  - time date [7; function:7]: day(), hour(), millis(), minute(), month(), second(), year()
+
+## lights_camera (27)
+  - camera [8; function:8]: beginCamera(), camera(), endCamera(), frustum(), ortho(), perspective(), printCamera(), printProjection()
+  - coordinates [6; function:6]: modelX(), modelY(), modelZ(), screenX(), screenY(), screenZ()
+  - lights [9; function:9]: ambientLight(), directionalLight(), lightFalloff(), lights(), lightSpecular(), noLights(), normal(), pointLight(), spotLight()
+  - material properties [4; function:4]: ambient(), emissive(), shininess(), specular()
+
+## math (48)
+  - (no sub) [1; class:1]: PVector
+  - Bitwise Operators [4; function:4]: & (bitwise AND), << (left shift), >> (right shift), | (bitwise OR)
+  - Operators [11; function:11]: - (minus), -- (decrement), -= (subtract assign), * (multiply), *= (multiply assign), / (divide), /= (divide assign), % (modulo), + (addition), ++ (increment), += (add assign)
+  - calculation [17; function:17]: abs(), ceil(), constrain(), dist(), exp(), floor(), lerp(), log(), mag(), map(), max(), min(), norm(), pow(), round(), sq(), sqrt()
+  - random [6; function:6]: noise(), noiseDetail(), noiseSeed(), random(), randomGaussian(), randomSeed()
+  - trigonometry [9; function:9]: acos(), asin(), atan(), atan2(), cos(), degrees(), radians(), sin(), tan()
+
+## output (20)
+  - files [15; function:14,class:1]: beginRaw(), beginRecord(), createOutput(), createWriter(), endRaw(), endRecord(), PrintWriter, saveBytes(), saveJSONArray(), saveJSONObject(), saveStream(), saveStrings(), saveTable(), saveXML(), selectOutput()
+  - image [2; function:2]: save(), saveFrame()
+  - text area [3; function:3]: print(), printArray(), println()
+
+## rendering (9)
+  - (no sub) [5; function:4,class:1]: blendMode(), clip(), createGraphics(), noClip(), PGraphics
+  - shaders [4; function:3,class:1]: loadShader(), PShader, resetShader(), shader()
+
+## shape (39)
+  - (no sub) [3; function:2,class:1]: createShape(), loadShape(), PShape
+  - 2d primitives [9; function:9]: arc(), circle(), ellipse(), line(), point(), quad(), rect(), square(), triangle()
+  - 3d primitives [3; function:3]: box(), sphere(), sphereDetail()
+  - attributes [5; function:5]: ellipseMode(), rectMode(), strokeCap(), strokeJoin(), strokeWeight()
+  - curves [9; function:9]: bezier(), bezierDetail(), bezierPoint(), bezierTangent(), curve(), curveDetail(), curvePoint(), curveTangent(), curveTightness()
+  - loading & displaying [2; function:2]: shape(), shapeMode()
+  - vertex [8; function:8]: beginContour(), beginShape(), bezierVertex(), curveVertex(), endContour(), endShape(), quadraticVertex(), vertex()
+
+## structure (42)
+  - (no sub) [42; function:42]: , (comma), ; (semicolon), . (dot), () (parentheses), [] (array access), {} (curly braces), /* */ (multiline comment), /** */ (doc comment), // (comment), = (assign), catch, class, draw(), exit(), extends, false, final, implements, import, loop(), new, noLoop(), null, pop(), popStyle(), private, public, push(), pushStyle(), redraw(), return, setLocation(), setResizable(), setTitle(), setup(), static, super, this, thread(), true, try, void
+
+## transform (13)
+  - (no sub) [13; function:13]: applyMatrix(), popMatrix(), printMatrix(), pushMatrix(), resetMatrix(), rotate(), rotateX(), rotateY(), rotateZ(), scale(), shearX(), shearY(), translate()
+
+## typography (12)
+  - (no sub) [1; class:1]: PFont
+  - attributes [5; function:5]: textAlign(), textLeading(), textMode(), textSize(), textWidth()
+  - loading & displaying [4; function:4]: createFont(), loadFont(), text(), textFont()
+  - metrics [2; function:2]: textAscent(), textDescent()
+
+TOTAL top-level entries 391
+
+## CLASS MEMBERS
+  BufferedReader (1): readLine()
+  FloatDict (20): add(), clear(), div(), get(), hasKey(), keyArray(), keys(), maxIndex(), minIndex(), mult(), remove(), set(), size(), sortKeys(), sortKeysReverse(), sortValues(), sortValuesReverse(), sub(), valueArray(), values()
+  FloatList (19): add(), append(), array(), clear(), div(), get(), hasValue(), max(), min(), mult(), remove(), reverse(), set(), shuffle(), size(), sort(), sortReverse(), sub(), toArray()
+  IntDict (19): add(), clear(), div(), get(), hasKey(), increment(), keyArray(), keys(), mult(), remove(), set(), size(), sortKeys(), sortKeysReverse(), sortValues(), sortValuesReverse(), sub(), valueArray(), values()
+  IntList (20): add(), append(), array(), clear(), div(), get(), hasValue(), increment(), max(), min(), mult(), remove(), reverse(), set(), shuffle(), size(), sort(), sortReverse(), sub(), toArray()
+  JSONArray (20): append(), getBoolean(), getFloat(), getInt(), getIntArray(), getJSONArray(), getJSONObject(), getString(), getStringArray(), isNull(), remove(), setBoolean(), setFloat(), setInt(), setJSONArray(), setJSONObject(), setString(), size(), toIntArray(), toStringArray()
+  JSONObject (13): getBoolean(), getFloat(), getInt(), getJSONArray(), getJSONObject(), getString(), isNull(), setBoolean(), setFloat(), setInt(), setJSONArray(), setJSONObject(), setString()
+  PFont (1): list()
+  PGraphics (2): beginDraw(), endDraw()
+  PImage (14): blend(), blendColor(), copy(), filter(), get(), height, loadPixels(), mask(), pixels[], resize(), save(), set(), updatePixels(), width
+  PShader (1): set()
+  PShape (25): addChild(), beginContour(), beginShape(), disableStyle(), enableStyle(), endContour(), endShape(), getChild(), getChildCount(), getVertex(), getVertexCount(), height, isVisible(), resetMatrix(), rotate(), rotateX(), rotateY(), rotateZ(), scale(), setFill(), setStroke(), setVertex(), setVisible(), translate(), width
+  PVector (26): add(), angleBetween(), array(), copy(), cross(), dist(), div(), dot(), fromAngle(), heading(), lerp(), limit(), mag(), magSq(), mult(), normalize(), random2D(), random3D(), rotate(), set(), setHeading(), setMag(), sub(), x, y, z
+  PrintWriter (4): close(), flush(), print(), println()
+  String (7): charAt(), equals(), indexOf(), length(), substring(), toLowerCase(), toUpperCase()
+  StringDict (14): clear(), get(), hasKey(), keyArray(), keys(), remove(), set(), size(), sortKeys(), sortKeysReverse(), sortValues(), sortValuesReverse(), valueArray(), values()
+  StringList (15): append(), array(), clear(), get(), hasValue(), lower(), remove(), reverse(), set(), shuffle(), size(), sort(), sortReverse(), toArray(), upper()
+  Table (24): addColumn(), addRow(), clearRows(), findRow(), findRows(), getColumnCount(), getFloat(), getInt(), getRow(), getRowCount(), getString(), getStringColumn(), matchRow(), matchRowIterator(), matchRows(), removeColumn(), removeRow(), removeTokens(), rows(), setFloat(), setInt(), setString(), sort(), trim()
+  TableRow (8): getColumnCount(), getColumnTitle(), getFloat(), getInt(), getString(), setFloat(), setInt(), setString()
+  XML (27): addChild(), format(), getAttributeCount(), getChild(), getChildCount(), getChildren(), getContent(), getFloat(), getFloatContent(), getInt(), getIntContent(), getName(), getParent(), getString(), hasAttribute(), hasChildren(), listAttributes(), listChildren(), parse(), removeChild(), setContent(), setFloat(), setInt(), setLong(), setName(), setString(), toString()

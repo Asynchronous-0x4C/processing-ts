@@ -1,0 +1,11 @@
+import { Application, Graphics, Text, Texture, Sprite, RenderTexture, Matrix } from 'pixi.js';
+const app = new Application();
+await app.init({ width: 640, height: 480 });
+document.body.appendChild(app.canvas);
+const g = new Graphics().rect(0, 0, 10, 10).fill(0xff0000);
+const t = new Text({ text: 'hi' });
+const rt = RenderTexture.create({ width: 64, height: 64 });
+app.renderer.render({ container: g, target: rt, transform: new Matrix() });
+const s = new Sprite(rt);
+const s2 = new Sprite(Texture.WHITE);
+app.stage.addChild(g, t, s, s2);
