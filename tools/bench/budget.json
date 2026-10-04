@@ -15,8 +15,11 @@
     "compiler front end (lezer + AST, src/compiler/parse.ts)": {
       "gzipKiB": 42.8
     },
-    "compiler (front end + type checker + library model, src/compiler/index.ts)": {
-      "gzipKiB": 108.5
+    "compiler (front end + type checker + library model + codegen, src/compiler/index.ts)": {
+      "gzipKiB": 123.5
+    },
+    "language runtime (src/runtime/lang)": {
+      "gzipKiB": 12.5
     }
   },
   "parse": {
@@ -32,7 +35,7 @@
       "warmMs": 5
     },
     "synthetic-5k": {
-      "warmMs": 65.4
+      "warmMs": 80.7
     }
   },
   "transpile": {

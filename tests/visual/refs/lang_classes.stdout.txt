@@ -1,0 +1,13 @@
+[init base][Base(unnamed)][Base()][Rect()]
+[init base][Base(rect)] rect:20.0 20.0
+Rect area 6.0
+Rect area 20.0
+Square! Square area 9.0
+Circle area 3.1415927
+3 true false true
+square 3.0
+3 3 4
+2 true true (3,4)
+17
+ClassCastException
+true true true

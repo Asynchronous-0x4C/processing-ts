@@ -21,7 +21,7 @@ Processing.js（古い Processing が対象・構文解析エラー・シェー�
 ```sh
 npm install
 npm run dev                  # デモ（ライブエディタ）: http://localhost:8080/processing-ts/
-npm run typecheck            # 型チェック（src/lib・src/compiler・tools・tests。何も書き出さない）。`npx tsc` を直接使うと dist/types が書き換わるので使わない
+npm run typecheck            # 型チェック（src/lib・src/compiler・src/runtime・tools・tests。何も書き出さない）。`npx tsc` を直接使うと dist/types が書き換わるので使わない
 npm test                     # 単体テスト（Vitest, tests/unit/。Node で動くものだけ）
 npm run test:visual          # 視覚/出力回帰テスト（全ケース、約 10 秒）。終了コード 0 = 回帰なし
 npm run test:visual -- <名前の前方一致...> [--tag 2d]
@@ -31,6 +31,8 @@ npm run vt -- list           # テストケースと既知の問題の一覧
 npm run vt -- corpus         # Processing 同梱 examples 254 本の互換性集計（約 5 分）→ tests/corpus/report.md
 npm run test:grammar         # Lezer 文法と公式文法（ANTLR）の受理/拒否の一致を確認（文法を変えたら必ず実行）
 npm run test:check           # 新コンパイラの型検査を本物の Processing（cli --build）と比較（型検査を変えたら実行。初回のみ約 40 分）
+npm run test:lang            # 新コンパイラの生成コードを Node で実行し、lang タグのケースの println を Processing の参照と比較（約 1 秒）
+node tools/lang/cli.ts --corpus   # 同梱 examples とリポジトリの全スケッチを新コンパイラで変換できるか（約 30 秒）
 npm run gen:grammar          # src/compiler/grammar/processing.grammar → parser.ts を再生成
 npm run gen:manifest         # 本物の core jar から API マニフェスト（src/compiler/api/processing-core.json）を再生成
 npm run coverage             # リファレンスに対する実装済み API の一覧 → docs/api-coverage.md
@@ -53,7 +55,8 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 ## 構成（要点）
 
 - `src/lib/SketchManager.ts` … 公開 API（読み込み → 変換 → 実行）
-- `src/compiler/` … 新コンパイラ（P1、開発中で未接続）。`parse.ts` の `parseSketch()` がタブごとに解析して型付き AST（`ast.ts`）と診断を返す。DOM 非依存（[ARCHITECTURE.md](docs/ARCHITECTURE.md) の「新コンパイラ」）
+- `src/compiler/` … 新コンパイラ（P1、開発中で未接続）。`index.ts` の `compileSketch()` が解析 → 型付き AST（`ast.ts`）→ 型検査（`check.ts`）→ JS 生成（`codegen.ts`）を行い、コードと診断を返す。DOM 非依存（[ARCHITECTURE.md](docs/ARCHITECTURE.md) の「新コンパイラ」）
+- `src/runtime/lang/` … 新コンパイラの生成コードが使う Java 言語ランタイム（数値・文字列・例外・ボックス・java.util の一部）。DOM 非依存
 - `src/compiler/grammar/` … 新コンパイラ用の Lezer 文法（`processing.grammar` を編集 → `npm run gen:grammar`。`parser.ts` は生成物なので手で編集しない）
 - `src/lib/transpiler/` … ANTLR4（`antlr/Processing.g4` から生成した `antlr/parser/*` は **手で編集しない**）→ MemberAnalyzer → ReferenceSolver → Converter
 - `src/lib/runtime/` … PApplet（API）, PGraphics（PixiJS v8 で描画）, PImage, DefaultRunner（フレームループ）
@@ -65,7 +68,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 
 1. **振る舞いの正解は本物の Processing（4.5.2）**。p5.js や Processing.js の挙動に合わせない。
 2. 描画・言語仕様に関わる変更は **テスト先行**: `tests/visual/cases/` にケースを追加（決定的に、幅 320 以上）→ `npm run test:visual:ref -- <case>` → XFAIL を確認 → 実装 → XPASS になったら `vt.json` の `expect`/`knownIssue` を削除。
-3. 変更後は `npm run typecheck`・`npm test`・`npm run test:visual` を通す。FAIL（回帰）を残さない。
+3. 変更後は `npm run typecheck`・`npm test`・`npm run test:visual` を通す（新コンパイラを変えたら `npm run test:lang` も）。FAIL（回帰）を残さない。
 4. 既知のバグを直したら [docs/STATUS.md](docs/STATUS.md) の該当行を消し、ROADMAP のタスクにチェックを付ける。新しく見つけた問題は STATUS.md に ID 付きで追記する。
 5. `dist/` と `library.js` はリリース時以外に変更しない（コミットしない）。
 6. ライセンス: 本プロジェクトは MIT。Processing core（processing4 の `core/`）と p5.js は **LGPL-2.1** なので、コードをそのまま移植・コピーしない。仕様・リファレンス・実際の出力から実装する（判断が必要なら作業前にユーザーに確認）。第三者のファイルを取り込むときは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に追記する（既定フォント Processing Sans Pro は SIL OFL 1.1 で同梱済み）。
@@ -77,6 +80,6 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 - Processing 4.5 は HiDPI 画面で既定 `pixelDensity(2)`。参照生成では `pixelDensity(1)` を注入している。
 - Windows では P2D/P3D の小さいウィンドウが OS に広げられる（200px 幅 → 232px）。テストは幅 320 以上で作る。
 - 変換時に `new PApplet(null)` を作るため、旧トランスパイラ単体では Node で動かない（ブラウザが必要。新コンパイラ `src/compiler/` は Node で動く）。
-- `src/compiler/` と `tools/` は Node の型除去でそのまま実行されるので、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など変換が必要な TS 構文を使わない。import には `.ts` 拡張子を付ける。
+- `src/compiler/`・`src/runtime/` と `tools/` は Node の型除去でそのまま実行されるので、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など変換が必要な TS 構文を使わない。import には `.ts` 拡張子を付ける。
 - Processing は Java と挙動が違うことがある（例: テキストブロックは字下げを除去しない）。Java の仕様から推測せず本物で確かめる。
 - Git Bash の heredoc で `'` を含む長い内容を書くと失敗することがある。ファイル作成は Write ツールを使う。

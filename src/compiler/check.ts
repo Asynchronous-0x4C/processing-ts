@@ -39,6 +39,8 @@ export interface CheckResult {
   sketch: Sketch;
   sketchClass: ClassSymbol;
   diagnostics: Diagnostic[];
+  /** Type relations used by the checker (code generation reuses them). */
+  types: TypeSystem;
 }
 
 /** Check the sketch made from the tabs' ASTs. The ASTs are annotated in place. */
@@ -47,7 +49,7 @@ export function checkSketch(files: A.SketchFile[], options: { library?: Library 
   const sketch = buildSketch(files, diagnostics);
   const checker = new Checker(options.library ?? getLibrary(), diagnostics);
   const sketchClass = checker.run(sketch);
-  return { sketch, sketchClass, diagnostics };
+  return { sketch, sketchClass, diagnostics, types: checker.ts };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -713,7 +715,11 @@ class Checker {
     const s = new Scope(scope, "body", c, ctx);
     const args = (k.args ?? []).map((a) => this.arg(a, s));
     const r = this.resolveOverload(c.constructors.map((m) => ({ m, subst: null, raw: false })), args, s, null, k.name, c.name, "constructor", c);
-    if (r) this.finishArgs(args, r, s);
+    if (r) {
+      k.ctor = r.method.m;
+      if (r.varargs) k.varargsCall = true;
+      this.finishArgs(args, r, s);
+    }
     if (k.body) {
       const anon = new ClassSymbol(`${c.fullName}$${++this.anonCount}`, "", Flags.Source | Flags.Anonymous | Flags.Final);
       anon.outer = c;
@@ -726,6 +732,7 @@ class Checker {
       this.enterMembers(anon, cs);
       for (const m of anon.memberTypes.values()) this.enterAllMembers(m, cs);
       this.checkClass(anon, s);
+      k.anonymous = anon;
     }
   }
 
@@ -751,6 +758,8 @@ class Checker {
     const cands = sym.constructors.map((m) => ({ m, subst: substOf(target), raw: isRaw(target) }));
     const r = this.resolveOverload(cands, args, prologue, null, call, sym.displayName, "constructor", sym);
     if (r) {
+      call.ctor = r.method.m;
+      if (r.varargs) call.varargsCall = true;
       this.thrown(r.method.m.throws, call, scope);
       this.finishArgs(args, r, prologue);
     }
@@ -885,7 +894,7 @@ class Checker {
         else if (it.tag !== "error") {
           const sup = asSuper(it, this.ts.iterable);
           if (!sup) this.err("type-mismatch", "Can only iterate over an array or an instance of java.lang.Iterable", s.iterable);
-          else elem = sup.args.length ? upperBound(sup.args[0]) : this.ts.object;
+          else elem = !sup.args.length ? this.ts.object : sup.args[0].tag === "wild" ? upperBound(sup.args[0]) : sup.args[0];
         }
         let declared: Type;
         if (s.type.kind === "VarType") declared = this.withDims(elem, s.dims);
@@ -1730,10 +1739,12 @@ class Checker {
     const ap = this.ts.primOf(a);
     const bp = this.ts.primOf(b);
     if (sameType(a, b)) r = a;
-    else if (ap && bp && isNumeric(ap) && isNumeric(bp) && (a.tag === "prim" || b.tag === "prim")) {
-      // An int constant that fits the other operand's byte/short/char type keeps that type.
+    else if (ap && bp && isNumeric(ap) && isNumeric(bp)) {
+      // Numeric conditional (JLS 15.25.2), boxed operands included: T and the box of T give T; an int
+      // constant that fits the other operand's byte/short/char (or Byte/Short/Character) type keeps it.
       const fits = (c: ConstValue | undefined, t: PrimType, other: PrimType) => other.name === "int" && c !== undefined && this.ts.isAssignable(T.int, t, c);
-      if (fits(e.alternate.constant, ap, bp) && (ap.name === "byte" || ap.name === "short" || ap.name === "char")) r = ap;
+      if (ap.name === bp.name) r = ap;
+      else if (fits(e.alternate.constant, ap, bp) && (ap.name === "byte" || ap.name === "short" || ap.name === "char")) r = ap;
       else if (fits(e.consequent.constant, bp, ap) && (bp.name === "byte" || bp.name === "short" || bp.name === "char")) r = bp;
       else if ((ap.name === "byte" && bp.name === "short") || (ap.name === "short" && bp.name === "byte")) r = T.short;
       else r = this.ts.binaryPromote(ap, bp);

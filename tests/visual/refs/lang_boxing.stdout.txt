@@ -1,0 +1,33 @@
+[1.0, 2.5, -0.0, NaN] true 2 -1 true
+2.0 3.5 1.0 NaN 
+3.5 2.0 true -2.5 true
+[3.0, 0.30000000000000004] 1.3
+{a=2.0, b=0.5} 2.0 null
+one null true
+5.0 5 c 5.0 true 5
+true false true false true true true false
+true false true true 1084227584 1075052544 99
+true false true true -1 1 1.5 1.5! false false
+2 2.7 2 2.7
+4.0
+x 121 y 65 B x z
+[0] 1.0
+[1] 2.5
+1.0 2.5
+[-0.0, 1.0, 2.5, NaN] 3.0 3.0 2.0 -1
+0.33 2.5 42   1.0
+CCE
+NPE
+null4.0x65
+1.0 1.0 null q x
+3.0 3.0 3 B
+1.25 2.5 Box(1.25) k Box(k)
+1.5 3.5 0.0 java.lang.Integer:1 java.lang.Float:1.0 java.lang.Character:1 java.lang.String:1
+[NaN, 2.5, 1.0, -0.0]
+in=65
+ch=x
+[0] b
+[1] a
+true false true false true false false
+[a, b, z] true 2 98 true
+{e=1, h=1, l=2, o=1} 2

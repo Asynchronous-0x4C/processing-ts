@@ -1,0 +1,12 @@
+7 12 99
+12 ababab hi true 4 X
+18 5
+run!
+anon run 1 100
+anon run 2 100
+[Al, Bo, Cy]
+[Cy, Bo, Al]
+cyboal
+[Al, Bo, Cy]
+8
+HEY!

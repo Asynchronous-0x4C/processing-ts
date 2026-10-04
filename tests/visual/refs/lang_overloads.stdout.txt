@@ -1,0 +1,7 @@
+int int int int long float double String varargs0 varargs0 varargs2 Object
+g-long g-Integer h-int[] h-Object h-int[]
+k-fi k-fi k-dd
+0 1 6 9
+a, 1, 2.5, c, true  x/y
+default int 3.0 floats 2.0 copy 1.5
+2 2.0 2.5 3 3.5

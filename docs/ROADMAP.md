@@ -5,12 +5,12 @@
 ## 現在地（2026-10-04 時点。セッションの終わりに更新する）
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
-- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）。P1-6 のうちモード判定・静的モードの包み方・混在モードの拒否・`public` の付与は `sketch.ts` で実装済み。P0-8（CI）は任意で未着手。
-- **次にやること: P1-5（コード生成）** → P1-6 の残り（`size()` などの `settings()` への移動）→ P1-7 → P1-8 → P1-9。
-  - 入力: `analyzeSketch()`（`src/compiler/index.ts`）が返す型検査済みの AST。式には `ty`/`constant`、名前には `sym`（ローカル/フィールド/クラス）、修飾なしのメンバーには `implicitThis`、呼び出しには選ばれたオーバーロード `method` と `varargsCall`、ラムダには `sam` が書き込まれている（`ast.ts` 冒頭）。スケッチ全体は `sketch.decl`（`extends PApplet` の ClassDecl）。
-  - 構成は [ARCHITECTURE.md](ARCHITECTURE.md) の「新コンパイラ」。DOM に依存させない（`src/compiler/tsconfig.json` に DOM が無いので型チェックで検出される）。
-  - 速度の注意: 5k 行のウォームで解析から型検査まで 44ms（うち Lezer の解析が約 23ms）。P1-9 の目標（変換全体 50ms）にはコード生成を数 ms に収め、解析の高速化（文法の曖昧さの削減など）も要る。
-- 基準値: 視覚テスト 5 PASS / 15 XFAIL、互換性コーパス 95/254、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,220/2,223（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`。
+- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）、P1-5（コード生成と言語ランタイム）。P1-6 のうちモード判定・静的モードの包み方・混在モードの拒否・`public` の付与は `sketch.ts` で実装済み。P1-8 のうち `npm run test:lang` と `lang_*` ケース 12 件は済み。P0-8（CI）は任意で未着手。
+- **次にやること: P1-6 の残り（`size()`/`fullScreen()`/`smooth()`/`pixelDensity()` の `settings()` への移動、Java モード）** → P1-7 → P1-8 の残り → P1-9。
+  - 生成コードは `compileSketch()`（`src/compiler/index.ts`）が返す `new Function("$rt", "__renderer__", code)` の本体。ランタイムとの約束（`$rt.lang`・`$rt.classes`・`$rt.PApplet`、上書きするメソッド名）は `codegen.ts` 冒頭と [ARCHITECTURE.md](ARCHITECTURE.md) の「生成コードの形」。今は `size()` を `setup()` の中で `await $p.size(...)` として呼んでいる。
+  - 確認: `npm run test:lang`（Node、約 1 秒）で 16/17 PASS。Processing の挙動は `Processing cli --build` の出力（前処理後の Java）で確かめる。
+  - 速度の注意: 5k 行のウォームで解析からコード生成まで 54ms（うち Lezer の解析が約 23ms、コード生成は約 9ms）。P1-9 の目標（変換全体 50ms）には解析の高速化（文法の曖昧さの削減など）が要る（STATUS.md C4）。
+- 基準値: 視覚テスト 5 PASS / 27 XFAIL、stdout 適合 16 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 95/254（旧トランスパイラ）、新コンパイラでの変換 308/309（`node tools/lang/cli.ts --corpus`）、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,330/2,333（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`。
 
 ## 進め方
 
@@ -81,8 +81,14 @@
   - API モデル: `npm run gen:manifest` が `src/compiler/api/library.gen.ts` も生成（Processing core + JDK の一部 216 クラス、ジェネリクスと throws 付きの JVM シグネチャ、宣言順。モデル外の型を使うメンバーと PApplet 以外の protected は除外し、名前だけ残して「使えない」と報告）。gzip 36 KiB。
   - 速度（Node、warm、解析込み）: 199 行 2.5ms、5k 行 44ms（型検査は約 10ms、残りは Lezer の解析と AST 構築）。コンパイラ全体の gzip は 103 KiB（うちライブラリモデル 36 KiB）。
   - 未対応（STATUS.md の C 番号）: 実引数位置のジェネリックメソッドの推論、final への再代入（definite unassignment）、キャプチャ変換。
-- [ ] **P1-5 コード生成**（L）
+- [x] **P1-5 コード生成**（L）
   EVALUATION.md §3 の表（整数演算、飽和キャスト、複合代入、char、float の表示、型付き配列、String、typed catch、予約語回避、オーバーロードの名前修飾）。Source Map v3。ランタイムヘルパは `src/runtime/lang/`。
+  → 結果（2026-10-04）: `src/compiler/{codegen,intrinsics,sourcemap}.ts` と `src/runtime/lang/`（gzip 11.9 KiB）。`compileSketch()` で解析からコード生成まで。
+  - 検証: 言語仕様のケース 12 件（`lang_arrays`/`classes`/`collections`/`control`/`enums_static`/`exceptions`/`lambdas`/`numbers`/`overloads`/`print`/`strings`/`boxing`）と既存の `java_semantics`・`multi_tab`・`static_mode`・`literals_processing` の println 出力が本物の Processing と完全一致（`npm run test:lang`）。同梱 examples とリポジトリのスケッチ 309 本中 308 本が構文エラーの無い JS になる（1 本は `java.awt`）。
+  - float は演算ごとに `Math.fround`（EVALUATION.md §3 を更新）。表示は JDK 17 の `Float.toString`/`Double.toString` を再現（Java 17 で出力した値と照合）。HashMap は Java と同じ順で列挙する。ボクシングは Character/Float/Double だけ `JChar`/`JFloat`/`JDouble` にした（`ArrayList<Float>` の表示、`instanceof`、HashMap のキー）。
+  - 型検査の修正: `Character` と `char`、`Integer` と `Float` の条件演算子を数値の条件式として型付け（JLS 15.25）。
+  - 速度（Node、warm）: 199 行 3.0ms、5k 行 54ms（コード生成は約 9ms）。コンパイラ全体の gzip は 117.6 KiB。
+  - 未対応（STATUS.md C6〜C8）: 2^53 を超える long、JDK 17 の Float.toString の一部、整数ボックスの同一性。
 - [ ] **P1-6 モードとプリプロセッサ相当の処理**（M）
   静的/アクティブ/Java クラスの判定（T11）、小数リテラルの float 扱い、`#hex`、`settings()` への移動、静的モードの `noLoop()`。
   → 一部済み（P1-2/P1-4）: モード判定・静的モードの `setup()` + `noLoop()`・混在モードのエラー・メソッドへの `public` 付与（`sketch.ts`）、小数リテラルの float（`check.ts`）、`#hex`（`cst-to-ast.ts`）。残り: `size()`/`fullScreen()`/`smooth()`/`pixelDensity()` の `settings()` への移動と Java モード（`public class ... extends PApplet` を含むスケッチ）。確認には `Processing cli --build` の出力を使う。
@@ -90,6 +96,7 @@
   ArrayList, HashMap, HashSet, LinkedList, Collections, Arrays, StringBuilder, Integer/Float/Double/Boolean の parse/valueOf, Math, Iterator, Map.Entry, Character, String のメソッド。
 - [ ] **P1-8 stdout 適合テストの拡充と高速ランナー**（M）
   `lang` タグのケースを追加（文字列、配列、クラスと継承、例外、switch、ジェネリクス、ラムダ、static、内部クラス、整数/浮動小数の境界値）。描画不要のケースは Node で実行する `npm run test:lang`（参照の stdout は vt の `ref` で生成したものを共用）。
+  → 一部済み（P1-5）: `npm run test:lang`（`tools/lang/`、全ケース約 1 秒）と `lang_*` 12 件、`--corpus` で全スケッチの変換確認。残り: 内部クラスとジェネリクスの組み合わせ、インタフェースの既定メソッド、`Iterator` の自作、文字列の Unicode（サロゲートペア）、`Map.Entry` の列挙、`LinkedList`/`TreeMap` などの P1-7 で足すクラスのケース。
 - [ ] **P1-9 切り替え**（M）
   `SketchManager` を新コンパイラに切り替え、旧 `transpiler/`・antlr4 依存・生成パーサを配布物から削除（オラクルとしては devDependency に残す）。
   完了条件: java_semantics / multi_tab / static_mode が PASS。コーパスの変換成功率 95% 以上。199 行のコールド変換 20ms 以下（ブラウザ）。5k 行ウォーム 50ms 以下。
@@ -152,7 +159,7 @@ CodeMirror 6 + Lezer Processing 文法のデモエディタ（ハイライト、
 | 済 (P0-5) | `npm run vt -- corpus` | 同梱 examples 254 本の互換性集計 |
 | 済 (P0-6) | `npm test`（Vitest） | コンパイラの単体テスト |
 | 済 (P1-4) | `npm run test:check` | 型検査の受理/拒否・エラー行・メッセージを本物の Processing（`cli --build`）と比較（意味エラーの変種を含む） |
-| P1-8 | `npm run test:lang` | 描画しない stdout 適合テストを Node で高速実行 |
+| 済 (P1-5) | `npm run test:lang` | 描画しない stdout 適合テストを Node で高速実行（`--corpus` で全スケッチの変換確認） |
 | P2-8 | vt の入力スクリプト | フレームごとのマウス/キー操作を Processing 側（`java.awt.Robot` ではなくイベント関数の直接呼び出しを注入）と processing-ts 側の両方で再生して比較 |
 | P2-9 | vt `--offline` | Service Worker + オフラインでの data/ 読み込み確認 |
 | P3 | `tests/perf/` + vt `bench` | フレーム時間の計測（SwiftShader / GPU） |

@@ -4,9 +4,10 @@
 |---|---|---|
 | 単体テスト | `npm test`（Vitest, `tests/unit/*.test.ts`） | Node で動く純粋なロジック（新コンパイラ `src/compiler/` のリテラル・AST・構文エラー、旧構文解析 `SketchParser`、PVector など、tools/vt の補助関数）。旧トランスパイラ全体は `new PApplet()`（Pixi/DOM）に依存するため対象外 |
 | 視覚 / 出力回帰テスト | `npm run test:visual` | 本物の Processing との画像・println 比較（以下） |
-| 型チェック | `npm run typecheck` | src/lib・tools・tests |
+| 型チェック | `npm run typecheck` | src/lib・src/compiler・src/runtime・tools・tests |
 | 文法の適合性 | `npm run test:grammar` | 新しい Lezer 文法、および新コンパイラのフロントエンド（構文解析 + AST 構築、`parseSketch`）と公式文法（ANTLR）の受理/拒否の一致を、同梱 examples・リポジトリのスケッチ・構文エラー変種（`;` `)` `}` を 1 つ消したもの）で比較。変種では構文エラーメッセージの質（消した記号を名指しするか、位置が合っているか）も集計する（結果: `tests/grammar/out/report.md`） |
 | 型検査の適合性 | `npm run test:check` | 新コンパイラの型検査（`analyzeSketch`）の受理/拒否・最初のエラーの行・メッセージを、本物の Processing の `cli --build`（前処理 + ECJ）と比較。入力は同梱 examples・リポジトリのスケッチと、AST を使って機械的に作る意味エラーの変種（`tools/check/mutations.ts`）。Processing の結果は `node_modules/.cache/processing-ts-check` にキャッシュ（初回は約 40 分、以後は数秒）。誤検出・見逃しがあると終了コード 1（結果: `tests/check/out/report.md`） |
+| 言語仕様の適合性 | `npm run test:lang` | 新コンパイラ（`compileSketch`）が生成したコードを Node で実行し、`lang` タグのケースの `println` 出力を本物の Processing の参照 stdout と行単位で比較（後述「stdout 適合テスト」）。約 1 秒 |
 | 性能 / サイズ | `npm run bench` / `npm run size` | 変換時間・バンドルサイズ（後述「性能・サイズ計測」） |
 
 # 視覚 / 出力回帰テスト
@@ -125,7 +126,7 @@ pixelmatch（`includeAA: false` でアンチエイリアス差を無視）で不
 
 ## 現在のケースと状態
 
-`npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 19 ケース中 5 PASS / 14 XFAIL。
+`npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 32 ケース中 5 PASS / 27 XFAIL。うち `lang` タグの 17 件（`lang_*` 12 件を含む）は旧トランスパイラでは XFAIL だが、新コンパイラの `npm run test:lang` では 16 件 PASS（`random_seed` だけ XFAIL）。
 各 XFAIL の原因は `vt.json` の `knownIssue` と [STATUS.md](STATUS.md) にある。
 
 ## 互換性コーパス（Processing 同梱 examples）
@@ -139,6 +140,20 @@ npm run vt -- corpus --filter Basics/Shape   # 絞り込み（結果は tests/co
 - 各スケッチを変換し、setup + draw を `--frames`（既定 5）回実行して「ok / 変換エラー / setup エラー / draw エラー / タイムアウト」に分類する。**見た目の一致は見ていない**。
 - report.md の「多いエラー」は実行時エラーを正規化して集計したもので、未実装 API の優先順位付けに使える。
 
+## stdout 適合テスト（新コンパイラ、tools/lang）
+
+```sh
+npm run test:lang                    # lang タグの全ケース（= node tools/lang/cli.ts）
+npm run test:lang -- lang_boxing     # 名前の前方一致で絞り込み（タグを問わない）
+npm run test:lang -- --show-code     # 生成した JS も表示（tests/lang/out/<case>.js にも書き出す）
+node tools/lang/cli.ts --corpus      # 同梱 examples + リポジトリのスケッチ全部を変換（約 30 秒）→ tests/lang/out/corpus.md
+```
+
+- 視覚テストのケース（`tests/visual/cases/`）のうち `vt.json` の `tags` に `lang` を含むものを、新コンパイラで変換して Node で実行する（`tools/lang/runner.ts`）。参照は視覚テストと共用の `tests/visual/refs/<case>.stdout.txt`（`npm run test:visual:ref -- <case>` で本物の Processing から作る）。
+- 描画はしない。PApplet はスタブ（描画関数はすべて何もしない。`width`/`height`/`frameCount` などの変数と `size`/`noLoop` だけ持つ）なので、`random()` や `red()` など結果を返す Processing の関数を使うケースは比較できない。そういうケースは `vt.json` に `"langExpect": "fail"` と `"langKnownIssue"` を書く（XFAIL。直ったら XPASS と表示されるので消す）。
+- 新しい言語仕様のケースは `lang_` で始まる名前にし、旧トランスパイラでは通らないので視覚テスト側は `"expect": "fail"` にしておく（P1-9 で新コンパイラに切り替えたら外す）。
+- `--corpus` は「変換できるか（コンパイラの例外・不正な JS が無いか）」を見る。スタブ上の実行時例外（PVector などが無い）は一覧に出すだけで失敗にしない。拒否されたスケッチは `npm run test:check` で Processing と照合する。
+
 ## 性能・サイズ計測（tools/bench）
 
 ```sh
@@ -150,12 +165,12 @@ node tools/bench/cli.ts all --update-budget   # 意図した変更でサイズ/�
 
 - 入力: `public/samples` の全スケッチ、`tests/visual/cases` の全ケース、生成した約 5,000 行のスケッチ（`synthetic-5k`、`tools/bench/inputs.ts`）。
 - parse: `src/lib/transpiler/SketchParser.ts` を esbuild で Node 用にバンドルし、入力ごとに新しいプロセスで「最初の 1 回（cold）」と「その後の中央値（warm）」を測る。
-- compile: 新コンパイラのフロントエンド（`src/compiler/parse.ts` の `parseSketch`: タブごとの Lezer 解析 + 構文エラー + AST）を同じ方法で測る。P1-4 以降で型検査・コード生成が加わったらここに含める。
+- compile: 新コンパイラ全体（`compileSketch`: Lezer 解析 + 構文エラー + AST + 型検査 + コード生成）を同じ方法で測る。cold にはライブラリモデルの読み込みを含む。
 - transpile: ヘッドレス Chromium の新しいページで `SketchManager.transpileSketch` を繰り返し、1 回目（cold）と 2 回目以降の中央値（warm）、およびそのうちの構文解析時間を出す。
 - 予算: `tools/bench/budget.json`。超えると終了コード 1（回帰検出用）。サイズは +5%、時間は +50%（最低 5ms）の余裕で `--update-budget` が書き換える。
 - 結果: `tests/bench/out/<command>.md` と `.json`（gitignore 済み）。
 
-2026-10-04 時点の主な値: `synthetic-5k` の warm 解析 15ms（SLL 化前は約 8 秒）、`simple_shooter_game`（199 行）のブラウザでの cold 変換 約 150ms（うち解析 135ms）、ライブラリ本体 87 KiB gz（pixi 込み 228 KiB gz）。新コンパイラのフロントエンド（compile）は `simple_shooter_game` の warm 1.7ms・`synthetic-5k` の warm 32ms（うち Lezer の解析 23ms、AST 構築 5ms）、バンドル 40.7 KiB gz（Lezer パーサ単体 30.5 KiB）。
+2026-10-04 時点の主な値: `synthetic-5k` の warm 解析 15ms（SLL 化前は約 8 秒）、`simple_shooter_game`（199 行）のブラウザでの cold 変換 約 150ms（うち解析 135ms）、ライブラリ本体 87 KiB gz（pixi 込み 228 KiB gz）。新コンパイラ（compile、コード生成まで）は `simple_shooter_game` の warm 3.0ms・`synthetic-5k` の warm 54ms（うち Lezer の解析 23ms、型検査まで 45ms）、バンドル 117.6 KiB gz（フロントエンド 40.6 KiB、Lezer パーサ単体 30.5 KiB）。言語ランタイム（`src/runtime/lang`）は 11.9 KiB gz。
 
 ## 今後追加すべきテスト（ROADMAP 参照）
 

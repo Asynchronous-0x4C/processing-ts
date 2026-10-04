@@ -8,7 +8,8 @@
 | 領域 | 状態 |
 |---|---|
 | 構文解析 | 実行パスは ANTLR4 + Processing 公式文法（Java 8 時代の古いコピー）。SLL 予測 + LL フォールバック（P0-1）。コールド時のコストが残る（T2）。新コンパイラ（`src/compiler/`、未接続）は Lezer 文法 + 型付き AST まで完成（P1-1/P1-2）: 同梱 examples 254 本を診断なしで AST 化、構文エラーはタブ・行・列つきで複数件 |
-| 意味解析（型） | 実行パスは**なし**（型情報を使わずに文字列変換しているため Java の意味論がずれる）。新コンパイラ（未接続）は型検査まで完成（P1-4）: 本物の Processing の `cli --build` と 2,220/2,223 件一致、見逃し 0（`npm run test:check`） |
+| 意味解析（型） | 実行パスは**なし**（型情報を使わずに文字列変換しているため Java の意味論がずれる）。新コンパイラ（未接続）は型検査まで完成（P1-4）: 本物の Processing の `cli --build` と 2,330/2,333 件一致、見逃し 0（`npm run test:check`） |
+| コード生成 | 新コンパイラ（未接続）のコード生成と言語ランタイム（`src/runtime/lang/`）が完成（P1-5）: `lang` タグの 17 ケース中 16 件で println 出力が本物の Processing と完全一致（`npm run test:lang`、残り 1 件は Node のスタブに `random()` が無いため）。同梱 examples とリポジトリのスケッチ 309 本中 308 本が構文エラーの無い JS に変換され（1 本は `java.awt` を使うため拒否）、210 本は Node のスタブ上で 3 フレーム実行できる（残りはスタブに PVector・PImage などが無いため） |
 | 静的モード | **未対応**（setup/draw の無いスケッチは変換時に例外） |
 | 2D 描画 | 基本図形・変換・色・createGraphics は概ね動く。細部（既定値、モード、stroke の端/結合、テキスト）にずれ |
 | P2D / P3D / PShader | **未実装** |
@@ -16,8 +17,8 @@
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
 | 同梱サンプル | 21 本すべてがエラーなく実行 |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **95 本（37%）** がエラーなく完走（JAVA2D 54% / P2D 14% / P3D 3%）。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 20 ケース: 5 PASS / 15 XFAIL（[TESTING.md](TESTING.md)） |
-| 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`（本物の Processing と比較） |
+| 視覚テスト | 32 ケース: 5 PASS / 27 XFAIL（[TESTING.md](TESTING.md)）。XFAIL のうち 17 件は新コンパイラでは通る言語仕様のケース |
+| 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
 
@@ -72,15 +73,18 @@
 
 ## 既知の問題（新コンパイラ `src/compiler/`、未接続）
 
-型検査の基準は本物の Processing（`npm run test:check`）。以下は分かっている差。
+型検査の基準は本物の Processing（`npm run test:check`）、生成コードの実行結果の基準も本物の Processing の出力（`npm run test:lang`）。以下は分かっている差。
 
 | # | 問題 | 場所 |
 |---|---|---|
 | C1 | ジェネリックメソッドの型引数を実引数・代入先から推論するのは単純な単一化だけ。実引数の位置にある `Collections.emptyList()` などは Object になり、`List<String>` の引数に渡すと誤ってエラーになる | `check.ts`（instantiate / unify） |
 | C2 | final 変数への 2 回目の代入（definite unassignment）と blank final フィールドの初期化漏れを検出しない | `definite.ts` |
 | C3 | キャプチャ変換をしない（ワイルドカードは境界として読む）。`List<? super T>` への書き込みなど一部で Java より緩い | `typesystem.ts` |
-| C4 | 構文解析が遅め: 5k 行のウォームで Lezer の解析だけで約 23ms（解析から型検査まで 44ms）。P1-9 の目標（変換全体 50ms）に向けて文法の曖昧さを減らす必要がある | `grammar/processing.grammar` |
+| C4 | 構文解析が遅め: 5k 行のウォームで Lezer の解析だけで約 23ms（コード生成まで含めて 54ms）。P1-9 の目標（変換全体 50ms）に向けて文法の曖昧さを減らす必要がある | `grammar/processing.grammar` |
 | C5 | `java.awt` など JDK のモデル外のクラスは使えない（`unsupported` で報告。同梱 examples では Yellowtail の `java.awt.Polygon` のみ） | `tools/manifest/ManifestGen.java`（LIBRARY_ROOTS） |
+| C6 | long は JS の number（double）で表すため、絶対値が 2^53 を超える値の演算と表示が不正確（`9007199254740993L` → `9007199254740992`）。`Long.MAX_VALUE`/`MIN_VALUE` の表示と飽和キャストは正しい | `runtime/lang/numbers.ts`, `codegen.ts` |
+| C7 | `Float.toString` の JDK 17 の再現が 4e25〜7.5e25 付近の一部の値で異なる（Java 17 で出力した 399,211 個の float のうち 73 個） | `runtime/lang/numbers.ts` |
+| C8 | Integer/Long/Short/Byte のボックスは JS の number のまま: `Integer a = 1000, b = 1000; a == b` が true（Java はキャッシュ範囲外なので false）、整数の `getClass()` は常に `java.lang.Integer`、null の Integer をアンボクシングしても NullPointerException にならない（Character/Float/Double は `JChar`/`JFloat`/`JDouble` なので Java どおり） | `codegen.ts`（box/unbox） |
 
 ## 既知の問題（IO / PWA）
 

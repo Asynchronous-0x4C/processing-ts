@@ -49,6 +49,8 @@ export const Flags = {
   Opaque: 1 << 15,
   /** Package (default) access: not public, protected or private. */
   Package: 1 << 16,
+  /** Library class that is not public (only present as a supertype, e.g. AbstractStringBuilder). */
+  NonPublic: 512,
 } as const;
 
 export interface TypeVarSymbol {

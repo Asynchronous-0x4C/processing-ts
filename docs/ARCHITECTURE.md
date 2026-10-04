@@ -35,6 +35,7 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `src/lib/transpiler/antlr/parser/` | ANTLR4 で生成された TS（**手で編集しない**。ProcessingParser.ts は約 12,000 行） |
 | `src/compiler/` | **新コンパイラ**（ROADMAP P1、開発中。まだ実行パスでは使っていない）。DOM 非依存で Node / Worker でも動く。詳細は下の「新コンパイラ」 |
 | `src/compiler/grammar/` | 新コンパイラ用の Lezer 文法（@lezer/java のフォーク、MIT）。`processing.grammar` を編集して `npm run gen:grammar` で `parser.ts` を再生成する（生成物はコミット） |
+| `src/runtime/lang/` | 新コンパイラが生成するコード用の Java 言語ランタイム（数値・文字列・例外・配列・ボクシング・java.util の一部）。DOM 非依存。詳細は下の「言語ランタイム」 |
 | `src/lib/runtime/PApplet.ts` | Processing API の本体（約 100 関数）。描画系は `this.g`（PGraphics）へ委譲 |
 | `src/lib/runtime/PGraphics.ts` | PixiJS による描画。`PImage` を継承 |
 | `src/lib/runtime/PGraphicsContext.ts` | fill/stroke/text のスタイル状態、pushStyle/popStyle |
@@ -46,16 +47,17 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `src/main.ts`, `src/highlight.ts`, `src/style.css`, `index.html` | デモ用ライブエディタ（textarea + 正規表現ハイライタ） |
 | `public/samples/` | デモのサンプル（Processing 公式 examples の一部。`src/scripts/samples.json` は dev サーバ起動時に自動生成） |
 | `tools/vt/` | 視覚/出力回帰テスト CLI（[TESTING.md](TESTING.md)） |
+| `tools/lang/` | 新コンパイラの stdout 適合テスト（`npm run test:lang`）。描画しないスタブの PApplet で Node 上で実行する |
 | `tests/visual/` | 視覚テストのケースと参照画像 |
 | `dist/`, `library.js` | **コミットされたビルド成果物**（npm 配布用 / CDN 版 Pixi を使う単一ファイル版） |
 
 ## 新コンパイラ（`src/compiler/`、開発中）
 
-旧トランスパイラを置き換える予定のコンパイラ。現在は構文解析 → AST → 前処理 → 型検査まで（P1-1〜P1-4）。コード生成（P1-5）とモード処理の残り（P1-6）を足してから P1-9 で `SketchManager` を切り替える。
+旧トランスパイラを置き換える予定のコンパイラ。構文解析 → AST → 前処理 → 型検査 → コード生成（P1-1〜P1-5）。まだ `SketchManager` からは使っておらず、Node のテスト（`npm run test:lang`）でだけ実行している。モード処理の残り（P1-6）を足してから P1-9 で切り替える。
 
 ```
 タブごとの { name, text }
-   │  analyzeSketch()  src/compiler/index.ts
+   │  compileSketch()  src/compiler/index.ts（= analyzeSketch() + generate()）
    │  parseSketch()  parse.ts
    ├─ SketchSource（source.ts）: タブごとに通し番号の範囲を割り当てる
    ├─ タブごとに Lezer で解析（grammar/parser.ts）
@@ -65,8 +67,11 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
    ├─ buildSketch()（sketch.ts）: Processing の前処理。スケッチクラス（extends PApplet）の ClassDecl を合成
    ├─ Library（library.ts）: api/library.gen.ts のクラスとシグネチャ（必要になったクラスだけ展開）
    └─ Checker: クラスの登録 → ヘッダ解決 → メンバー登録 → 本体の検査（flow.ts / definite.ts）
+   │  generate()  codegen.ts（エラーが無いときだけ）
+   ├─ Gen: 型付き AST → JS。静的型で JS の形が変わるライブラリ呼び出しは intrinsics.ts
+   └─ SourceMapBuilder（sourcemap.ts）: 文ごとの対応表
    ▼
-{ AST（型・シンボル・選ばれたオーバーロードを書き込み済み）, diagnostics }
+{ code（new Function("$rt", "__renderer__", code) の本体）, map（Source Map v3）, diagnostics }
 ```
 
 | ファイル | 内容 |
@@ -84,6 +89,9 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `check.ts` | 型検査器。名前解決（ローカル → 囲むクラスとその親 → static import、型はさらに import と既定の import）、式の型付け（Processing では接尾辞なしの小数は float）、定数畳み込み（`constants.ts`）、オーバーロード解決（strict → loose → 可変長、最も特定的なもの）、ジェネリックメソッドの型引数の推論（単一化）、ラムダ・メソッド参照、検査例外、上書きの規則、static 文脈、抽象メソッドの実装漏れ。結果を AST に書き込む（`ty`・`constant`・`sym`・`method`・`implicitThis` など） |
 | `flow.ts` / `definite.ts` | 到達可能性（`Unreachable code`・戻り値の欠落）と未初期化変数（JLS 16 章、条件の真偽ごとの状態を追う） |
 | `api/processing-core.json` | 本物の core jar（4.5.2）をリフレクションして得た public API の一覧（35 クラス）。カバレッジ計測（`npm run coverage`）用。`npm run gen:manifest` で `library.gen.ts` と一緒に再生成する |
+| `codegen.ts` | コード生成。静的型を使って Java の意味を保つ: int の演算は `\|0` と `Math.imul`、float は演算ごとに `Math.fround`（Processing で `0.1` を 10 回足すと `1.0000001`）、long は number と専用ヘルパ、キャストは飽和、複合代入は暗黙の縮小、char は数値、文字列連結と表示は Java の書式（`Float.toString` など）。ボクシングは Character/Float/Double だけ実体を作り（`JChar`/`JFloat`/`JDouble`）、Integer/Long/Boolean は JS の値のまま。オーバーロードしたユーザーメソッドは名前修飾（`move$F`）、コンストラクタは `$init...` メソッド。配列の添字は既定で境界チェック（`$ck`） |
+| `intrinsics.ts` | 静的型で JS の形が変わるライブラリ呼び出し: print/println（float は `1.0`）、String のメソッド（文字列は JS の string）、ボックスのメソッド、Math と PApplet の数学関数（float の結果）、`StringBuilder.append(char)` と `append(int)` の区別、`List.remove(int)` → `removeAt` など。それ以外はランタイムのオブジェクトをそのまま呼ぶ |
+| `sourcemap.ts` | Source Map v3 の組み立て（VLQ）。`sources` はタブ名、`sourcesContent` はタブの内容 |
 
 AST 構築時に Lezer 文法の解析結果を Java（Processing）の意味に合わせて組み直している所:
 
@@ -91,7 +99,62 @@ AST 構築時に Lezer 文法の解析結果を Java（Processing）の意味に
 - `(N) - 1`（N は大文字始まりの名前）は文法上は `-1` のキャストになるが、Java では参照型へのキャストの後に単項 +/- は来ないので減算に戻す。逆に `(color) -1` は文法上は減算になるが、Processing では int へのキャストなのでキャストに戻す。
 - テキストブロックは Java の規則（共通の字下げの除去）ではなく、Processing 4.5.2 の実際の値（開始行の次の行からの生の内容に先頭の改行を付けたもの）にする。
 
-制約: `src/compiler/` と `tools/` は Node の型除去でそのまま実行されるため、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など JS に変換が必要な TS 構文を使わない。型チェックは DOM を含まない `src/compiler/tsconfig.json` で行う（`npm run typecheck`）。
+### 生成コードの形
+
+```js
+// int count = 0; ArrayList<Ball> balls = ...;
+// void draw() { for (Ball b : balls) b.move(0.5); count += 2.5; println("count=" + count); }
+// class Ball { float x; Ball(float x) {...} void move(float d) { x += d; } void move(int d) { x += d * 2; } }
+"use strict";
+const $L = $rt.lang, $S = $L.S, $M = Math, $f = Math.fround, $imul = Math.imul;  // ヘルパは関数自身のスコープに束縛
+const { JObject: $JObject, d2i: $d2i, println: $println } = $L;                  // （ユーザーの Math クラス等に隠されない）
+const $ArrayList = $rt.classes["java.util.ArrayList"];
+{
+  let count = 0;             // スケッチのフィールドはブロックスコープの変数、メソッドは関数
+  let balls = null;
+  function draw() {
+    for ($t1 = balls.iterator(); $t1.hasNext();) {
+      let b = $t1.next();
+      b.move$F(0.5);         // オーバーロードはコンパイル時に解決して名前修飾
+    }
+    count = $d2i($f($f(count) + 2.5));   // int += float: float で計算して int に縮小
+    $println("count=" + count);
+    var $t1;
+  }
+  class Ball extends $JObject {
+    constructor($o) { super(); this.x = 0; }               // フィールドの既定値
+    $init(x) { super.$init(); this.x = x; return this; }   // Java のコンストラクタ
+    move$F(d) { this.x = $f(this.x + d); }
+    move$I(d) { this.x = $f(this.x + $f($imul(d, 2))); }
+  }
+  Ball.$javaName = "Sketch$Ball";
+  class $Sketch extends $rt.PApplet {         // ランタイムが呼ぶメソッドだけを上書き
+    draw(...a) { return draw(...a); }
+  }
+  const $p = new $Sketch(__renderer__);
+  count = 0;                                  // フィールドの初期化子（宣言順）
+  balls = new $ArrayList();
+  return $p;
+}
+```
+
+## 言語ランタイム（`src/runtime/lang/`）
+
+生成コードは `$rt.lang`（`lang`）のヘルパと `$rt.classes`（`javaClasses` + Processing のクラス）だけを使う。DOM 非依存で、`npm run test:lang` では描画しないスタブの PApplet と組み合わせて Node で動かしている。
+
+| ファイル | 内容 |
+|---|---|
+| `numbers.ts` | int/long の演算（`idiv` は 0 除算で ArithmeticException、long は number で 2^53 まで正確）、飽和キャスト（`d2i`/`d2l`）、`Float.toString`/`Double.toString`（JDK 17 の桁の選び方を再現）、`Long.toString` |
+| `boxes.ts` | ボックス `JFloat`/`JDouble`/`JChar`。`valueOf()` が中身の数値を返すので、数値を期待するランタイム側のコードにそのまま渡せる。`Character.valueOf` の 0〜127 は Java と同じくキャッシュ |
+| `strings.ts` | String のメソッド（Java の `split`・`replaceAll` の正規表現、`compareTo`、`hashCode`）、`String.valueOf`、`String.format`、数値の parse |
+| `exceptions.ts` | Throwable の階層（`NullPointerException` 等）。JS の `TypeError` などは `toJava()` で Java の例外に読み替えて `catch` に渡す |
+| `objects.ts` | `JObject`（equals/hashCode/toString/getClass）、インタフェース（`Iface`: 既定メソッドとラムダの原型）、`isInstance`/`cast`、enum |
+| `arrays.ts` | 型付き配列の生成（`int[]` → Int32Array など、多次元）、境界チェック `ck`、`clone` |
+| `print.ts` | 出力先（`setOutput`）と print/println/printArray の書式 |
+| `misc.ts` | 実行時の型でしか決まらない操作（`jequals`/`jhash`/`jcompare`）、Processing の変換関数（`int()`・`nf()`・`hex()` 等）、System |
+| `jlang.ts` / `util.ts` / `functional.ts` | Integer/Float/Character… の static メソッドと StringBuilder、ArrayList/HashMap（Java と同じバケット順で列挙）/HashSet/Collections/Arrays、Comparator と java.util.function |
+
+制約: `src/compiler/`・`src/runtime/` と `tools/` は Node の型除去でそのまま実行されるため、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など JS に変換が必要な TS 構文を使わない。型チェックは DOM を含まない `src/compiler/tsconfig.json` と `src/runtime/tsconfig.json` で行う（`npm run typecheck`）。
 
 ## トランスパイラの詳細
 

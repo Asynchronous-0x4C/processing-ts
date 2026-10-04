@@ -534,6 +534,9 @@ export interface ConstructorCall extends NodeBase {
   outer: Expression | null;
   typeArgs: TypeArgument[] | null;
   args: Expression[];
+  /** The constructor called. */
+  ctor?: MethodSymbol;
+  varargsCall?: boolean;
 }
 
 export interface ConstructorDecl extends NodeBase, Modified {
@@ -585,6 +588,10 @@ export interface EnumConstant extends NodeBase, Modified {
   name: Ident;
   args: Expression[] | null;
   body: Member[] | null;
+  /** The enum constructor called, and the class of the constant's body. */
+  ctor?: MethodSymbol;
+  varargsCall?: boolean;
+  anonymous?: ClassSymbol;
 }
 
 export interface EnumDecl extends NodeBase, Modified {

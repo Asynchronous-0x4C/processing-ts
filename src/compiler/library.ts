@@ -4,7 +4,7 @@
 // LibraryClassData: [name, flags, typeParams, superclass, interfaces, fields, constructors, methods]
 //   name         binary name ("java.util.Map$Entry")
 //   flags        see Flags in types.ts (1 static, 2 final, 4 abstract, 8 interface, 16 enum, 32 protected,
-//                64 varargs, 128 default method, 256 annotation)
+//                64 varargs, 128 default method, 256 annotation, 512 non-public class)
 //   typeParams   "<K:Ljava.lang.Object;V:Ljava.lang.Object;>" or ""
 //   superclass   signature or null; interfaces: signatures
 //   fields       [name, signature, flags, constant?]
@@ -69,7 +69,7 @@ export class Library {
       sym.outer = outer;
       outer.memberTypes.set(simple, sym);
       if (!(sym.flags & Flags.Static) && !sym.isInterface && !sym.isEnum) sym.flags |= Flags.Inner;
-    } else {
+    } else if (!(sym.flags & Flags.NonPublic)) {
       const pkg = fullName.slice(0, Math.max(dot, 0));
       let m = this.packages.get(pkg);
       if (!m) this.packages.set(pkg, (m = new Map()));

@@ -1,0 +1,19 @@
+/ by zero java.lang.ArithmeticException: / by zero
+Index 5 out of bounds for length 2
+For input string: "abc"
+NPE caught
+too deep 4 true
+try catch:bad finally
+finally runs before return
+1
+multi-catch true
+inner finally
+outer caught inner
+open A
+open B
+using AB
+close B
+close A
+after close: boom
+wrapped cause
+null java.lang.RuntimeException: m

@@ -1,0 +1,12 @@
+zero small negative big
+abbcdd
+good
+stopping
+23
+10
+-2
+false true false true 6 false true
+medium
+0:10 3:8 
+5
+25

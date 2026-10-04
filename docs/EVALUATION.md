@@ -109,7 +109,8 @@ SketchManager            既存の公開 API は互換レイヤとして維持�
 | `(int)x`（float→int） | ヘルパ（NaN→0、範囲外は飽和、0 方向切り捨て） | Processing.js の `0\|x` は飽和しない |
 | `x += 0.7`（x は int） | `x = (x + 0.7)\|0` | 複合代入の暗黙キャスト |
 | char | 数値（UTF-16）。文字列連結・println では文字に変換 | `'a'+1` = 98、`"x"+c` = "xa" |
-| float | 演算は double のまま。**表示（println/str/文字列連結）は float32 の最短表現** | `0.1f+0.2f` → "0.3"、`1.0` → "1.0" |
+| float | **演算ごとに `Math.fround`**（P1-5 で決定）。表示（println/str/文字列連結）は JDK 17 の `Float.toString` を再現 | 演算を double のままにすると、Processing で `0.1` を 10 回足した `1.0000001` が `1.0` になるなど、累積する計算で出力が変わるため。V8 は `Math.fround` をほぼ無償で扱う（5k 行の変換と実行で差は計測誤差の範囲） |
+| ボクシング | Integer/Long/Short/Byte は number、Boolean は boolean のまま。Character/Float/Double は `JChar`/`JFloat`/`JDouble` オブジェクト（P1-5） | `ArrayList<Float>` の表示（`[1.0, 2.5]`）、`instanceof`、`getClass()`、`equals`/`hashCode`（HashMap のキー）を Java と一致させるため。`valueOf()` を持つので数値として扱うランタイム側のコードはそのまま動く |
 | long | number（2^53 まで正確）。64bit の桁あふれはオプション（BigInt） | 実際のスケッチで問題になることは稀 |
 | `int[]`/`float[]`/`char[]`/`byte[]` | `Int32Array`/`Float32Array`/`Uint16Array`/`Int8Array` | 代入時の型変換が自動で Java と一致し、速い |
 | オブジェクト配列 | `Array`（null で初期化） | |

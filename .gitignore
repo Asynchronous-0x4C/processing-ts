@@ -37,3 +37,6 @@ tests/grammar/out/
 
 # type checker conformance output
 tests/check/out/
+
+# stdout conformance output (new compiler)
+tests/lang/out/

@@ -145,7 +145,8 @@ public class ManifestGen {
   // One JSON array per class: [name, flags, typeParams, superclass, [interfaces], [fields], [constructors], [methods]]
   //   field: [name, signature, flags, constant?]   constructor: [signature, flags]   method: [name, signature, flags]
   // Signatures use the JVM generic signature grammar (JVMS 4.7.9.1) with '.' as the package separator.
-  // Flags: 1 static, 2 final, 4 abstract, 8 interface, 16 enum, 32 protected, 64 varargs, 128 default method, 256 annotation.
+  // Flags: 1 static, 2 final, 4 abstract, 8 interface, 16 enum, 32 protected, 64 varargs, 128 default method, 256 annotation,
+  // 512 non-public class.
 
   static String library() throws Exception {
     LinkedHashMap<String, Class<?>> all = new LinkedHashMap<>();
@@ -155,7 +156,9 @@ public class ManifestGen {
     for (String n : LIBRARY_ROOTS) queue.add(Class.forName(n, false, loader));
     while (!queue.isEmpty()) {
       Class<?> c = queue.poll();
-      if (all.containsKey(c.getName()) || !Modifier.isPublic(c.getModifiers())) continue;
+      // Non-public classes are kept when they are supertypes (StringBuilder's methods are declared in the
+      // package-private AbstractStringBuilder); they are flagged so sketches cannot name them.
+      if (all.containsKey(c.getName())) continue;
       // java.lang.constant (Constable, ConstantDesc) is implemented by String, Integer, Enum... but is
       // irrelevant to sketches; leaving it out keeps the model consistent after pruning.
       if (c.getName().startsWith("java.lang.constant.")) continue;
@@ -192,6 +195,7 @@ public class ManifestGen {
     if (c.isInterface()) flags = (flags | 8) & ~4;
     if (c.isEnum()) flags |= 16;
     if (c.isAnnotation()) flags |= 256;
+    if (!Modifier.isPublic(c.getModifiers())) flags |= 512;
     StringBuilder b = new StringBuilder("[").append(q(c.getName())).append(",").append(flags).append(",");
     b.append(q(typeParams(c.getTypeParameters()))).append(",");
     b.append(c.getGenericSuperclass() == null ? "null" : q(sig(c.getGenericSuperclass()))).append(",[");

@@ -1,0 +1,8 @@
+MERCURY 0 MERCURY 3.703027
+EARTH 1 EARTH 9.802652
+JUPITER 2 JUPITER 24.806177
+LEFT RIGHT -3 true 4
+go left
+2 false
+4 104 104 9
+No enum constant lang_enums_static.Dir.NOWHERE

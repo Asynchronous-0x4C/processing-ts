@@ -1,0 +1,42 @@
+// java.lang.String and StringBuilder semantics, compared through println().
+void setup() {
+  size(320, 240);
+  String s = "  Hello, World  ";
+  String t = s.trim();
+  println(t.length(), t.charAt(1), t.charAt(1) + 1, t.indexOf('o'), t.indexOf("o", 5), t.lastIndexOf('o'));
+  println(t.substring(7), t.substring(0, 5), t.toUpperCase(), t.toLowerCase());
+  println(t.replace('l', 'L'), t.replace("World", "There"), "a.b.c".replace(".", "$"));
+  println("a1b22c333".replaceAll("[0-9]+", "#"), "x-y_z".replaceAll("[-_]", "+"), "aaa".replaceFirst("a", "b"));
+  println(String.join("|", "a,b,,c,,".split(",")), "a,b,,c,,".split(",").length, "a1b2c3".split("\\d").length, "".split(",").length);
+  String[] parts = "one  two three".split(" +");
+  println(parts.length, parts[1]);
+  println(t.contains("World"), t.startsWith("Hell"), t.endsWith("d"), t.isEmpty(), "".isEmpty());
+  println("abc".equals("abc"), "abc".equalsIgnoreCase("ABC"), "apple".compareTo("banana"), "b".compareTo("a"), "ab".compareTo("abc"));
+  println("hello".hashCode(), "".hashCode(), "Processing".hashCode());
+  println(String.valueOf(3), String.valueOf(2.5), String.valueOf('c'), String.valueOf(true), String.valueOf(1.0 / 3));
+  println(String.format("%d|%5.2f|%s|%x|%08.3f|%,d|%-5s|%c|%b", 42, 3.14159, "str", 255, 2.5, 1234567, "ab", 'z', true));
+  println(String.join("-", "a", "b", "c"));
+  char[] cs = "hello".toCharArray();
+  cs[0] = 'j';
+  println(new String(cs), cs.length, String.valueOf(cs, 1, 3));
+  StringBuilder sb = new StringBuilder();
+  sb.append("x").append(1).append('c').append(2.5).append(true).append((char) 65).append(10L);
+  println(sb.toString(), sb.length());
+  sb.insert(0, "[").append("]");
+  sb.reverse();
+  println(sb);
+  sb.setLength(3);
+  sb.setCharAt(0, 'Q');
+  sb.deleteCharAt(1);
+  println(sb, sb.charAt(0), sb.indexOf("Q"));
+  String n = null;
+  println("null concat: " + n + 'c' + 1 + 2 + 1.5 + 2.0f + 'd');
+  println(1 + 2 + "a" + 1 + 2, 'a' + 'b' + "c", "c" + 'a' + 'b');
+  String a = "lit", b = "lit";
+  println(a == b, a.equals(b), "Hello".charAt(0) == 'H');
+  int count = 0;
+  for (char c : "mississippi".toCharArray()) if (c == 's') count++;
+  println(count, "repeat".repeat(2), "  x ".trim().length());
+  println(str(12) + str(1.5) + str('q') + str(false));
+  noLoop();
+}

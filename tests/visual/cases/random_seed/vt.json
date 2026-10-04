@@ -4,5 +4,7 @@
   ],
   "note": "Needs java.util.Random and Processing noise() ports to match exactly.",
   "expect": "fail",
-  "knownIssue": "randomSeed()/noiseSeed() missing; random() and noise() algorithms differ from Processing."
+  "knownIssue": "randomSeed()/noiseSeed() missing; random() and noise() algorithms differ from Processing.",
+  "langExpect": "fail",
+  "langKnownIssue": "random()/randomSeed() and noise() are runtime functions (Processing-compatible java.util.Random, P2-7); the Node stub has none"
 }
