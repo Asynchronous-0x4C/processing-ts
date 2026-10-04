@@ -39,8 +39,10 @@
   完了条件: 全 254 本の集計が出る。現状の数値を STATUS.md に記録。
 - [ ] **P0-6 単体テスト基盤**（S）
   Vitest を導入（`npm test`）。最初はトランスパイラの小さなテスト数件。
-- [ ] **P0-7 ライセンスの判断（ユーザー確認が必要）**
-  (a) GPL の `Processing.g4`/`JavaParser.g4` 由来の生成パーサを配布物に含め続けるか（P1 で置き換える前提なら当面の扱い）、(b) 既定フォント `ProcessingSansPro-Regular.ttf` を同梱するか、(c) Processing core / p5.js（LGPL）を参考にする際のルール。決定を CLAUDE.md に反映する。
+- [ ] **P0-7 ライセンスの判断**
+  - [x] (a) GPL の `Processing.g4`/`JavaParser.g4` 由来の生成パーサ → 推奨構成の採用により P1 で Lezer（MIT）+ 自作拡張に置き換える。置き換えまでは現状のまま。ANTLR 版は開発時専用のオラクルとしてのみ残す。
+  - [ ] (b) 既定フォント `ProcessingSansPro-Regular.ttf` を同梱するか（P2-6 までに **ユーザー確認が必要**）。
+  - [x] (c) Processing core / p5.js（LGPL）のコードはコピー・移植しない（CLAUDE.md の作業ルール 6）。
 - [ ] **P0-8 CI**（S、任意）
   GitHub Actions で `npm ci` → `npx playwright-core install chromium` → `npm run typecheck` → `npm run test:visual`（参照はコミット済みなので Processing は不要）。
 

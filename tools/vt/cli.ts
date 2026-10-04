@@ -116,7 +116,8 @@ function listCases(names: string[]): { name: string; dir: string; config: CaseCo
 /** Hash of everything that influences the reference output. */
 function sourceHash(sketch: SketchSource, frames: number): string {
   const h = crypto.createHash("sha1");
-  for (const f of sketch.files) h.update(f.name).update("\0").update(f.content).update("\0");
+  // Normalize line endings: core.autocrlf may check sources out as CRLF.
+  for (const f of sketch.files) h.update(f.name).update("\0").update(f.content.replace(/\r\n/g, "\n")).update("\0");
   const data = path.join(sketch.dir, "data");
   if (fs.existsSync(data)) {
     for (const f of fs.readdirSync(data, { recursive: true }).map(String).sort()) {

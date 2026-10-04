@@ -1,4 +1,4 @@
-import { CommonTokenStream, CharStreams, ErrorListener, RecognitionException, Recognizer, Token } from "antlr4";
+import { BailErrorStrategy, CommonTokenStream, CharStreams, DefaultErrorStrategy, ErrorListener, PredictionMode, RecognitionException, Recognizer, Token } from "antlr4";
 import ProcessingLexer from "./antlr/parser/ProcessingLexer";
 import ProcessingParser from "./antlr/parser/ProcessingParser";
 import { PApplet } from "../runtime/PApplet";
@@ -21,6 +21,7 @@ export function transpile(sketch_content:string,main_sketch:string){
   performance.clearMeasures();
   performance.mark("analyze_member()");
   const class_data=analyze_member(sketch_content);
+  if(error_listener.error)return {result:"",error:error_listener};
   performance.mark("solve_reference()");
   const solved_class_data=solve_reference(class_data);
   performance.mark("convert()");
@@ -43,13 +44,38 @@ function analyze_member(sketch_content:string){
   performance.mark("read_stream");
   const parser = new ProcessingParser(new CommonTokenStream(new ProcessingLexer(CharStreams.fromString(sketch_content))));
   error_listener = new TranspileErrorListener<Token>();
-  parser.addErrorListener(error_listener);
   performance.mark("parse_tree");
-  const tree = parser.processingSketch();
+  const tree = parse(parser,error_listener);
   performance.mark("visit");
   member_analyzer.visit(tree);
   performance.mark("end_analyze");
   return class_data;
+}
+
+/**
+ * Two-stage parse. SLL prediction is far faster (the alternatives of processingSketch are otherwise
+ * only distinguishable at the end of the input) and yields the same tree for valid sketches.
+ * On any syntax error, reparse with full LL so the reported errors are exact.
+ */
+function parse(parser:ProcessingParser,listener:TranspileErrorListener<Token>){
+  const sll_errors=new TranspileErrorListener<Token>();
+  parser.removeErrorListeners();
+  parser.addErrorListener(sll_errors);
+  parser._errHandler=new BailErrorStrategy();
+  (parser._interp as any).predictionMode=PredictionMode.SLL;
+  try{
+    const tree=parser.processingSketch();
+    // Errors reported from grammar actions (notifyErrorListeners) do not throw.
+    if(!sll_errors.error)return tree;
+  }catch(e){
+    // ParseCancellationException from BailErrorStrategy: retry with LL below.
+  }
+  parser.reset();
+  parser.removeErrorListeners();
+  parser.addErrorListener(listener);
+  parser._errHandler=new DefaultErrorStrategy();
+  (parser._interp as any).predictionMode=PredictionMode.LL;
+  return parser.processingSketch();
 }
 
 function solve_reference(class_data:Map<string,ClassMember>){
