@@ -30,6 +30,7 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `src/lib/index.ts` | ライブラリのエントリ。`SketchManager` だけを export |
 | `src/lib/SketchManager.ts` | 公開 API。読み込み・変換・実行・停止・イベント登録・アスペクト比維持 |
 | `src/lib/transpiler/` | トランスパイラ（下記） |
+| `src/lib/transpiler/SketchParser.ts` | 構文解析（SLL → 失敗時 LL の 2 段階）とエラーリスナー。ランタイムに依存しないので Node でテスト可能 |
 | `src/lib/transpiler/antlr/Processing.g4` | Processing 公式プリプロセッサの文法（Java 1.7/8 ベース + `color` 型、`#RRGGBB`、`int()` 等の変換関数、静的/アクティブ/Java モード） |
 | `src/lib/transpiler/antlr/parser/` | ANTLR4 で生成された TS（**手で編集しない**。ProcessingParser.ts は約 12,000 行） |
 | `src/lib/runtime/PApplet.ts` | Processing API の本体（約 100 関数）。描画系は `this.g`（PGraphics）へ委譲 |

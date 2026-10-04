@@ -33,7 +33,8 @@
     "test:visual": "node tools/vt/cli.ts run",
     "test:visual:ref": "node tools/vt/cli.ts ref",
     "vt": "node tools/vt/cli.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false && tsc -p tools"
+    "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false && tsc -p tools && tsc -p tests",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^24.0.3",
@@ -43,7 +44,8 @@
     "pngjs": "^7.0.0",
     "typescript": "~5.7.2",
     "vite": "^6.2.0",
-    "vite-plugin-externalize-deps": "^0.9.0"
+    "vite-plugin-externalize-deps": "^0.9.0",
+    "vitest": "^3.2.7"
   },
   "dependencies": {
     "antlr4": "^4.13.2",

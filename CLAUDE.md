@@ -21,7 +21,8 @@ Processing.js（古い Processing が対象・構文解析エラー・シェー�
 ```sh
 npm install
 npm run dev                  # デモ（ライブエディタ）: http://localhost:8080/processing-ts/
-npm run typecheck            # 型チェック（何も書き出さない）。`npx tsc` を直接使うと dist/types が書き換わるので使わない
+npm run typecheck            # 型チェック（src/lib・tools・tests。何も書き出さない）。`npx tsc` を直接使うと dist/types が書き換わるので使わない
+npm test                     # 単体テスト（Vitest, tests/unit/。Node で動くものだけ）
 npm run test:visual          # 視覚/出力回帰テスト（全ケース、約 10 秒）。終了コード 0 = 回帰なし
 npm run test:visual -- <名前の前方一致...> [--tag 2d]
 npm run test:visual:ref -- <case>   # 本物の Processing で参照画像と stdout を作り直す（ケースを変えたとき）
@@ -54,7 +55,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 
 1. **振る舞いの正解は本物の Processing（4.5.2）**。p5.js や Processing.js の挙動に合わせない。
 2. 描画・言語仕様に関わる変更は **テスト先行**: `tests/visual/cases/` にケースを追加（決定的に、幅 320 以上）→ `npm run test:visual:ref -- <case>` → XFAIL を確認 → 実装 → XPASS になったら `vt.json` の `expect`/`knownIssue` を削除。
-3. 変更後は `npm run typecheck` と `npm run test:visual` を通す。FAIL（回帰）を残さない。
+3. 変更後は `npm run typecheck`・`npm test`・`npm run test:visual` を通す。FAIL（回帰）を残さない。
 4. 既知のバグを直したら [docs/STATUS.md](docs/STATUS.md) の該当行を消し、ROADMAP のタスクにチェックを付ける。新しく見つけた問題は STATUS.md に ID 付きで追記する。
 5. `dist/` と `library.js` はリリース時以外に変更しない（コミットしない）。
 6. ライセンス: 本プロジェクトは MIT。Processing core（processing4 の `core/`）と p5.js は **LGPL-2.1** なので、コードをそのまま移植・コピーしない。仕様・リファレンス・実際の出力から実装する（判断が必要なら作業前にユーザーに確認）。

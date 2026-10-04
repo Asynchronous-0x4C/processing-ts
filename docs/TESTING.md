@@ -1,4 +1,12 @@
-# テスト（視覚 / 出力回帰テスト）
+# テスト
+
+| 種類 | コマンド | 対象 |
+|---|---|---|
+| 単体テスト | `npm test`（Vitest, `tests/unit/*.test.ts`） | Node で動く純粋なロジック（構文解析 `SketchParser`、PVector など、tools/vt の補助関数）。トランスパイラ全体は現状 `new PApplet()`（Pixi/DOM）に依存するため対象外（P1 の新コンパイラで Node 対応） |
+| 視覚 / 出力回帰テスト | `npm run test:visual` | 本物の Processing との画像・println 比較（以下） |
+| 型チェック | `npm run typecheck` | src/lib・tools・tests |
+
+# 視覚 / 出力回帰テスト
 
 本物の Processing（Java）の出力を正解として、processing-ts の出力（ヘッドレス Chromium）と自動比較する。
 画像だけでなく `println()` の出力も比較するので、Java の言語仕様（整数除算・キャスト・char 演算・float の文字列化など）の検証にも使える。

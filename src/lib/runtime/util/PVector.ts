@@ -52,7 +52,7 @@ export class PVector{
   }
 
   div(scalar: number): PVector {
-    if (scalar === 0) throw new Error("Division by zero");
+    // Java float division: dividing by 0 yields Infinity/NaN, no exception.
     this.x /= scalar;
     this.y /= scalar;
     this.z /= scalar;
@@ -67,16 +67,14 @@ export class PVector{
     return this.x * this.x + this.y * this.y + this.z * this.z;
   }
 
+  /** Set the magnitude of this vector (modifies it in place, like Processing). */
   setMag(len:number){
-    return this.copy().normalize().mult(len);
+    return this.normalize().mult(len);
   }
 
   normalize(): PVector {
     const mag = this.mag();
-    if (mag === 0) return new PVector(0, 0);
-    this.x /= mag;
-    this.y /= mag;
-    this.z /= mag;
+    if (mag !== 0 && mag !== 1) this.div(mag);
     return this;
   }
 
@@ -99,8 +97,9 @@ export class PVector{
     return this;
   }
 
+  /** Limit the magnitude of this vector to max (modifies it in place). */
   limit(max:number):PVector{
-    let mag=this.mag();
-    return mag<max?this:this.setMag(max);
+    if(this.magSq()>max*max)this.normalize().mult(max);
+    return this;
   }
 }
