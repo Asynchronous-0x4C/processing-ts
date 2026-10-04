@@ -34,9 +34,9 @@
 - [x] **P0-4 性能・サイズ計測 CLI**（M）
   `tools/bench/`: (a) 変換時間（同梱サンプル + 合成 5k 行、コールド/ウォーム。ブラウザは vt のハーネスを流用）、(b) バンドルサイズ（エントリごとの min/gzip）を計測し、`docs/research` の基準値と予算（EVALUATION.md §8）と比較して表で出す。`npm run bench` / `npm run size`。
   完了条件: 両コマンドが表を出力し、予算超過時に終了コード 1。
-- [ ] **P0-5 互換性コーパス・ランナー**（M）
+- [x] **P0-5 互換性コーパス・ランナー**（M）
   `npm run vt -- corpus [--filter Basics]`: Processing 同梱 examples（254 本。リポジトリにはコピーせずローカルのパスを参照）を変換 → 数フレーム実行し、「変換失敗 / 実行時エラー / 完走」を集計。決定的なスケッチは参照画像（キャッシュは gitignore）とも比較。結果を `tests/corpus/report.md` に出す（レポートはコミットして進捗を追う）。
-  完了条件: 全 254 本の集計が出る。現状の数値を STATUS.md に記録。
+  完了条件: 全 254 本の集計が出る。現状の数値を STATUS.md に記録。→ 結果: 95/254（37%）。参照画像との比較（`--ref`）は未実装（決定的なスケッチの見分けと合わせて後で追加）。
 - [x] **P0-6 単体テスト基盤**（S）
   Vitest を導入（`npm test`）。最初はトランスパイラの小さなテスト数件。
 - [ ] **P0-7 ライセンスの判断**
@@ -128,7 +128,7 @@ CodeMirror 6 + Lezer Processing 文法のデモエディタ（ハイライト、
 |---|---|---|
 | 済 | `tools/vt run/ref/shot/list` | Processing の参照画像・stdout と比較（[TESTING.md](TESTING.md)） |
 | 済 (P0-4) | `npm run bench` / `npm run size` | 変換時間・バンドルサイズの計測と予算チェック |
-| P0-5 | `npm run vt -- corpus` | 同梱 examples 254 本の互換性集計 |
+| 済 (P0-5) | `npm run vt -- corpus` | 同梱 examples 254 本の互換性集計 |
 | P0-6 | `npm test`（Vitest） | コンパイラの単体テスト |
 | P1-8 | `npm run test:lang` | 描画しない stdout 適合テストを Node で高速実行 |
 | P2-8 | vt の入力スクリプト | フレームごとのマウス/キー操作を Processing 側（`java.awt.Robot` ではなくイベント関数の直接呼び出しを注入）と processing-ts 側の両方で再生して比較 |

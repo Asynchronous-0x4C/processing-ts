@@ -126,6 +126,17 @@ pixelmatch（`includeAA: false` でアンチエイリアス差を無視）で不
 `npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 19 ケース中 5 PASS / 14 XFAIL。
 各 XFAIL の原因は `vt.json` の `knownIssue` と [STATUS.md](STATUS.md) にある。
 
+## 互換性コーパス（Processing 同梱 examples）
+
+```sh
+npm run vt -- corpus                         # 254 本すべて（約 5 分）。tests/corpus/report.md を更新（コミットして進捗を追う）
+npm run vt -- corpus --filter Basics/Shape   # 絞り込み（結果は tests/corpus/out/ にだけ書く）
+```
+
+- 例は `<Processing>/app/resources/modes/java/examples` から読む（リポジトリにはコピーしない）。`--examples <dir>` で指定も可。
+- 各スケッチを変換し、setup + draw を `--frames`（既定 5）回実行して「ok / 変換エラー / setup エラー / draw エラー / タイムアウト」に分類する。**見た目の一致は見ていない**。
+- report.md の「多いエラー」は実行時エラーを正規化して集計したもので、未実装 API の優先順位付けに使える。
+
 ## 性能・サイズ計測（tools/bench）
 
 ```sh

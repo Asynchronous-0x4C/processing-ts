@@ -15,6 +15,7 @@
 | 画像 / pixels | PImage の読み込みと表示は可。メインキャンバスの `loadPixels()/pixels[]` は未実装。`updatePixels()` に致命的なデバッグ出力 |
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
 | 同梱サンプル | 21 本すべてがエラーなく実行 |
+| 互換性コーパス | Processing 同梱 examples 254 本中 **95 本（37%）** がエラーなく完走（JAVA2D 54% / P2D 14% / P3D 3%）。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
 | 視覚テスト | 19 ケース: 5 PASS / 14 XFAIL（[TESTING.md](TESTING.md)） |
 | 単体テスト / CI / lint | なし |
 

@@ -28,3 +28,6 @@ tests/visual/out/
 
 # benchmark outputs
 tests/bench/out/
+
+# corpus scratch output (tests/corpus/report.md is tracked)
+tests/corpus/out/

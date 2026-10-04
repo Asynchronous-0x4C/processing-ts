@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { BrowserRunner, type BrowserRunResult } from "./browser.ts";
+import { corpusReport, findExamples, runCorpus } from "./corpus.ts";
 import { compare, composite, pngFromDataUrl, readPng, writePng } from "./image.ts";
 import { findProcessing, renderReference } from "./processing.ts";
 import { readSketch, type SketchSource } from "./sketch.ts";
@@ -67,6 +68,9 @@ function usage(): never {
   node tools/vt/cli.ts shot <sketchDir> [--frames n] [--ref] [--out dir]
       Ad-hoc: render any sketch folder; with --ref also render it with Processing and diff.
   node tools/vt/cli.ts list [--tag t]
+  node tools/vt/cli.ts corpus [--filter Basics/Shape] [--frames n] [--examples dir] [--timeout ms]
+      Run Processing's bundled examples (254) through processing-ts and tally transpile/runtime errors.
+      Writes tests/corpus/report.md (commit it to track progress).
 
   Processing is found via --processing <path>, $PROCESSING_PATH, or the platform default.
   Outputs go to tests/visual/out/ (report.md, report.json, <case>/composite.png = ref | actual | diff).`);
@@ -86,6 +90,9 @@ const { values: flags, positionals } = parseArgs({
     headed: { type: "boolean", default: false },
     gpu: { type: "boolean", default: false },
     json: { type: "boolean", default: false },
+    filter: { type: "string" },
+    examples: { type: "string" },
+    timeout: { type: "string" },
     help: { type: "boolean", short: "h", default: false },
   },
 });
@@ -375,6 +382,33 @@ async function cmdShot() {
   process.exit(run.ok ? 0 : 1);
 }
 
+async function cmdCorpus() {
+  const examples = findExamples(findProcessing(flags.processing), flags.examples);
+  if (!examples) {
+    console.error("Processing examples not found. Pass --examples <dir> (…/Processing/app/resources/modes/java/examples).");
+    process.exit(2);
+  }
+  const frames = flags.frames ? Number(flags.frames) : 5;
+  const results = await runCorpus({
+    projectRoot: ROOT,
+    examples,
+    filter: flags.filter,
+    frames,
+    timeoutMs: flags.timeout ? Number(flags.timeout) : 20_000,
+    onResult: (r, i, n) => console.log(`[${String(i + 1).padStart(3)}/${n}] ${r.outcome.padEnd(9)} ${r.name}${r.error ? "  " + r.error.slice(0, 90) : ""}`),
+  });
+  const exe = findProcessing(flags.processing);
+  const md = corpusReport(results, { examples, frames, processing: exe ? processingVersion(exe) : "unknown" });
+  const dir = path.join(ROOT, "tests/corpus");
+  fs.mkdirSync(path.join(dir, "out"), { recursive: true });
+  // A filtered run only updates the scratch output, not the tracked report.
+  fs.writeFileSync(path.join(dir, flags.filter ? "out/report.md" : "report.md"), md);
+  fs.writeFileSync(path.join(dir, "out/results.json"), JSON.stringify(results, null, 2));
+  const ok = results.filter((r) => r.outcome === "ok").length;
+  console.log(`
+${ok}/${results.length} ran without errors. report: ${path.relative(ROOT, path.join(dir, flags.filter ? "out/report.md" : "report.md"))}`);
+}
+
 if (flags.help || !command) usage();
 switch (command) {
   case "run":
@@ -384,6 +418,9 @@ switch (command) {
     process.exit((await generateRefs(listCases(args), flags.missing)) ? 1 : 0);
   case "shot":
     await cmdShot();
+    break;
+  case "corpus":
+    await cmdCorpus();
     break;
   case "list":
     for (const c of listCases(args)) {

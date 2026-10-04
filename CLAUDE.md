@@ -28,6 +28,7 @@ npm run test:visual -- <名前の前方一致...> [--tag 2d]
 npm run test:visual:ref -- <case>   # 本物の Processing で参照画像と stdout を作り直す（ケースを変えたとき）
 npm run vt -- shot <sketchDir> --ref --frames 30   # 任意のスケッチを processing-ts と Processing の両方で撮って比較
 npm run vt -- list           # テストケースと既知の問題の一覧
+npm run vt -- corpus         # Processing 同梱 examples 254 本の互換性集計（約 5 分）→ tests/corpus/report.md
 npm run bench                # 変換時間（Node の構文解析 + ブラウザでの変換全体）。予算超過で終了コード 1
 npm run size                 # バンドルサイズ（min / gzip / brotli）。予算: tools/bench/budget.json
 npm run build                # リリース時のみ（dist/ と library.js はコミットされた成果物）
