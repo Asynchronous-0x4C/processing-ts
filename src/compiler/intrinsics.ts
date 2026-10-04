@@ -32,6 +32,17 @@ function args(g: Gen, m: MethodSymbol, as: A.Expression[]): Emit[] {
 function printText(g: Gen, m: MethodSymbol, as: A.Expression[], varargs: boolean, processing: boolean): Emit {
   if (as.length === 0) return { c: '""', p: P.Primary };
   if (varargs) {
+    // println(a, b, ...) gets an Object[]: every argument is evaluated before any is converted, so
+    // `println(list, list.remove(0))` prints the list after the removal. Mutable objects followed by
+    // other expressions are kept in temporaries until the end.
+    const mutable = (t: Type | undefined) => !!t && t.tag !== "prim" && t.tag !== "null" && !g.ts.isString(t) && !g.ts.unboxed(t);
+    const simple = (a: A.Expression) => a.constant !== undefined || a.kind === "Identifier" || a.kind === "This";
+    if (as.some((a, i) => mutable(a.ty) && as.slice(i + 1).some((b) => !simple(b)))) {
+      const temps = as.map((a) => ({ t: g.temp(), a }));
+      const assigns = temps.map(({ t, a }) => `${t} = ${g.expr(a).c}`);
+      const parts = temps.map(({ t, a }) => par(g.str({ c: t, p: P.Primary }, a.ty!), P.Add + 1));
+      return { c: `(${assigns.join(", ")}, ${parts.join(' + " " + ')})`, p: P.Primary };
+    }
     const parts = as.map((a) => par(g.str(g.expr(a), a.ty!), P.Add + 1));
     return { c: parts.join(' + " " + '), p: P.Add };
   }

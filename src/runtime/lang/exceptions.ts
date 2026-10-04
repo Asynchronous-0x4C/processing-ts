@@ -83,6 +83,7 @@ export const NegativeArraySizeException = define(RuntimeException, "java.lang.Ne
 export const ArrayStoreException = define(RuntimeException, "java.lang.ArrayStoreException");
 export const ConcurrentModificationException = define(RuntimeException, "java.util.ConcurrentModificationException");
 export const NoSuchElementException = define(RuntimeException, "java.util.NoSuchElementException");
+export const EmptyStackException = define(RuntimeException, "java.util.EmptyStackException");
 export const CloneNotSupportedException = define(Exception, "java.lang.CloneNotSupportedException");
 export const InterruptedException = define(Exception, "java.lang.InterruptedException");
 export const IOException = define(Exception, "java.io.IOException");

@@ -5,13 +5,13 @@
 ## 現在地（2026-10-04 時点。セッションの終わりに更新する）
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
-- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）、P1-5（コード生成と言語ランタイム）、P1-6（モードと前処理）。P1-8 のうち `npm run test:lang` と `lang_*` ケース 12 件は済み。P0-8（CI）は任意で未着手。
-- **次にやること: P1-7（Java 標準ライブラリの互換層: LinkedList・TreeMap・Iterator・Map.Entry などを `src/runtime/lang/util.ts` に足し、ケースで本物の Processing と照合）** → P1-8 の残り → P1-9。
+- 完了: P0-1〜P0-7、P1-1（Lezer 文法、判断ゲート通過）、P1-2（型付き AST）、P1-3（API マニフェスト）、P1-4（型検査）、P1-5（コード生成と言語ランタイム）、P1-6（モードと前処理）、P1-7（java.util の互換層）。P1-8 のうち `npm run test:lang` と `lang_*` ケース 16 件は済み。P0-8（CI）は任意で未着手。
+- **次にやること: P1-8 の残り（下記）→ P1-9（`SketchManager` を新コンパイラに切り替える。旧ランタイムの PApplet を生成コードの約束 `$rt.PApplet`/`$rt.classes`/`$rt.lang` に合わせ、vt の `lang_*` ケースを XPASS にする）**。
   - 生成コードは `compileSketch()`（`src/compiler/index.ts`）が返す `new Function("$rt", "__renderer__", code)` の本体。ランタイムとの約束（`$rt.lang`・`$rt.classes`・`$rt.PApplet`、上書きするメソッド名）は `codegen.ts` 冒頭と [ARCHITECTURE.md](ARCHITECTURE.md) の「生成コードの形」。`size()` などは前処理で生成した `settings()` の中で `await $p.size(...)` として呼ぶ（`settings` は async）。
-  - java.util のクラスの型は `src/compiler/api/library.gen.ts`（JDK のモデル）にすでにあるので、P1-7 はランタイム側（`util.ts` と `index.ts` の `javaClasses`）を足す作業。ケースは `lang_` で始め、`npm run test:visual:ref -- <case>` で参照を作る。
+  - ケースは `lang_` で始め、`npm run test:visual:ref -- <case>` で参照を作る。モデル（`library.gen.ts`）にあってランタイムに無いクラスは、使った時点で `UnsupportedOperationException: ... is not available in processing-ts` になる（`$L.missingClass`）。
   - 確認: `npm run test:lang`（Node、約 1 秒）で 16/17 PASS。Processing の挙動は `Processing cli --build` の出力（前処理後の Java）で確かめる。
   - 速度の注意: 5k 行のウォームで解析からコード生成まで 54ms（うち Lezer の解析が約 23ms、コード生成は約 9ms）。P1-9 の目標（変換全体 50ms）には解析の高速化（文法の曖昧さの削減など）が要る（STATUS.md C4）。
-- 基準値: 視覚テスト 5 PASS / 27 XFAIL、stdout 適合 16 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 95/254（旧トランスパイラ）、新コンパイラでの変換 308/309（`node tools/lang/cli.ts --corpus`）、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,330/2,333（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`。
+- 基準値: 視覚テスト 5 PASS / 31 XFAIL、stdout 適合 20 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 95/254（旧トランスパイラ）、新コンパイラでの変換 312/313（`node tools/lang/cli.ts --corpus`）、API カバレッジ（関数）102/253、文法一致 1,190/1,190（フロントエンドも 1,190/1,190）、型検査の一致 2,363/2,366（`npm run test:check`）、サイズと時間の予算は `tools/bench/budget.json`（新コンパイラ 118.8 KiB gz、言語ランタイム 19.0 KiB gz）。
 
 ## 進め方
 
@@ -99,11 +99,18 @@
   - `settings()` には種類ごとに最後の呼び出しを固定の順（size/fullScreen → pixelDensity → noSmooth → smooth）で置く。`fullScreen()` は順序によらず `size()` に勝つ。ユーザーが `settings()` も書いていると `Duplicate method settings()` になる（Processing と同じ）。
   - Java モード: トップレベルが型宣言だけで、そのどれかが `public static void main` を宣言しているとき（`main` が無ければクラスだけのスケッチも静的モード）。書いたとおりの Java として扱い、スケッチ名のクラスがスケッチ本体、他の型はトップレベルのクラス（`getClass().getName()` は `Helper`）。Processing のリテラル・`color`・メソッドの `public` 化は Java モードでも行われる。`size()` などは消されるが `settings()` は生成されない（Processing の挙動をそのまま再現）。
   - 単体テスト（`compiler-sketch.test.ts` の移動規則 11 件、Java モード、`compiler-check.test.ts` の重複エラー、`compiler-codegen.test.ts` の実行）。
-- [ ] **P1-7 Java 標準ライブラリの互換層**（M）
+- [x] **P1-7 Java 標準ライブラリの互換層**（M）
   ArrayList, HashMap, HashSet, LinkedList, Collections, Arrays, StringBuilder, Integer/Float/Double/Boolean の parse/valueOf, Math, Iterator, Map.Entry, Character, String のメソッド。
+  → 結果（2026-10-04）: `src/runtime/lang/{collections,maps,util}.ts`。ケース `lang_util_lists`/`lang_util_maps`/`lang_util_misc`/`lang_util_extend` が本物の Processing と完全一致。
+  - リスト: ArrayList/LinkedList/ArrayDeque/Vector/Stack/PriorityQueue/CopyOnWriteArrayList。Java と同じ時点で ConcurrentModificationException（`hasNext` は `cursor != size`）、ListIterator、`subList`・`Collections.unmodifiableList` はビュー、`Arrays.asList` は配列に書き戻す固定長、`List.of` は不変。PriorityQueue は Java と同じ二分ヒープの配置（`println` で内部順が見える）。
+  - マップと集合: HashMap は表の大きさまで再現（コピーと `putAll` の事前拡張で列挙順が変わるのも一致）、LinkedHashMap（挿入順・アクセス順、`removeEldestEntry` の上書き）、TreeMap/TreeSet（ナビゲーション）、Map の既定メソッド（compute/merge/replaceAll…）、ビュー経由の削除と `setValue`。
+  - Random は Javadoc の線形合同法そのもの（種を与えた列・`nextGaussian`・`Collections.shuffle(list, rnd)` が Java と一致。P2-7 の `random()` に使える）。Objects・StringJoiner・StringTokenizer・Collections/Arrays の主要メソッド。
+  - java.util のインタフェース（List/Set/Map/Deque…）を登録して `instanceof` が動く。スケッチのクラスがライブラリのクラスを継承できる（`class Bag extends ArrayList<String>`、コンストラクタ引数は `$init` で受け渡し）。ランタイム内部のメンバー名は `$` 付き（継承したクラスの名前と衝突しない）。
+  - あわせて直したもの: ジェネリックメソッドの推論を上下限つきにした（`Collections.sort(list, Collections.reverseOrder())` が通る）、`println(a, b, ...)` は全引数を評価してから文字列にする（Java の可変長引数と同じ。文字列連結は ECJ と同じく左から順に変換）、継承した SAM（`BinaryOperator`）のラムダの戻り値型。
+  - 未対応（STATUS.md C10・C11）: TreeMap/TreeSet のナビゲーションのビュー（コピーを返す）、`Set.of`/`Map.of` の順序、ストリーム、Scanner/Date/Calendar/BitSet/Optional など。
 - [ ] **P1-8 stdout 適合テストの拡充と高速ランナー**（M）
   `lang` タグのケースを追加（文字列、配列、クラスと継承、例外、switch、ジェネリクス、ラムダ、static、内部クラス、整数/浮動小数の境界値）。描画不要のケースは Node で実行する `npm run test:lang`（参照の stdout は vt の `ref` で生成したものを共用）。
-  → 一部済み（P1-5）: `npm run test:lang`（`tools/lang/`、全ケース約 1 秒）と `lang_*` 12 件、`--corpus` で全スケッチの変換確認。残り: 内部クラスとジェネリクスの組み合わせ、インタフェースの既定メソッド、`Iterator` の自作、文字列の Unicode（サロゲートペア）、`Map.Entry` の列挙、`LinkedList`/`TreeMap` などの P1-7 で足すクラスのケース。
+  → 一部済み（P1-5/P1-7）: `npm run test:lang`（`tools/lang/`、全ケース約 1 秒）と `lang_*` 16 件、`--corpus` で全スケッチの変換確認。残り: 内部クラスとジェネリクスの組み合わせ、ユーザー定義インタフェースの既定メソッド、文字列の Unicode（サロゲートペア）、ラベル付き break/continue と switch のフォールスルーの組み合わせ、例外の連鎖（`getCause`）と `printStackTrace` の出力。
 - [ ] **P1-9 切り替え**（M）
   `SketchManager` を新コンパイラに切り替え、旧 `transpiler/`・antlr4 依存・生成パーサを配布物から削除（オラクルとしては devDependency に残す）。
   完了条件: java_semantics / multi_tab / static_mode が PASS。コーパスの変換成功率 95% 以上。199 行のコールド変換 20ms 以下（ブラウザ）。5k 行ウォーム 50ms 以下。

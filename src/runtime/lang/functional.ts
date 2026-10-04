@@ -1,5 +1,4 @@
-// Library interfaces with default and static methods (java.util.Comparator, java.util.function.*,
-// Iterable): registered as Iface objects so lambdas and user classes get the default methods, and the
+// Library interfaces with default and static methods (java.util.Comparator, java.util.function.*): registered as Iface objects so lambdas and user classes get the default methods, and the
 // static methods are exported for $rt.classes.
 import { jcompare } from "./misc.ts";
 import { Iface, lambda, libraryIface } from "./objects.ts";
@@ -57,13 +56,5 @@ export const ConsumerIface: Iface = libraryIface("java.util.function.Consumer", 
       this.accept(x);
       after.accept(x);
     });
-  },
-});
-
-/** Iterable's default forEach for user classes implementing Iterable. */
-libraryIface("java.lang.Iterable", [], {
-  forEach<T>(this: { iterator(): { hasNext(): boolean; next(): T } }, f: { accept(x: T): void }) {
-    const it = this.iterator();
-    while (it.hasNext()) f.accept(it.next());
   },
 });

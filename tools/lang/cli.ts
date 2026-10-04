@@ -52,7 +52,9 @@ async function conformance(): Promise<number> {
       continue;
     }
     const t0 = performance.now();
-    const r = await runSketch(tabsOf(path.join(CASES, c.name)), { frames: c.config.frames ?? 1 });
+    const r = await runSketch(tabsOf(path.join(CASES, c.name)), { frames: c.config.frames ?? 1 }).catch((e: Error) => ({
+      errors: [`compiler crash: ${e.stack?.split("\n").slice(0, 3).join(" ")}`], stdout: "", exception: undefined, code: undefined,
+    }));
     const ms = performance.now() - t0;
     if (r.code) fs.writeFileSync(path.join(OUT, `${c.name}.js`), r.code);
     const want = lines(fs.readFileSync(refPath, "utf8"));

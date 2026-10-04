@@ -27,14 +27,41 @@ export const javaClasses: Record<string, unknown> = {
   "java.lang.StringBuilder": jlang.StringBuilder,
   "java.lang.StringBuffer": jlang.StringBuilder,
   "java.util.ArrayList": util.ArrayList,
+  "java.util.LinkedList": util.LinkedList,
+  "java.util.ArrayDeque": util.ArrayDeque,
+  "java.util.Vector": util.Vector,
+  "java.util.Stack": util.Stack,
+  "java.util.PriorityQueue": util.PriorityQueue,
+  "java.util.concurrent.CopyOnWriteArrayList": util.CopyOnWriteArrayList,
   "java.util.HashMap": util.HashMap,
+  "java.util.LinkedHashMap": util.LinkedHashMap,
+  "java.util.TreeMap": util.TreeMap,
+  "java.util.Hashtable": util.HashMap,
+  "java.util.concurrent.ConcurrentHashMap": util.HashMap,
   "java.util.HashSet": util.HashSet,
+  "java.util.LinkedHashSet": util.LinkedHashSet,
+  "java.util.TreeSet": util.TreeSet,
+  "java.util.List": util.ListStatics,
+  "java.util.Set": util.SetStatics,
+  "java.util.Map": util.MapStatics,
   "java.util.Collections": util.Collections,
   "java.util.Arrays": util.Arrays,
+  "java.util.Objects": util.Objects,
+  "java.util.Random": util.Random,
+  "java.util.StringJoiner": util.StringJoiner,
+  "java.util.StringTokenizer": util.StringTokenizer,
   "java.util.Comparator": functional.Comparator,
   "java.util.function.Function": functional.FunctionStatics,
   "java.util.function.UnaryOperator": functional.FunctionStatics,
   "java.util.function.Predicate": functional.PredicateStatics,
 };
+
+// Library classes can be extended by sketch classes: mark them and give them a $init that takes the
+// Java constructor's arguments (objects.ts libraryInit).
+for (const c of Object.values(javaClasses)) {
+  if (typeof c !== "function") continue;
+  Object.defineProperty(c, "$library", { value: true });
+  if (!Object.prototype.hasOwnProperty.call(c.prototype, "$init")) Object.defineProperty(c.prototype, "$init", { value: objects.libraryInit, writable: true, configurable: true });
+}
 
 export { arrays, boxes, exceptions, functional, jlang, misc, numbers, objects, print, strings, util };

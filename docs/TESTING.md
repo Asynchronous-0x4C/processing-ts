@@ -126,7 +126,7 @@ pixelmatch（`includeAA: false` でアンチエイリアス差を無視）で不
 
 ## 現在のケースと状態
 
-`npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 32 ケース中 5 PASS / 27 XFAIL。うち `lang` タグの 17 件（`lang_*` 12 件を含む）は旧トランスパイラでは XFAIL だが、新コンパイラの `npm run test:lang` では 16 件 PASS（`random_seed` だけ XFAIL）。
+`npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 36 ケース中 5 PASS / 31 XFAIL。うち `lang` タグの 21 件（`lang_*` 16 件を含む）は旧トランスパイラでは XFAIL だが、新コンパイラの `npm run test:lang` では 20 件 PASS（`random_seed` だけ XFAIL）。
 各 XFAIL の原因は `vt.json` の `knownIssue` と [STATUS.md](STATUS.md) にある。
 
 ## 互換性コーパス（Processing 同梱 examples）

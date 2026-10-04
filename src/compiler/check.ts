@@ -95,6 +95,8 @@ class Scope {
 type Resolved<T> = { method: T; subst: Subst | null; varargs: boolean };
 type Arg = { node: A.Expression; ty: Type | null /* null: poly expression typed against the parameter */ };
 type FoundField = { field: FieldSymbol; ty: Type; cls: ClassSymbol; staticCtx: boolean };
+/** Bounds collected for one type variable during inference (check.ts instantiate/unify). */
+type InferBounds = { eq: Type | null; lower: Type[]; upper: Type[]; expected: Type | null };
 
 function depthOf(c: ClassSymbol): number {
   let d = 0;
@@ -2003,9 +2005,10 @@ class Checker {
     if (expected && expected.tag === "class") {
       const sup = asSuper(sym.thisType, expected.sym);
       if (sup && expected.args.length) {
-        const map: Subst = new Map();
-        this.unify(sup, expected, map, params);
-        if (params.every((p) => map.has(p))) return classType(sym, params.map((p) => upperBoundArg(map.get(p)!)));
+        const bounds = new Map<TypeVarSymbol, InferBounds>();
+        this.unify(sup, expected, bounds, params, "lower");
+        const value = (p: TypeVarSymbol) => bounds.get(p)?.eq ?? bounds.get(p)?.lower[0] ?? null;
+        if (params.every((p) => value(p))) return classType(sym, params.map((p) => upperBoundArg(value(p)!)));
       }
     }
     return classType(sym); // raw: assignable anywhere with an unchecked conversion
@@ -2146,7 +2149,7 @@ class Checker {
   private instantiate(c: { m: MethodSymbol; subst: Subst | null; raw: boolean }, args: Arg[], mode: "varargs" | null, expected?: Type | null): Subst | null {
     const tps = c.m.typeParams;
     if (!tps.length || c.raw) return null;
-    const map: Subst = new Map();
+    const bounds = new Map<TypeVarSymbol, InferBounds>();
     const params = c.m.params.map((p) => substitute(p, c.subst));
     args.forEach((a, i) => {
       if (!a.ty) return;
@@ -2154,42 +2157,59 @@ class Checker {
       if (!p) return;
       if (mode === "varargs" && i >= params.length - 1 && p.tag === "array") p = p.elem;
       const at = a.ty.tag === "prim" ? (p.tag === "tvar" ? this.ts.box(a.ty) : a.ty) : a.ty;
-      this.unify(p, at, map, tps);
+      this.unify(p, at, bounds, tps, "lower");
     });
-    if (expected && expected.tag !== "void") this.unify(substitute(c.m.ret, c.subst), expected, map, tps, true);
+    if (expected && expected.tag !== "void") this.unify(substitute(c.m.ret, c.subst), expected, bounds, tps, "expected");
+    // An equality (invariant type argument) decides; then the arguments' types (their lub); then the
+    // assignment context; then a `? super T` bound; else the declared bound.
+    const map: Subst = new Map();
     for (const tp of tps) {
-      if (!map.has(tp)) map.set(tp, tp.bounds.length ? substitute(erasure(tp.bounds[0]), null) : this.ts.object);
+      const b = bounds.get(tp);
+      const lower = b?.lower.reduce<Type | null>((acc, t) => (acc === null || sameType(acc, t) ? t : this.ts.lub(acc, t)), null) ?? null;
+      map.set(tp, b?.eq ?? lower ?? b?.expected ?? b?.upper[0] ?? (tp.bounds.length ? substitute(erasure(tp.bounds[0]), null) : this.ts.object));
     }
     return map;
   }
 
-  /** Record bindings for the type variables `vars` that make `p` match `a`. */
-  private unify(p: Type, a: Type, map: Subst, vars: TypeVarSymbol[], fromExpected = false): void {
+  /**
+   * Collect bounds on the type variables `vars` from `p` (a parameter or return type) against `a`:
+   * "lower" where a must be a subtype of p (an argument, `? extends T`), "upper" for `? super T`, "eq"
+   * inside an invariant type argument (`List<T>` against `ArrayList<String>`), "expected" from the
+   * assignment context (return type against the target type).
+   */
+  private unify(p: Type, a: Type, bounds: Map<TypeVarSymbol, InferBounds>, vars: TypeVarSymbol[], kind: "lower" | "upper" | "eq" | "expected"): void {
     if (p.tag === "tvar" && vars.includes(p.sym)) {
       if (a.tag === "null" || a.tag === "error" || a.tag === "void") return;
-      const prev = map.get(p.sym);
       const val = a.tag === "prim" ? this.ts.box(a) : a;
-      if (!prev) map.set(p.sym, val);
-      else if (!fromExpected && !sameType(prev, val)) map.set(p.sym, this.ts.lub(prev, val));
+      let b = bounds.get(p.sym);
+      if (!b) bounds.set(p.sym, (b = { eq: null, lower: [], upper: [], expected: null }));
+      if (kind === "eq") b.eq ??= val;
+      else if (kind === "lower") b.lower.push(val);
+      else if (kind === "upper") b.upper.push(val);
+      else b.expected ??= val;
       return;
     }
     if (p.tag === "wild") {
-      if (p.bound) this.unify(p.bound, a.tag === "wild" ? upperBound(a) : a, map, vars, fromExpected);
+      if (!p.bound) return;
+      const aa = a.tag === "wild" ? upperBound(a) : a;
+      this.unify(p.bound, aa, bounds, vars, kind === "expected" ? kind : p.upper ? "lower" : "upper");
       return;
     }
     if (p.tag === "array" && a.tag === "array") {
-      this.unify(p.elem, a.elem, map, vars, fromExpected);
+      this.unify(p.elem, a.elem, bounds, vars, kind);
       return;
     }
     if (p.tag === "class" && p.args.length) {
-      const sup = fromExpected ? (a.tag === "class" ? asSuper(p, a.sym) && a : null) : asSuper(a, p.sym);
-      if (!sup || sup.tag !== "class") return;
-      if (fromExpected) {
+      if (kind === "expected") {
+        const sup = a.tag === "class" ? asSuper(p, a.sym) && a : null;
+        if (!sup || sup.tag !== "class") return;
         const ps = asSuper(p, sup.sym);
-        if (ps) ps.args.forEach((x, i) => sup.args[i] && this.unify(x, upperBoundArg(sup.args[i]), map, vars, true));
+        if (ps) ps.args.forEach((x, i) => sup.args[i] && this.unify(x, upperBoundArg(sup.args[i]), bounds, vars, "expected"));
         return;
       }
-      p.args.forEach((x, i) => sup.args[i] && this.unify(x, sup.args[i].tag === "wild" ? upperBound(sup.args[i]) : sup.args[i], map, vars));
+      const sup = asSuper(a, p.sym);
+      if (!sup) return;
+      p.args.forEach((x, i) => sup.args[i] && this.unify(x, sup.args[i].tag === "wild" ? upperBound(sup.args[i]) : sup.args[i], bounds, vars, x.tag === "wild" ? "lower" : "eq"));
     }
   }
 

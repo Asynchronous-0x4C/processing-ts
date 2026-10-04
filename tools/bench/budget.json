@@ -19,7 +19,7 @@
       "gzipKiB": 123.5
     },
     "language runtime (src/runtime/lang)": {
-      "gzipKiB": 12.5
+      "gzipKiB": 20
     }
   },
   "parse": {

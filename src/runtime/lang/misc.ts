@@ -1,7 +1,7 @@
 // Helpers generated code calls for operations on values whose run-time representation is a JS primitive
 // (String, boxed numbers seen as Object/Comparable), Processing's conversion and formatting functions,
 // and java.lang.System.
-import { ArrayIndexOutOfBoundsException, ArrayStoreException, ClassCastException, RuntimeException } from "./exceptions.ts";
+import { ArrayIndexOutOfBoundsException, ArrayStoreException, ClassCastException, RuntimeException, UnsupportedOperationException } from "./exceptions.ts";
 import { JChar, JDouble, JFloat } from "./boxes.ts";
 import { JClass, JObject, classOf, identityHash, implement, javaName, type Iface } from "./objects.ts";
 import { print, println } from "./print.ts";
@@ -79,6 +79,22 @@ export function castPrim<T>(x: T, kind: "string" | "number" | "boolean" | "char"
   if (ok) return x;
   const from = typeof x === "object" ? javaName(x as object) : typeof x === "number" ? "java.lang.Integer" : typeof x === "string" ? "java.lang.String" : typeof x;
   throw new ClassCastException(`class ${from} cannot be cast to class ${name}`);
+}
+
+/**
+ * Stand-in for a library class the runtime does not provide (the type checker's model is larger):
+ * constructing it, calling its static methods or reading its fields throws; `instanceof` is false.
+ */
+export function missingClass(name: string): unknown {
+  const fail = (): never => {
+    throw new UnsupportedOperationException(`${name} is not available in processing-ts`);
+  };
+  const target = function () {} as unknown as object;
+  return new Proxy(target, {
+    construct: fail,
+    apply: fail,
+    get: (t, k) => (k === Symbol.hasInstance ? () => false : k === "prototype" ? (t as { prototype: unknown }).prototype : fail()),
+  });
 }
 
 /** Placeholder for code the checker rejected (never reached when compilation succeeded). */

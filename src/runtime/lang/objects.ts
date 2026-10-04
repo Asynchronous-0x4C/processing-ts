@@ -45,6 +45,19 @@ export class JObject {
   }
 }
 
+/**
+ * $init of runtime library classes: a user class extending one (class Bag extends ArrayList<String>)
+ * passes the Java constructor's arguments as `super.$init(args)`; the library state is rebuilt from a
+ * fresh instance made with them (the nearest class marked `$library` in the prototype chain).
+ */
+export function libraryInit(this: object, ...args: unknown[]): object {
+  if (!args.length) return this;
+  let proto = Object.getPrototypeOf(this);
+  while (proto && !Object.prototype.hasOwnProperty.call(proto.constructor, "$library")) proto = Object.getPrototypeOf(proto);
+  if (proto) Object.assign(this, new proto.constructor(...args));
+  return this;
+}
+
 export function javaName(o: object): string {
   const c = o.constructor as JavaClassInfo & { name: string };
   return c.$javaName ?? c.name;

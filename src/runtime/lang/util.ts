@@ -1,521 +1,228 @@
-// java.util collections with Java semantics: equals/hashCode keys, Java's HashMap iteration order (the
-// bucket table is reproduced, so printing a map gives the same text as Processing), Java iterators
-// (hasNext/next/remove) plus the JS iteration protocol. A first set for code generation; ROADMAP P1-7
-// extends it (LinkedList, TreeMap, ArrayDeque...).
-import { arrayDescriptor, isArray, isLongArray } from "./arrays.ts";
-import { ConcurrentModificationException, IllegalStateException, IndexOutOfBoundsException, NoSuchElementException, UnsupportedOperationException } from "./exceptions.ts";
+// java.util helpers with Java's results: Collections, Arrays, Objects, Random (the documented 48-bit
+// linear congruential generator, so seeded sequences match Java), StringJoiner, StringTokenizer and the
+// static factories of List/Set/Map. The collection classes are in collections.ts and maps.ts.
+import { LONG_ARRAY, arrayDescriptor, isArray, isLongArray } from "./arrays.ts";
+import { doubleHash, floatToIntBits } from "./boxes.ts";
+import { AbstractList, ArrayList, ArraysAsList, ImmutableList, UnmodifiableList, elementsOf, type Comparator } from "./collections.ts";
+import { IllegalArgumentException, IndexOutOfBoundsException, NoSuchElementException, NullPointerException } from "./exceptions.ts";
+import { ComparatorIface, Comparator as ComparatorStatics } from "./functional.ts";
+import { AbstractMap, Entry, ImmutableMap, ImmutableSet } from "./maps.ts";
 import { jcompare, jequals, jhash } from "./misc.ts";
-import { JObject } from "./objects.ts";
+import { JObject, lambda } from "./objects.ts";
 import { doubleToString, floatToString, longToString } from "./numbers.ts";
 import { valueOf } from "./strings.ts";
 
-interface JIterator<T> {
-  hasNext(): boolean;
-  next(): T;
-  remove(): void;
-}
-type Comparator<T> = { compare(a: T, b: T): number } | null | undefined;
-type Consumer<T> = { accept(x: T): void };
-type Predicate<T> = { test(x: T): boolean };
+export * from "./collections.ts";
+export * from "./maps.ts";
 
-/** Elements of a Java collection, an Iterable, a JS iterable or an array-like. */
-function* elementsOf<T>(c: unknown): Generator<T> {
-  if (c === null || c === undefined) return;
-  if (typeof (c as { iterator?: unknown }).iterator === "function") {
-    const it = (c as { iterator(): JIterator<T> }).iterator();
-    while (it.hasNext()) yield it.next();
-  } else if (typeof (c as Iterable<T>)[Symbol.iterator] === "function") yield* c as Iterable<T>;
-  else for (const x of Array.from(c as ArrayLike<T>)) yield x;
-}
+const cmpFn = <T>(c: Comparator<T>) => (c ? (x: T, y: T) => c.compare(x, y) : (x: T, y: T) => jcompare(x, y));
+type List<T> = AbstractList<T>;
 
-const text = (x: unknown, self: unknown) => (x === self ? "(this Collection)" : valueOf(x));
+// --- Random ----------------------------------------------------------------------------------------------
 
-abstract class AbstractCollection<T> extends JObject {
-  abstract iterator(): JIterator<T>;
-  abstract size(): number;
-  isEmpty(): boolean {
-    return this.size() === 0;
-  }
-  contains(o: unknown): boolean {
-    for (const x of this) if (jequals(x, o)) return true;
-    return false;
-  }
-  containsAll(c: unknown): boolean {
-    for (const x of elementsOf(c)) if (!this.contains(x)) return false;
-    return true;
-  }
-  toArray(): T[] {
-    return Array.from(this);
-  }
-  forEach(f: Consumer<T>): void {
-    for (const x of this) f.accept(x);
-  }
-  *[Symbol.iterator](): Generator<T> {
-    const it = this.iterator();
-    while (it.hasNext()) yield it.next();
-  }
-  override toString(): string {
-    return "[" + Array.from(this, (x) => text(x, this)).join(", ") + "]";
-  }
-}
+const P24 = 0x1000000;
+const MUL_HI = 0x5de;
+const MUL_LO = 0xece66d;
 
-// --- lists -----------------------------------------------------------------------------------------
-
-export class ArrayList<T> extends AbstractCollection<T> {
-  protected a: T[] = [];
-  protected modCount = 0;
-
-  /** new ArrayList(), new ArrayList(capacity), new ArrayList(collection) */
-  constructor(init?: number | unknown) {
+/**
+ * java.util.Random: seed = (seed * 0x5DEECE66D + 0xB) mod 2^48, kept as two 24-bit halves so that the
+ * arithmetic stays exact in doubles. The derived methods follow the algorithms given in its Javadoc.
+ * (A long seed beyond 2^53 loses precision like every long here.)
+ */
+export class Random extends JObject {
+  private $hi = 0;
+  private $lo = 0;
+  private $nextNextGaussian = 0;
+  private $haveNextNextGaussian = false;
+  constructor(seed?: number) {
     super();
-    if (init !== undefined && typeof init !== "number") for (const x of elementsOf<T>(init)) this.a.push(x);
+    this.setSeed(seed ?? Math.floor(Math.random() * 2 ** 48));
   }
-
-  private check(i: number, n = this.a.length) {
-    if (i < 0 || i >= n) throw new IndexOutOfBoundsException(`Index ${i} out of bounds for length ${this.a.length}`);
+  setSeed(seed: number): void {
+    // The low 48 bits of the long (two's complement), scrambled with the multiplier.
+    const s = ((seed % 2 ** 48) + 2 ** 48) % 2 ** 48;
+    this.$hi = Math.floor(s / P24) ^ MUL_HI;
+    this.$lo = (s % P24) ^ MUL_LO;
+    this.$haveNextNextGaussian = false;
   }
-
-  size(): number {
-    return this.a.length;
+  protected next(bits: number): number {
+    const p = this.$lo * MUL_LO + 0xb;
+    const lo = p % P24;
+    this.$hi = (this.$hi * MUL_LO + this.$lo * MUL_HI + Math.floor(p / P24)) % P24;
+    this.$lo = lo;
+    return Math.floor((this.$hi * P24 + this.$lo) / 2 ** (48 - bits)) | 0;
   }
-  get(i: number): T {
-    this.check(i);
-    return this.a[i];
+  /** nextInt() or nextInt(bound) */
+  nextInt(bound?: number): number {
+    if (bound === undefined) return this.next(32);
+    if (bound <= 0) throw new IllegalArgumentException("bound must be positive");
+    let r = this.next(31);
+    const m = bound - 1;
+    if ((bound & m) === 0) return Math.floor(r / 2 ** (31 - Math.log2(bound))) | 0;
+    for (let u = r; ((u - (r = u % bound) + m) | 0) < 0; u = this.next(31));
+    return r;
   }
-  set(i: number, v: T): T {
-    this.check(i);
-    const old = this.a[i];
-    this.a[i] = v;
-    return old;
+  nextLong(): number {
+    return this.next(32) * 2 ** 32 + this.next(32);
   }
-  /** add(e) or add(index, e) */
-  add(x: T | number, y?: T): boolean {
-    this.modCount++;
-    if (arguments.length === 2) {
-      this.check(x as number, this.a.length + 1);
-      this.a.splice(x as number, 0, y as T);
-      return true;
+  nextBoolean(): boolean {
+    return this.next(1) !== 0;
+  }
+  nextFloat(): number {
+    return this.next(24) / P24;
+  }
+  nextDouble(): number {
+    return (this.next(26) * 2 ** 27 + this.next(27)) * 2 ** -53;
+  }
+  nextGaussian(): number {
+    if (this.$haveNextNextGaussian) {
+      this.$haveNextNextGaussian = false;
+      return this.$nextNextGaussian;
     }
-    this.a.push(x as T);
-    return true;
+    let v1: number, v2: number, s: number;
+    do {
+      v1 = 2 * this.nextDouble() - 1;
+      v2 = 2 * this.nextDouble() - 1;
+      s = v1 * v1 + v2 * v2;
+    } while (s >= 1 || s === 0);
+    const multiplier = Math.sqrt((-2 * Math.log(s)) / s);
+    this.$nextNextGaussian = v2 * multiplier;
+    this.$haveNextNextGaussian = true;
+    return v1 * multiplier;
   }
-  addAll(x: unknown, y?: unknown): boolean {
-    this.modCount++;
-    if (arguments.length === 2) {
-      const items = Array.from(elementsOf<T>(y));
-      this.a.splice(x as number, 0, ...items);
-      return items.length > 0;
+  nextBytes(bytes: Int8Array): void {
+    for (let i = 0; i < bytes.length; ) {
+      for (let rnd = this.nextInt(), n = Math.min(bytes.length - i, 4); n-- > 0; rnd >>= 8) bytes[i++] = rnd;
     }
-    const items = Array.from(elementsOf<T>(x));
-    for (const i of items) this.a.push(i);
-    return items.length > 0;
-  }
-  /** remove(int) is compiled to removeAt; remove(Object) removes the first equal element. */
-  removeAt(i: number): T {
-    this.check(i);
-    this.modCount++;
-    return this.a.splice(i, 1)[0];
-  }
-  remove(o: unknown): boolean {
-    const i = this.indexOf(o);
-    if (i < 0) return false;
-    this.removeAt(i);
-    return true;
-  }
-  removeAll(c: unknown): boolean {
-    const drop = Array.from(elementsOf(c));
-    return this.removeIf({ test: (x) => drop.some((d) => jequals(x, d)) });
-  }
-  retainAll(c: unknown): boolean {
-    const keep = Array.from(elementsOf(c));
-    return this.removeIf({ test: (x) => !keep.some((d) => jequals(x, d)) });
-  }
-  removeIf(p: Predicate<T>): boolean {
-    const before = this.a.length;
-    this.a = this.a.filter((x) => !p.test(x));
-    if (this.a.length !== before) this.modCount++;
-    return this.a.length !== before;
-  }
-  indexOf(o: unknown): number {
-    return this.a.findIndex((x) => jequals(x, o));
-  }
-  lastIndexOf(o: unknown): number {
-    for (let i = this.a.length - 1; i >= 0; i--) if (jequals(this.a[i], o)) return i;
-    return -1;
-  }
-  override contains(o: unknown): boolean {
-    return this.indexOf(o) >= 0;
-  }
-  clear(): void {
-    this.modCount++;
-    this.a.length = 0;
-  }
-  sort(c: Comparator<T>): void {
-    this.modCount++;
-    this.a.sort(c ? (x, y) => c.compare(x, y) : jcompare);
-  }
-  subList(from: number, to: number): ArrayList<T> {
-    const l = new ArrayList<T>();
-    l.a = this.a.slice(from, to);
-    return l;
-  }
-  override toArray(arr?: unknown[]): T[] {
-    void arr;
-    return this.a.slice();
-  }
-  iterator(): JIterator<T> {
-    let i = 0;
-    let last = -1;
-    let expected = this.modCount;
-    return {
-      hasNext: () => i < this.a.length,
-      next: () => {
-        if (this.modCount !== expected) throw new ConcurrentModificationException(null);
-        if (i >= this.a.length) throw new NoSuchElementException(null);
-        last = i;
-        return this.a[i++];
-      },
-      remove: () => {
-        if (last < 0) throw new IllegalStateException(null);
-        this.a.splice(last, 1);
-        i = last;
-        last = -1;
-        expected = ++this.modCount;
-      },
-    };
-  }
-  override equals(o: unknown): boolean {
-    if (!(o instanceof ArrayList) || o.size() !== this.size()) return false;
-    return this.a.every((x, i) => jequals(x, (o as ArrayList<T>).a[i]));
-  }
-  override hashCode(): number {
-    let h = 1;
-    for (const x of this.a) h = (Math.imul(31, h) + jhash(x)) | 0;
-    return h;
-  }
-  override *[Symbol.iterator](): Generator<T> {
-    yield* this.a;
   }
 }
 
-// --- HashMap with Java's iteration order --------------------------------------------------------------
+// --- Collections -----------------------------------------------------------------------------------------
 
-class Node<K, V> extends JObject {
-  hash: number;
-  key: K;
-  value: V;
-  next: Node<K, V> | null = null;
-  constructor(hash: number, key: K, value: V) {
-    super();
-    this.hash = hash;
-    this.key = key;
-    this.value = value;
-  }
-  getKey(): K {
-    return this.key;
-  }
-  getValue(): V {
-    return this.value;
-  }
-  setValue(v: V): V {
-    const old = this.value;
-    this.value = v;
-    return old;
-  }
-  override toString(): string {
-    return `${valueOf(this.key)}=${valueOf(this.value)}`;
-  }
-  override equals(o: unknown): boolean {
-    return o instanceof Node && jequals(o.key, this.key) && jequals(o.value, this.value);
-  }
-  override hashCode(): number {
-    return jhash(this.key) ^ jhash(this.value);
-  }
-}
+let shuffleRandom: Random | null = null;
 
-const spread = (k: unknown) => {
-  if (k === null || k === undefined) return 0;
-  const h = jhash(k);
-  return h ^ (h >>> 16);
+export const Collections = {
+  sort<T>(list: List<T>, c?: Comparator<T>) {
+    list.sort(c ?? null);
+  },
+  reverse<T>(list: List<T>) {
+    for (let i = 0, j = list.size() - 1; i < j; i++, j--) list.set(i, list.set(j, list.get(i)));
+  },
+  /** shuffle(list) or shuffle(list, random): Java's algorithm, so a seeded Random gives Java's order. */
+  shuffle<T>(list: List<T>, rnd?: Random) {
+    const r = rnd ?? (shuffleRandom ??= new Random());
+    for (let i = list.size(); i > 1; i--) Collections.swap(list, i - 1, r.nextInt(i));
+  },
+  swap<T>(list: List<T>, i: number, j: number) {
+    list.set(i, list.set(j, list.get(i)));
+  },
+  rotate<T>(list: List<T>, distance: number) {
+    const items = list.toArray();
+    const n = items.length;
+    if (!n) return;
+    const d = ((distance % n) + n) % n;
+    for (let i = 0; i < n; i++) list.set((i + d) % n, items[i]);
+  },
+  fill<T>(list: List<T>, x: T) {
+    for (let i = 0, n = list.size(); i < n; i++) list.set(i, x);
+  },
+  copy<T>(dest: List<T>, src: List<T>) {
+    if (src.size() > dest.size()) throw new IndexOutOfBoundsException("Source does not fit in dest");
+    for (let i = 0, n = src.size(); i < n; i++) dest.set(i, src.get(i));
+  },
+  max<T>(c: unknown, cmp?: Comparator<T>): T {
+    const items = Array.from(elementsOf<T>(c));
+    if (!items.length) throw new NoSuchElementException(null);
+    const f = cmpFn(cmp);
+    return items.reduce((a, b) => (f(b, a) > 0 ? b : a));
+  },
+  min<T>(c: unknown, cmp?: Comparator<T>): T {
+    const items = Array.from(elementsOf<T>(c));
+    if (!items.length) throw new NoSuchElementException(null);
+    const f = cmpFn(cmp);
+    return items.reduce((a, b) => (f(b, a) < 0 ? b : a));
+  },
+  frequency(c: unknown, o: unknown): number {
+    let n = 0;
+    for (const x of elementsOf(c)) if (jequals(x, o)) n++;
+    return n;
+  },
+  disjoint(a: unknown, b: unknown): boolean {
+    const bs = Array.from(elementsOf(b));
+    for (const x of elementsOf(a)) if (bs.some((y) => jequals(x, y))) return false;
+    return true;
+  },
+  addAll<T>(c: { add(x: T): boolean }, items: ArrayLike<T>): boolean {
+    let changed = false;
+    for (const x of Array.from(items)) changed = c.add(x) || changed;
+    return changed;
+  },
+  binarySearch<T>(list: List<T>, key: T, c?: Comparator<T>): number {
+    const f = cmpFn(c);
+    let lo = 0;
+    let hi = list.size() - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      const r = f(list.get(mid), key);
+      if (r < 0) lo = mid + 1;
+      else if (r > 0) hi = mid - 1;
+      else return mid;
+    }
+    return -(lo + 1);
+  },
+  /** reverseOrder() or reverseOrder(comparator) */
+  reverseOrder<T>(c?: Comparator<T>) {
+    return c ? lambda(ComparatorIface, "compare", (a: T, b: T) => c.compare(b, a)) : ComparatorStatics.reverseOrder<T>();
+  },
+  unmodifiableList: <T>(l: List<T>) => new UnmodifiableList<T>(l),
+  unmodifiableCollection: <T>(c: unknown) => (c instanceof AbstractList ? new UnmodifiableList<T>(c as List<T>) : new ImmutableSet<T>(c).freeze()),
+  unmodifiableSet: <T>(s: unknown) => new ImmutableSet<T>(s).freeze(),
+  unmodifiableMap: <K, V>(m: AbstractMap<K, V>) => new ImmutableMap<K, V>(m).freeze(),
+  synchronizedList: <T>(l: T) => l,
+  synchronizedMap: <T>(m: T) => m,
+  synchronizedSet: <T>(s: T) => s,
+  emptyList: <T>() => new ImmutableList<T>([]),
+  emptySet: <T>() => new ImmutableSet<T>().freeze(),
+  emptyMap: <K, V>() => new ImmutableMap<K, V>().freeze(),
+  singletonList: <T>(x: T) => new ImmutableList<T>([x]),
+  singleton: <T>(x: T) => new ImmutableSet<T>([x]).freeze(),
+  singletonMap: <K, V>(k: K, v: V) => ImmutableMap.of<K, V>([k, v]),
+  nCopies: <T>(n: number, x: T) => {
+    if (n < 0) throw new IllegalArgumentException(`List length = ${n}`);
+    return new ImmutableList<T>(new Array<T>(n).fill(x));
+  },
 };
 
-function tableSizeFor(cap: number): number {
-  let n = 1;
-  while (n < cap) n <<= 1;
-  return Math.max(1, Math.min(n, 1 << 30));
-}
+// --- List / Set / Map factories (Java 9+) ----------------------------------------------------------------
 
-export class HashMap<K, V> extends JObject {
-  private table: (Node<K, V> | null)[] | null = null;
-  private count = 0;
-  private threshold = 0;
-  private modCount = 0;
+/** Varargs factories receive either the elements or one array (the `E...` overload). */
+const items = <T>(args: unknown[]): T[] => (args.length === 1 && Array.isArray(args[0]) ? (args[0] as T[]) : (args as T[]));
+const noNulls = <T>(xs: T[]): T[] => {
+  if (xs.some((x) => x === null || x === undefined)) throw new NullPointerException(null);
+  return xs;
+};
 
-  /** new HashMap(), new HashMap(initialCapacity), new HashMap(map) */
-  constructor(init?: number | HashMap<K, V>) {
-    super();
-    if (typeof init === "number") this.threshold = tableSizeFor(init);
-    else if (init instanceof HashMap) this.putAll(init);
-  }
+export const ListStatics = {
+  of: <T>(...args: unknown[]) => new ImmutableList<T>(noNulls(items<T>(args).slice())),
+  copyOf: <T>(c: unknown) => new ImmutableList<T>(noNulls(Array.from(elementsOf<T>(c)))),
+};
+/** Java randomizes the iteration order of Set.of/Map.of per run; these keep insertion order. */
+export const SetStatics = {
+  of: <T>(...args: unknown[]) => new ImmutableSet<T>(noNulls(items<T>(args))).freeze(),
+  copyOf: <T>(c: unknown) => new ImmutableSet<T>(c).freeze(),
+};
+export const MapStatics = {
+  of: <K, V>(...kv: unknown[]) => ImmutableMap.of<K, V>(kv),
+  entry: <K, V>(k: K, v: V) => new Entry(k, v),
+  ofEntries: <K, V>(...args: unknown[]) => ImmutableMap.of<K, V>(items<Entry<K, V>>(args).flatMap((e) => [e.getKey(), e.getValue()])),
+  copyOf: <K, V>(m: AbstractMap<K, V>) => new ImmutableMap<K, V>(m).freeze(),
+};
 
-  private resize(): (Node<K, V> | null)[] {
-    const old = this.table;
-    const oldCap = old ? old.length : 0;
-    let newCap: number;
-    if (oldCap > 0) newCap = oldCap * 2;
-    else newCap = this.threshold > 0 ? this.threshold : 16;
-    this.threshold = Math.floor(newCap * 0.75);
-    const tab: (Node<K, V> | null)[] = new Array(newCap).fill(null);
-    if (old) {
-      for (let j = 0; j < oldCap; j++) {
-        let e = old[j];
-        if (!e) continue;
-        let loHead: Node<K, V> | null = null, loTail: Node<K, V> | null = null;
-        let hiHead: Node<K, V> | null = null, hiTail: Node<K, V> | null = null;
-        while (e) {
-          const next: Node<K, V> | null = e.next;
-          e.next = null;
-          if ((e.hash & oldCap) === 0) {
-            if (loTail) loTail.next = e;
-            else loHead = e;
-            loTail = e;
-          } else {
-            if (hiTail) hiTail.next = e;
-            else hiHead = e;
-            hiTail = e;
-          }
-          e = next;
-        }
-        tab[j] = loHead;
-        tab[j + oldCap] = hiHead;
-      }
-    }
-    this.table = tab;
-    return tab;
-  }
+// --- Arrays ------------------------------------------------------------------------------------------------
 
-  private node(k: unknown): Node<K, V> | null {
-    const tab = this.table;
-    if (!tab) return null;
-    const h = spread(k);
-    for (let e = tab[(tab.length - 1) & h]; e; e = e.next) if (e.hash === h && jequals(e.key, k)) return e;
-    return null;
-  }
+type AnyArray = ArrayLike<unknown> & { slice(a?: number, b?: number): AnyArray; constructor: Function };
 
-  size(): number {
-    return this.count;
-  }
-  isEmpty(): boolean {
-    return this.count === 0;
-  }
-  get(k: unknown): V | null {
-    const e = this.node(k);
-    return e ? e.value : null;
-  }
-  getOrDefault(k: unknown, d: V): V {
-    const e = this.node(k);
-    return e ? e.value : d;
-  }
-  containsKey(k: unknown): boolean {
-    return this.node(k) !== null;
-  }
-  containsValue(v: unknown): boolean {
-    for (const e of this.nodes()) if (jequals(e.value, v)) return true;
-    return false;
-  }
-  put(k: K, v: V): V | null {
-    const tab = this.table ?? this.resize();
-    const h = spread(k);
-    const i = (tab.length - 1) & h;
-    let e = tab[i];
-    if (!e) tab[i] = new Node(h, k, v);
-    else {
-      for (;;) {
-        if (e.hash === h && jequals(e.key, k)) return e.setValue(v);
-        if (!e.next) break;
-        e = e.next;
-      }
-      e.next = new Node(h, k, v);
-    }
-    this.modCount++;
-    if (++this.count > this.threshold) this.resize();
-    return null;
-  }
-  putIfAbsent(k: K, v: V): V | null {
-    const e = this.node(k);
-    if (e && e.value !== null) return e.value;
-    if (e) return e.setValue(v);
-    this.put(k, v);
-    return null;
-  }
-  putAll(m: HashMap<K, V>): void {
-    for (const e of m.nodes()) this.put(e.key, e.value);
-  }
-  remove(k: unknown): V | null {
-    const tab = this.table;
-    if (!tab) return null;
-    const h = spread(k);
-    const i = (tab.length - 1) & h;
-    let prev: Node<K, V> | null = null;
-    for (let e = tab[i]; e; prev = e, e = e.next) {
-      if (e.hash === h && jequals(e.key, k)) {
-        if (prev) prev.next = e.next;
-        else tab[i] = e.next;
-        this.count--;
-        this.modCount++;
-        return e.value;
-      }
-    }
-    return null;
-  }
-  clear(): void {
-    if (this.table) this.table.fill(null);
-    this.count = 0;
-    this.modCount++;
-  }
-  /** Entries in Java's iteration order. */
-  *nodes(): Generator<Node<K, V>> {
-    const tab = this.table;
-    if (!tab) return;
-    const expected = this.modCount;
-    for (let i = 0; i < tab.length; i++) {
-      for (let e = tab[i]; e; e = e.next) {
-        if (this.modCount !== expected) throw new ConcurrentModificationException(null);
-        yield e;
-      }
-    }
-  }
-  keySet(): MapView<K> {
-    return new MapView(this, (e) => e.key);
-  }
-  values(): MapView<V> {
-    return new MapView(this, (e) => e.value);
-  }
-  entrySet(): MapView<Node<K, V>> {
-    return new MapView(this, (e) => e);
-  }
-  forEach(f: { accept(k: K, v: V): void }): void {
-    for (const e of this.nodes()) f.accept(e.key, e.value);
-  }
-  merge(k: K, v: V, f: { apply(a: V, b: V): V | null }): V | null {
-    const old = this.get(k);
-    const nv = old === null ? v : f.apply(old, v);
-    if (nv === null) this.remove(k);
-    else this.put(k, nv);
-    return nv;
-  }
-  computeIfAbsent(k: K, f: { apply(k: K): V }): V {
-    const e = this.node(k);
-    if (e && e.value !== null) return e.value;
-    const v = f.apply(k);
-    if (v !== null) this.put(k, v);
-    return v;
-  }
-  override toString(): string {
-    return "{" + Array.from(this.nodes(), (e) => `${e.key === (this as unknown) ? "(this Map)" : valueOf(e.key)}=${e.value === (this as unknown) ? "(this Map)" : valueOf(e.value)}`).join(", ") + "}";
-  }
-  override equals(o: unknown): boolean {
-    if (!(o instanceof HashMap) || o.size() !== this.size()) return false;
-    for (const e of this.nodes()) if (!o.containsKey(e.key) || !jequals(o.get(e.key), e.value)) return false;
-    return true;
-  }
-  override hashCode(): number {
-    let h = 0;
-    for (const e of this.nodes()) h = (h + e.hashCode()) | 0;
-    return h;
-  }
-}
-
-/** keySet()/values()/entrySet(): live views of a HashMap. */
-class MapView<T> extends AbstractCollection<T> {
-  private readonly map: HashMap<unknown, unknown>;
-  private readonly pick: (e: Node<unknown, unknown>) => T;
-  constructor(map: unknown, pick: (e: Node<never, never>) => T) {
-    super();
-    this.map = map as HashMap<unknown, unknown>;
-    this.pick = pick as (e: Node<unknown, unknown>) => T;
-  }
-  size(): number {
-    return this.map.size();
-  }
-  iterator(): JIterator<T> {
-    const nodes = Array.from(this.map.nodes());
-    let i = 0;
-    let last: Node<unknown, unknown> | null = null;
-    return {
-      hasNext: () => i < nodes.length,
-      next: () => {
-        if (i >= nodes.length) throw new NoSuchElementException(null);
-        last = nodes[i++];
-        return this.pick(last);
-      },
-      remove: () => {
-        if (!last) throw new IllegalStateException(null);
-        this.map.remove(last.key);
-        last = null;
-      },
-    };
-  }
-  remove(o: unknown): boolean {
-    for (const e of this.map.nodes()) {
-      if (jequals(this.pick(e), o)) {
-        this.map.remove(e.key);
-        return true;
-      }
-    }
-    return false;
-  }
-  add(): boolean {
-    throw new UnsupportedOperationException(null);
-  }
-}
-
-export class HashSet<T> extends AbstractCollection<T> {
-  private readonly map = new HashMap<T, boolean>();
-  constructor(init?: number | unknown) {
-    super();
-    if (init !== undefined && typeof init !== "number") for (const x of elementsOf<T>(init)) this.add(x);
-  }
-  size(): number {
-    return this.map.size();
-  }
-  add(x: T): boolean {
-    return this.map.put(x, true) === null;
-  }
-  addAll(c: unknown): boolean {
-    let changed = false;
-    for (const x of elementsOf<T>(c)) changed = this.add(x) || changed;
-    return changed;
-  }
-  override contains(o: unknown): boolean {
-    return this.map.containsKey(o);
-  }
-  remove(o: unknown): boolean {
-    return this.map.remove(o) !== null;
-  }
-  clear(): void {
-    this.map.clear();
-  }
-  iterator(): JIterator<T> {
-    return this.map.keySet().iterator();
-  }
-  removeIf(p: Predicate<T>): boolean {
-    let changed = false;
-    for (const x of Array.from(this)) if (p.test(x)) changed = this.remove(x) || changed;
-    return changed;
-  }
-  override equals(o: unknown): boolean {
-    return o instanceof HashSet && o.size() === this.size() && this.containsAll(o);
-  }
-  override hashCode(): number {
-    let h = 0;
-    for (const x of this) h = (h + jhash(x)) | 0;
-    return h;
-  }
-}
-
-// --- Collections / Arrays (first part) ---------------------------------------------------------------
-
+/** Element text as Arrays.toString prints it (float/double/long/char typed arrays need their type). */
 function elementText(a: unknown, x: unknown): string {
   if (a instanceof Float32Array) return floatToString(x as number);
   if (a instanceof Float64Array) return isLongArray(a) ? longToString(x as number) : doubleToString(x as number);
@@ -523,104 +230,229 @@ function elementText(a: unknown, x: unknown): string {
   return valueOf(x);
 }
 
-export const Collections = {
-  sort<T>(list: ArrayList<T>, c?: Comparator<T>) {
-    list.sort(c ?? null);
-  },
-  reverse<T>(list: ArrayList<T>) {
-    const items = list.toArray().reverse();
-    list.clear();
-    for (const x of items) list.add(x);
-  },
-  shuffle<T>(list: ArrayList<T>) {
-    const items = list.toArray();
-    for (let i = items.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [items[i], items[j]] = [items[j], items[i]];
-    }
-    list.clear();
-    for (const x of items) list.add(x);
-  },
-  swap<T>(list: ArrayList<T>, i: number, j: number) {
-    list.set(i, list.set(j, list.get(i)));
-  },
-  max<T>(c: unknown, cmp?: Comparator<T>): T {
-    const items = Array.from(elementsOf<T>(c));
-    if (!items.length) throw new NoSuchElementException(null);
-    return items.reduce((a, b) => ((cmp ? cmp.compare(a, b) : jcompare(a, b)) >= 0 ? a : b));
-  },
-  min<T>(c: unknown, cmp?: Comparator<T>): T {
-    const items = Array.from(elementsOf<T>(c));
-    if (!items.length) throw new NoSuchElementException(null);
-    return items.reduce((a, b) => ((cmp ? cmp.compare(a, b) : jcompare(a, b)) <= 0 ? a : b));
-  },
-  frequency(c: unknown, o: unknown): number {
-    let n = 0;
-    for (const x of elementsOf(c)) if (jequals(x, o)) n++;
-    return n;
-  },
-  addAll<T>(c: ArrayList<T>, items: T[]): boolean {
-    for (const x of items) c.add(x);
-    return items.length > 0;
-  },
-  unmodifiableList: <T>(l: T) => l,
-  emptyList: <T>() => new ArrayList<T>(),
-  nCopies<T>(n: number, x: T): ArrayList<T> {
-    const l = new ArrayList<T>();
-    for (let i = 0; i < n; i++) l.add(x);
-    return l;
-  },
-};
+function elementHash(a: unknown, x: unknown): number {
+  if (a instanceof Float32Array) return floatToIntBits(x as number);
+  if (a instanceof Float64Array) {
+    if (!isLongArray(a)) return doubleHash(x as number);
+    const v = x as number;
+    return (Math.floor(v / 2 ** 32) ^ (v % 2 ** 32 < 0 ? (v % 2 ** 32) + 2 ** 32 : v % 2 ** 32)) | 0;
+  }
+  if (ArrayBuffer.isView(a)) return x as number;
+  if (typeof x === "boolean") return x ? 1231 : 1237;
+  return jhash(x);
+}
+
+function defaultValue(a: unknown): unknown {
+  return ArrayBuffer.isView(a) ? 0 : isArray(a) && arrayDescriptor(a) === "[Z" ? false : null;
+}
 
 export const Arrays = {
   toString(a: ArrayLike<unknown> | null): string {
     if (a === null) return "null";
     return "[" + Array.from(a, (x) => elementText(a, x)).join(", ") + "]";
   },
-  sort(a: { sort(f?: (x: never, y: never) => number): unknown; subarray?: unknown } & ArrayLike<unknown>, x?: unknown, y?: unknown, z?: unknown) {
-    if (typeof x === "number") {
-      const part = Array.from(a).slice(x, y as number);
-      part.sort(ArrayBuffer.isView(a) ? (p, q) => (p as number) - (q as number) : z ? (p, q) => (z as { compare(a: unknown, b: unknown): number }).compare(p, q) : jcompare);
-      for (let i = 0; i < part.length; i++) (a as unknown as unknown[])[x + i] = part[i];
+  deepToString(a: ArrayLike<unknown> | null): string {
+    if (a === null) return "null";
+    return "[" + Array.from(a, (x) => (isArray(x) ? Arrays.deepToString(x as ArrayLike<unknown>) : elementText(a, x))).join(", ") + "]";
+  },
+  /** sort(a), sort(a, comparator), sort(a, from, to), sort(a, from, to, comparator) */
+  sort(a: AnyArray, x?: unknown, y?: unknown, z?: unknown) {
+    const ranged = typeof x === "number";
+    const from = ranged ? (x as number) : 0;
+    const to = ranged ? (y as number) : a.length;
+    const c = (ranged ? z : x) as Comparator<unknown>;
+    if (from < 0 || to > a.length || from > to) throw new IndexOutOfBoundsException(`Array index out of range: ${to}`);
+    if (ArrayBuffer.isView(a)) {
+      (a as unknown as Float64Array).subarray(from, to).sort();
       return;
     }
-    if (ArrayBuffer.isView(a)) (a as unknown as Float64Array).sort();
-    else (a as unknown as unknown[]).sort(x ? (p, q) => (x as { compare(a: unknown, b: unknown): number }).compare(p, q) : jcompare);
+    const part = (a as unknown as unknown[]).slice(from, to).sort(cmpFn(c));
+    for (let i = 0; i < part.length; i++) (a as unknown as unknown[])[from + i] = part[i];
   },
+  /** fill(a, value) or fill(a, from, to, value) */
   fill(a: { fill(v: unknown, s?: number, e?: number): unknown }, x: unknown, y?: unknown, z?: unknown) {
     if (z !== undefined) a.fill(z, x as number, y as number);
     else a.fill(x);
   },
-  copyOf<T extends { slice(a?: number, b?: number): T; length: number; constructor: Function }>(a: T, n: number): T {
-    if (n <= a.length) return a.slice(0, n);
-    const out = new (a.constructor as new (n: number) => T & { set(x: T): void; fill?(v: unknown, s?: number): void })(n);
+  copyOf<T extends AnyArray>(a: T, n: number): T {
+    if (n < 0) throw new IllegalArgumentException(String(n));
+    if (n <= a.length) return Arrays.tag(a.slice(0, n), a) as T;
+    const out = new (a.constructor as new (n: number) => T & { set(x: T): void })(n);
     if (Array.isArray(out)) {
-      (out as unknown as unknown[]).fill(isArray(a) && arrayDescriptor(a) === "[Z" ? false : null);
-      for (let i = 0; i < a.length; i++) (out as unknown as unknown[])[i] = (a as unknown as unknown[])[i];
+      (out as unknown as unknown[]).fill(defaultValue(a));
+      for (let i = 0; i < a.length; i++) (out as unknown as unknown[])[i] = a[i];
     } else out.set(a);
-    return out;
+    return Arrays.tag(out, a) as T;
   },
-  copyOfRange<T extends { slice(a?: number, b?: number): T }>(a: T, from: number, to: number): T {
-    return a.slice(from, to);
+  copyOfRange<T extends AnyArray>(a: T, from: number, to: number): T {
+    if (from > to) throw new IllegalArgumentException(`${from} > ${to}`);
+    if (from < 0 || from > a.length) throw new IndexOutOfBoundsException(`Array index out of range: ${from}`);
+    return Arrays.copyOf(Arrays.tag(a.slice(from), a) as T, to - from);
   },
-  asList<T>(items: ArrayLike<T>): ArrayList<T> {
-    return new ArrayList<T>(Array.from(items));
+  /** Keep the long[] mark on copies. */
+  tag(copy: unknown, of: unknown): unknown {
+    if (isLongArray(of)) (copy as Record<symbol, boolean>)[LONG_ARRAY] = true;
+    return copy;
+  },
+  asList<T>(a: T[]): ArraysAsList<T> {
+    return new ArraysAsList<T>(a);
   },
   equals(a: ArrayLike<unknown> | null, b: ArrayLike<unknown> | null): boolean {
     if (a === b) return true;
     if (!a || !b || a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (!jequals(a[i], b[i])) return false;
+    for (let i = 0; i < a.length; i++) if (!(Object.is(a[i], b[i]) || jequals(a[i], b[i]))) return false;
     return true;
   },
-  binarySearch(a: ArrayLike<number>, key: number): number {
-    let lo = 0;
-    let hi = a.length - 1;
+  deepEquals(a: ArrayLike<unknown> | null, b: ArrayLike<unknown> | null): boolean {
+    if (a === b) return true;
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      const x = a[i];
+      const y = b[i];
+      if (isArray(x) && isArray(y) ? !Arrays.deepEquals(x as ArrayLike<unknown>, y as ArrayLike<unknown>) : !jequals(x, y)) return false;
+    }
+    return true;
+  },
+  hashCode(a: ArrayLike<unknown> | null): number {
+    if (a === null) return 0;
+    let h = 1;
+    for (let i = 0; i < a.length; i++) h = (Math.imul(31, h) + elementHash(a, a[i])) | 0;
+    return h;
+  },
+  deepHashCode(a: ArrayLike<unknown> | null): number {
+    if (a === null) return 0;
+    let h = 1;
+    for (let i = 0; i < a.length; i++) {
+      const x = a[i];
+      h = (Math.imul(31, h) + (isArray(x) ? Arrays.deepHashCode(x as ArrayLike<unknown>) : elementHash(a, x))) | 0;
+    }
+    return h;
+  },
+  /** binarySearch(a, key), (a, key, comparator), (a, from, to, key[, comparator]) */
+  binarySearch(a: ArrayLike<unknown>, x: unknown, y?: unknown, z?: unknown, w?: unknown): number {
+    const ranged = arguments.length >= 4;
+    let lo = ranged ? (x as number) : 0;
+    let hi = (ranged ? (y as number) : a.length) - 1;
+    const key = ranged ? z : x;
+    const f = ArrayBuffer.isView(a) ? (p: unknown, q: unknown) => ((p as number) < (q as number) ? -1 : (p as number) > (q as number) ? 1 : 0) : cmpFn((ranged ? w : y) as Comparator<unknown>);
     while (lo <= hi) {
       const mid = (lo + hi) >>> 1;
-      if (a[mid] < key) lo = mid + 1;
-      else if (a[mid] > key) hi = mid - 1;
+      const r = f(a[mid], key);
+      if (r < 0) lo = mid + 1;
+      else if (r > 0) hi = mid - 1;
       else return mid;
     }
     return -(lo + 1);
   },
 };
+
+// --- Objects -----------------------------------------------------------------------------------------------
+
+export const Objects = {
+  equals: (a: unknown, b: unknown) => a === b || (a !== null && a !== undefined && jequals(a, b)),
+  deepEquals: (a: unknown, b: unknown) => (isArray(a) && isArray(b) ? Arrays.deepEquals(a as ArrayLike<unknown>, b as ArrayLike<unknown>) : Objects.equals(a, b)),
+  hashCode: (o: unknown) => (o === null || o === undefined ? 0 : jhash(o)),
+  hash: (...args: unknown[]) => Arrays.hashCode(items(args)),
+  toString: (o: unknown, nullDefault?: string) => (o === null && nullDefault !== undefined ? nullDefault : valueOf(o)),
+  isNull: (o: unknown) => o === null || o === undefined,
+  nonNull: (o: unknown) => o !== null && o !== undefined,
+  requireNonNull<T>(o: T, message?: string | { get(): string }): T {
+    if (o === null || o === undefined) throw new NullPointerException(message === undefined ? null : typeof message === "string" ? message : message.get());
+    return o;
+  },
+  requireNonNullElse<T>(o: T, other: T): T {
+    return o !== null && o !== undefined ? o : Objects.requireNonNull(other, "defaultObj");
+  },
+  compare<T>(a: T, b: T, c: { compare(a: T, b: T): number }): number {
+    return a === b ? 0 : c.compare(a, b);
+  },
+  checkIndex(i: number, n: number): number {
+    if (i < 0 || i >= n) throw new IndexOutOfBoundsException(`Index ${i} out of bounds for length ${n}`);
+    return i;
+  },
+};
+
+// --- StringJoiner / StringTokenizer ------------------------------------------------------------------------
+
+export class StringJoiner extends JObject {
+  private readonly $delim: string;
+  private readonly $prefix: string;
+  private readonly $suffix: string;
+  private $parts: string[] = [];
+  private $emptyValue: string | null = null;
+  constructor(delim: string, prefix = "", suffix = "") {
+    super();
+    this.$delim = delim;
+    this.$prefix = prefix;
+    this.$suffix = suffix;
+  }
+  add(s: unknown): this {
+    this.$parts.push(valueOf(s));
+    return this;
+  }
+  setEmptyValue(s: string): this {
+    this.$emptyValue = s;
+    return this;
+  }
+  merge(o: StringJoiner): this {
+    if (o.$parts.length) this.$parts.push(o.$parts.join(o.$delim));
+    return this;
+  }
+  length(): number {
+    return this.toString().length;
+  }
+  override toString(): string {
+    if (!this.$parts.length && this.$emptyValue !== null) return this.$emptyValue;
+    return this.$prefix + this.$parts.join(this.$delim) + this.$suffix;
+  }
+}
+
+export class StringTokenizer extends JObject {
+  private readonly $s: string;
+  private $delims: string;
+  private readonly $returnDelims: boolean;
+  private $pos = 0;
+  constructor(s: string, delims = " \t\n\r\f", returnDelims = false) {
+    super();
+    this.$s = s;
+    this.$delims = delims;
+    this.$returnDelims = returnDelims;
+  }
+  private skip(pos: number): number {
+    if (this.$returnDelims) return pos;
+    while (pos < this.$s.length && this.$delims.includes(this.$s[pos])) pos++;
+    return pos;
+  }
+  private scan(pos: number): number {
+    const start = pos;
+    while (pos < this.$s.length && !this.$delims.includes(this.$s[pos])) pos++;
+    if (this.$returnDelims && start === pos && pos < this.$s.length) pos++;
+    return pos;
+  }
+  hasMoreTokens(): boolean {
+    return this.skip(this.$pos) < this.$s.length;
+  }
+  hasMoreElements(): boolean {
+    return this.hasMoreTokens();
+  }
+  /** nextToken() or nextToken(newDelimiters) */
+  nextToken(delims?: string): string {
+    if (delims !== undefined) this.$delims = delims;
+    const start = this.skip(this.$pos);
+    if (start >= this.$s.length) throw new NoSuchElementException(null);
+    this.$pos = this.scan(start);
+    return this.$s.slice(start, this.$pos);
+  }
+  nextElement(): string {
+    return this.nextToken();
+  }
+  countTokens(): number {
+    let n = 0;
+    for (let p = this.$pos; ; n++) {
+      p = this.skip(p);
+      if (p >= this.$s.length) return n;
+      p = this.scan(p);
+    }
+  }
+}
+

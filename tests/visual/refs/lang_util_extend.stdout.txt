@@ -1,0 +1,11 @@
+bag[a, b, x, x] 4 2 true true
+{not=1, be=2, or=1, to=2} 2 4
+[3, 1, 2, 4] 4
+{4=v4, 2=v2, 5=v5} [4, 2, 5]
+10 7 true 8 false
+UOE remove
+[0, 1, 4]
+[2h, 2s, 3d, 3h, 4d, 5s] 5s 3d
+[4d, 3d, 3h, 2h, 5s, 2s]
+[2h, 2s, 3d, 3h, 4d, 5s] 2h 6 true 6
+{4d=2, 3h=2, 5s=2}

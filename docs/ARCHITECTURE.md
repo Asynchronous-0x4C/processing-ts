@@ -140,7 +140,7 @@ const $ArrayList = $rt.classes["java.util.ArrayList"];
 
 ## 言語ランタイム（`src/runtime/lang/`）
 
-生成コードは `$rt.lang`（`lang`）のヘルパと `$rt.classes`（`javaClasses` + Processing のクラス）だけを使う。DOM 非依存で、`npm run test:lang` では描画しないスタブの PApplet と組み合わせて Node で動かしている。
+生成コードは `$rt.lang`（`lang`）のヘルパと `$rt.classes`（`javaClasses` + Processing のクラス）だけを使う。`$rt.classes` に無いクラスは `$L.missingClass` に置き換わり、使った時点で UnsupportedOperationException になる。ライブラリのクラスはスケッチのクラスから継承できる（`index.ts` が `$init` を付ける）ので、ランタイムのクラスの内部メンバーは `$` で始める（継承した側の名前と衝突させない）。DOM 非依存で、`npm run test:lang` では描画しないスタブの PApplet と組み合わせて Node で動かしている。
 
 | ファイル | 内容 |
 |---|---|
@@ -152,7 +152,10 @@ const $ArrayList = $rt.classes["java.util.ArrayList"];
 | `arrays.ts` | 型付き配列の生成（`int[]` → Int32Array など、多次元）、境界チェック `ck`、`clone` |
 | `print.ts` | 出力先（`setOutput`）と print/println/printArray の書式 |
 | `misc.ts` | 実行時の型でしか決まらない操作（`jequals`/`jhash`/`jcompare`）、Processing の変換関数（`int()`・`nf()`・`hex()` 等）、System |
-| `jlang.ts` / `util.ts` / `functional.ts` | Integer/Float/Character… の static メソッドと StringBuilder、ArrayList/HashMap（Java と同じバケット順で列挙）/HashSet/Collections/Arrays、Comparator と java.util.function |
+| `jlang.ts` / `functional.ts` | Integer/Float/Character… の static メソッドと StringBuilder、Comparator と java.util.function |
+| `collections.ts` | java.util のインタフェースの登録（`instanceof List` など）、AbstractCollection/AbstractList、ArrayList/LinkedList/ArrayDeque/Vector/Stack/PriorityQueue/CopyOnWriteArrayList、ビュー（subList・unmodifiableList・Arrays.asList）。反復子は Java と同じ時点で ConcurrentModificationException |
+| `maps.ts` | AbstractMap（Map の既定メソッドとビュー）、HashMap（Java の表の大きさと列挙順を再現）/LinkedHashMap/TreeMap、HashSet/LinkedHashSet/TreeSet |
+| `util.ts` | Collections、Arrays、Objects、Random（Javadoc の線形合同法）、StringJoiner、StringTokenizer、List/Set/Map の static ファクトリ |
 
 制約: `src/compiler/`・`src/runtime/` と `tools/` は Node の型除去でそのまま実行されるため、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など JS に変換が必要な TS 構文を使わない。型チェックは DOM を含まない `src/compiler/tsconfig.json` と `src/runtime/tsconfig.json` で行う（`npm run typecheck`）。
 

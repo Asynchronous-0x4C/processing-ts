@@ -342,7 +342,8 @@ export class Gen {
     const out = ['"use strict";', "const $L = $rt.lang, $S = $L.S, $M = Math, $f = Math.fround, $imul = Math.imul;"];
     const helpers = [...this.helpers].filter((n) => !["L", "S", "M", "f", "imul"].includes(n)).sort();
     if (helpers.length) out.push(`const { ${helpers.map((n) => `${n}: $${n}`).join(", ")} } = $L;`);
-    for (const [name, alias] of this.libAliases) out.push(`const ${alias} = $rt.classes[${JSON.stringify(name)}];`);
+    // A class the type checker knows but the runtime lacks fails when it is used, with a clear message.
+    for (const [name, alias] of this.libAliases) out.push(`const ${alias} = $rt.classes[${JSON.stringify(name)}] ?? $L.missingClass(${JSON.stringify(name)});`);
     for (const [name, alias] of this.ifaceAliases) out.push(`const ${alias} = $L.libraryIface(${JSON.stringify(name)});`);
     return out;
   }
@@ -1606,16 +1607,11 @@ export class Gen {
 
   /** Return type of the function type of `t` (the SAM's return viewed through t's type arguments). */
   private samReturn(t: Type, sam: MethodSymbol): Type {
-    if (t.tag !== "class" || !sam.typeParams) return sam.ret;
-    const params = sam.owner.typeParams;
-    if (!params.length || !t.args.length) return erasure(sam.ret);
-    const map = new Map(params.map((p, i) => [p, t.args[i]]));
-    const r = sam.ret;
-    if (r.tag === "tvar" && map.has(r.sym)) {
-      const a = map.get(r.sym)!;
-      return a.tag === "wild" ? (a.bound ?? this.ts.object) : a;
-    }
-    return r;
+    if (t.tag !== "class") return sam.ret;
+    // The SAM may be inherited (BinaryOperator<T> → BiFunction<T,T,T>.apply): view t as its owner.
+    const sup = asSuper(t, sam.owner);
+    if (!sup || !sup.args.length) return erasure(sam.ret);
+    return substitute(sam.ret, substOf({ ...sup, args: sup.args.map(upperBound) }));
   }
 
   /**

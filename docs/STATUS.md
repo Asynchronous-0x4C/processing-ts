@@ -9,7 +9,7 @@
 |---|---|
 | 構文解析 | 実行パスは ANTLR4 + Processing 公式文法（Java 8 時代の古いコピー）。SLL 予測 + LL フォールバック（P0-1）。コールド時のコストが残る（T2）。新コンパイラ（`src/compiler/`、未接続）は Lezer 文法 + 型付き AST まで完成（P1-1/P1-2）: 同梱 examples 254 本を診断なしで AST 化、構文エラーはタブ・行・列つきで複数件 |
 | 意味解析（型） | 実行パスは**なし**（型情報を使わずに文字列変換しているため Java の意味論がずれる）。新コンパイラ（未接続）は型検査まで完成（P1-4）: 本物の Processing の `cli --build` と 2,330/2,333 件一致、見逃し 0（`npm run test:check`） |
-| コード生成 | 新コンパイラ（未接続）のコード生成と言語ランタイム（`src/runtime/lang/`）が完成（P1-5）: `lang` タグの 17 ケース中 16 件で println 出力が本物の Processing と完全一致（`npm run test:lang`、残り 1 件は Node のスタブに `random()` が無いため）。同梱 examples とリポジトリのスケッチ 309 本中 308 本が構文エラーの無い JS に変換され（1 本は `java.awt` を使うため拒否）、210 本は Node のスタブ上で 3 フレーム実行できる（残りはスタブに PVector・PImage などが無いため） |
+| コード生成 | 新コンパイラ（未接続）のコード生成と言語ランタイム（`src/runtime/lang/`）が完成（P1-5）: `lang` タグの 21 ケース中 20 件で println 出力が本物の Processing と完全一致（`npm run test:lang`、残り 1 件は Node のスタブに `random()` が無いため）。java.util の互換層あり（P1-7）。同梱 examples とリポジトリのスケッチ 313 本中 312 本が構文エラーの無い JS に変換され（1 本は `java.awt` を使うため拒否）、多くは Node のスタブ上で 3 フレーム実行できる（残りはスタブに PVector・PImage などが無いため） |
 | 静的モード | **未対応**（setup/draw の無いスケッチは変換時に例外） |
 | 2D 描画 | 基本図形・変換・色・createGraphics は概ね動く。細部（既定値、モード、stroke の端/結合、テキスト）にずれ |
 | P2D / P3D / PShader | **未実装** |
@@ -17,7 +17,7 @@
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
 | 同梱サンプル | 21 本すべてがエラーなく実行 |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **95 本（37%）** がエラーなく完走（JAVA2D 54% / P2D 14% / P3D 3%）。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 32 ケース: 5 PASS / 27 XFAIL（[TESTING.md](TESTING.md)）。XFAIL のうち 17 件は新コンパイラでは通る言語仕様のケース |
+| 視覚テスト | 36 ケース: 5 PASS / 31 XFAIL（[TESTING.md](TESTING.md)）。XFAIL のうち 21 件は新コンパイラでは通る言語仕様のケース |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
@@ -86,6 +86,8 @@
 | C7 | `Float.toString` の JDK 17 の再現が 4e25〜7.5e25 付近の一部の値で異なる（Java 17 で出力した 399,211 個の float のうち 73 個） | `runtime/lang/numbers.ts` |
 | C8 | Integer/Long/Short/Byte のボックスは JS の number のまま: `Integer a = 1000, b = 1000; a == b` が true（Java はキャッシュ範囲外なので false）、整数の `getClass()` は常に `java.lang.Integer`、null の Integer をアンボクシングしても NullPointerException にならない（Character/Float/Double は `JChar`/`JFloat`/`JDouble` なので Java どおり） | `codegen.ts`（box/unbox） |
 | C9 | Java モード: スケッチのクラスのコンストラクタは使えない（`unsupported` で報告）。スケッチ以外のトップレベルのクラスはスケッチの static メンバーとして扱うので、スケッチの static メンバーを単純名で参照できてしまう（Java ではエラー） | `sketch.ts` |
+| C10 | Processing 4.5.2 は Java 9 以降の文脈キーワード（`module` `open` `opens` `requires` `exports` `to` `uses` `provides` `with` `transitive` `yield` `record` `sealed` `permits` `var`）を変数名・フィールド名に使えない（構文エラー。ローカル変数の `int to` は前処理が InternalError で落ちる）。新コンパイラは受理する | `grammar/processing.grammar` または `cst-to-ast.ts` |
+| C11 | java.util の差: TreeMap/TreeSet の `headMap`/`subSet`/`descendingMap` などはビューではなくコピー、`Set.of`/`Map.of` は挿入順（Java は実行ごとにランダム）、Hashtable と ConcurrentHashMap は HashMap と同じ順、ストリーム（`stream()`）は使えない。モデルにあってランタイムに無いクラス（Scanner・Date・Calendar・BitSet・Optional・java.io の大半）は使った時点で UnsupportedOperationException | `runtime/lang/{collections,maps,util}.ts` |
 
 ## 既知の問題（IO / PWA）
 
