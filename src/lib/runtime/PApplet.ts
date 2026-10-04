@@ -5,7 +5,6 @@ import { PSurface } from "./PSurface";
 import { JSONObject } from "./data/JSONObject";
 import { KeyEvent } from "./event/KeyEvent";
 import { MouseEvent } from "./event/MouseEvent";
-import { base_uri } from "./worker/worker_data";
 import { IOBase } from "./util/sketchio/IOBase";
 import { JSONArray } from "./data/JSONArray";
 import { XHRIO } from "./util/sketchio/XHRIO";

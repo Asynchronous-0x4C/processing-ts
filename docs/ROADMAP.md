@@ -28,7 +28,7 @@
 - [x] **P0-2 デバッグ出力の除去**（S, T16, R8）
   `PImage.updatePixels` の `console.log(btoa(...))`、`Transpiler.visitLastFormalParameter` / `ReferenceSolver.isMemberMethod` の console.log、`Control.ts` の計測ログ（オプション化）。
   完了条件: `npm run vt -- shot public/samples/Image/create_image` がエラーなしで完走。
-- [ ] **P0-3 リポジトリの整理**（S）
+- [x] **P0-3 リポジトリの整理**（S）
   未使用依存（`p5`, `@types/p5`）と自己参照 `"processing-ts": "file:"` の削除。旧実装（`runtime/renderer/`, `runtime/worker/`, `runner/AsyncRunner.ts`, `runtime/intex.ts`, `index.ts` のコメントアウト）の削除。`vite.config.ts` のサンプル一覧生成をパス区切りに依存しない実装にし、無関係な watcher パスを削除。
   完了条件: `npm run build` を一時ディレクトリへ出力して成功（`vite build --outDir <tmp>`。コミット済みの dist は変えない）、デモ（`npm run dev`）のサンプル一覧が従来どおり。
 - [ ] **P0-4 性能・サイズ計測 CLI**（M）

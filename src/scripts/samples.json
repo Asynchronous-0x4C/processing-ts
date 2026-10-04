@@ -1,45 +1,45 @@
 {
-  "Structure": [
-    "create_graphics"
+  "Arrays": [
+    "array2d",
+    "array",
+    "array_objects"
   ],
-  "Image": [
-    "pointillism",
-    "create_image",
-    "background_image"
+  "Color": [
+    "brightness",
+    "color_variables",
+    "hue",
+    "linear_gradient",
+    "radial_gradient",
+    "relativity",
+    "saturation"
+  ],
+  "Data": [
+    "characters_strings"
   ],
   "Forms": [
     "regular_polygon"
   ],
-  "Input": [
-    "constrain",
-    "clock"
-  ],
-  "Color": [
-    "saturation",
-    "relativity",
-    "radial_gradient",
-    "linear_gradient",
-    "hue",
-    "color_variables",
-    "brightness"
-  ],
   "Games": [
     "simple_shooter_game"
+  ],
+  "Image": [
+    "background_image",
+    "create_image",
+    "pointillism"
+  ],
+  "Input": [
+    "clock",
+    "constrain"
+  ],
+  "Structure": [
+    "create_graphics"
   ],
   "Template": [
     "sketch"
   ],
   "Transform": [
-    "rotate",
     "arm",
+    "rotate",
     "scale"
-  ],
-  "Arrays": [
-    "array_objects",
-    "array",
-    "array2d"
-  ],
-  "Data": [
-    "characters_strings"
   ]
 }

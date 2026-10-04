@@ -27,7 +27,7 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 
 | パス | 内容 |
 |---|---|
-| `src/lib/index.ts` | ライブラリのエントリ。`SketchManager` だけを export（残りは旧 Worker 実装のコメントアウト） |
+| `src/lib/index.ts` | ライブラリのエントリ。`SketchManager` だけを export |
 | `src/lib/SketchManager.ts` | 公開 API。読み込み・変換・実行・停止・イベント登録・アスペクト比維持 |
 | `src/lib/transpiler/` | トランスパイラ（下記） |
 | `src/lib/transpiler/antlr/Processing.g4` | Processing 公式プリプロセッサの文法（Java 1.7/8 ベース + `color` 型、`#RRGGBB`、`int()` 等の変換関数、静的/アクティブ/Java モード） |
@@ -40,7 +40,6 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `src/lib/runtime/runner/DefaultRunner.ts` | フレームループとイベントキュー（`Runner` 抽象クラスもここ） |
 | `src/lib/runtime/util/` | ArrayList（Array 継承）、HashMap（Map ラッパ）、PVector、関数型インタフェース、IO |
 | `src/lib/runtime/util/sketchio/` | 同期 XHR + localStorage + 事前読み込みバッファによるファイル IO |
-| `src/lib/runtime/renderer/`, `runtime/worker/` | **旧実装（未使用）**。Worker + 描画コマンドキュー方式の名残 |
 | `src/main.ts`, `src/highlight.ts`, `src/style.css`, `index.html` | デモ用ライブエディタ（textarea + 正規表現ハイライタ） |
 | `public/samples/` | デモのサンプル（Processing 公式 examples の一部。`src/scripts/samples.json` は dev サーバ起動時に自動生成） |
 | `tools/vt/` | 視覚/出力回帰テスト CLI（[TESTING.md](TESTING.md)） |
@@ -127,5 +126,4 @@ return __applet__;
 - `npm run build` = `vite build`（ライブラリモード, `src/lib/index.ts`）+ `tsc`（型定義のみ `dist/types`）。
 - `vite-plugin-externalize-deps` で依存（pixi.js 等）を外部化。ただし antlr4 は同梱。
 - 独自プラグインが `dist/library.js` を生成（先頭の pixi import を `const X=PIXI.X` に置換し、CDN 版 Pixi のグローバルを使う形）。ルートの `library.js` はそのコピーで README からダウンロードさせている。
-- dev サーバ（`npm run dev`, port 8080, base `/processing-ts/`）起動時に `public/samples/**/sketch.properties` から `src/scripts/samples.json` を生成（**パス区切りを `\\` 前提で処理しているため Windows 以外では壊れる**）。
-- `package.json` の `p5` と `@types/p5` は未使用。`"processing-ts": "file:"` は自己参照で不要。
+- dev サーバ（`npm run dev`, port 8080, base `/processing-ts/`）起動時に `public/samples/*/*/sketch.properties` から `src/scripts/samples.json` を生成（カテゴリ/名前順）。ライブラリのビルドでは `public/` を出力に含めない（`copyPublicDir: false`）。

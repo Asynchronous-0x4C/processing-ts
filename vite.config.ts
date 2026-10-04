@@ -3,12 +3,14 @@ import path, { resolve } from "path"
 import { defineConfig } from "vite"
 import { externalizeDeps } from 'vite-plugin-externalize-deps'
 
+const SAMPLES_DIR=path.join("public","samples");
+
+/** Write src/scripts/samples.json ({category: [sketch folder, ...]}) from public/samples/<category>/<name>/sketch.properties. */
 function genSamples(){
-  const files=globSync("./public/samples/**/sketch.properties");
+  const files=globSync("public/samples/*/*/sketch.properties").sort();
   let m=new Map<string,Array<string>>();
-  files.map(f=>f.replace("public\\samples\\","").replace("\\sketch.properties","")).forEach(f=>{
-    const category=f.split("\\")[0].trim();
-    const name=f.split("\\")[1].trim();
+  files.forEach(f=>{
+    const [category,name]=path.relative(SAMPLES_DIR,path.dirname(f)).split(path.sep);
     if(!m.has(category))m.set(category,[]);
     m.get(category)!.push(name);
   });
@@ -27,6 +29,8 @@ function genSamples(){
 export default defineConfig({
   build: {
     target: 'esnext',
+    // public/ holds the demo's samples; they must not end up in the published dist/.
+    copyPublicDir: false,
     lib:{
       entry: resolve(__dirname, 'src/lib/index.ts'),
       name: "processing-ts",
@@ -48,25 +52,15 @@ export default defineConfig({
       except:["antlr4"],
     }),
     {
-      name: 'tags-generator',
+      name: 'samples-generator',
       apply: 'serve',
       configureServer(server) {
         genSamples();
-        server.watcher.on('add', (file) => {
-          if (file.startsWith('src/content/posts/')) {
-            genSamples();
-          }
-        });
-        server.watcher.on('change', (file) => {
-          if (file.startsWith('src/content/posts/')) {
-            genSamples();
-          }
-        });
-        server.watcher.on('unlink', (file) => {
-          if (file.startsWith('src/content/posts/')) {
-            genSamples();
-          }
-        });
+        const onChange=(file:string)=>{
+          if(/public[\\/]samples[\\/].*sketch\.properties$/.test(file))genSamples();
+        };
+        server.watcher.on('add',onChange);
+        server.watcher.on('unlink',onChange);
       },
     },
     {
@@ -78,7 +72,7 @@ export default defineConfig({
           const codes=b.code.split("\n");
           const imports:string=codes[0];
           codes[0]=imports.match(/{(\s*([\w,\s])+)}/)![1].trim().split(",").map(i=>i.trim()).map(i=>`const ${i}=PIXI.${i};`).join("\n");
-          writeFile(options.dir+"\\library.js",codes.join("\n"),"utf8",(err)=>{if(err)console.log(err)});
+          writeFile(path.join(options.dir!,"library.js"),codes.join("\n"),"utf8",(err)=>{if(err)console.log(err)});
         }
       },
     }

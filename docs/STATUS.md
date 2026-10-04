@@ -78,9 +78,6 @@
 ## 既知の問題（ビルド / リポジトリ）
 
 - `dist/` と `library.js` がコミットされている（ビルド成果物）。`tsc` を実行すると `dist/types` が書き換わるので注意（型チェックは `npm run typecheck` を使う）。
-- 未使用依存: `p5`, `@types/p5`。自己参照の `"processing-ts": "file:"`（`npm ci` で node_modules に自分自身へのリンクが作られ、リンクをたどるツールが無限にネストしたパスを見る）。
-- `vite.config.ts` のサンプル一覧生成が `\\` 区切り前提（Windows 以外で壊れる）。watcher のパス `src/content/posts/` は別プロジェクトの名残。
-- 旧実装の残骸: `runtime/renderer/*`, `runtime/worker/*`, `runner/AsyncRunner.ts`（空）, `runtime/intex.ts`（タイポ名）, `index.ts` のコメントアウト群。
 - README の「Processing 4.4 までの構文をサポート」は実態より強い表現。
 
 ## バンドルサイズ（現状）

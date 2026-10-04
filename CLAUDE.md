@@ -66,5 +66,4 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 - Processing 4.5 は HiDPI 画面で既定 `pixelDensity(2)`。参照生成では `pixelDensity(1)` を注入している。
 - Windows では P2D/P3D の小さいウィンドウが OS に広げられる（200px 幅 → 232px）。テストは幅 320 以上で作る。
 - 変換時に `new PApplet(null)` を作るため、トランスパイラ単体では Node で動かない（ブラウザが必要。ROADMAP で解消予定）。
-- `npm ci` は自己参照依存 `"processing-ts": "file:"` のせいで `node_modules/processing-ts` → リポジトリ自身へのリンクを作る。node_modules を再帰的にたどる処理では除外する。
 - Git Bash の heredoc で `'` を含む長い内容を書くと失敗することがある。ファイル作成は Write ツールを使う。

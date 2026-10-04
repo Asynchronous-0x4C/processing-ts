@@ -5,7 +5,6 @@ import { ArrayList } from "../util/ArrayList";
 import { Runnable, Consumer, Supplier, Function, FunctionalInterface } from "../util/function";
 import { Event, MouseEvent, KeyEvent } from "../event";
 import { PVector } from "../util/PVector";
-import { set_base_uri } from "../worker/worker_data";
 import { HashMap } from "../util/HashMap";
 
 export abstract class Runner{
@@ -119,7 +118,6 @@ export class DefaultRunner extends Runner{
     this.applet.height=this.manager.target_element!.clientHeight;
     this.applet.__log_listener__=(args:any[])=>{this.log_listeners.forEach(l=>l(args))};
     if(this.manager.sketch_resources_promise!=null)this.applet.__set_preload__((await this.manager.sketch_resources_promise).map((r:{path:string,content:ArrayBuffer})=>({path:r.path,content:new Uint8Array(r.content).buffer})));
-    set_base_uri(this.manager.base_uri);
     this.initiated=true;
     try{
       this.applet.__begin__();
