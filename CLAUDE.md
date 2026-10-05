@@ -59,7 +59,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 - `src/runtime/lang/` … 新コンパイラの生成コードが使う Java 言語ランタイム（数値・文字列・例外・ボックス・java.util の一部）。DOM 非依存
 - `src/compiler/grammar/` … 新コンパイラ用の Lezer 文法（`processing.grammar` を編集 → `npm run gen:grammar`。`parser.ts` は生成物なので手で編集しない）
 - `src/lib/transpiler/` … 旧トランスパイラ（ANTLR4。P1-9 で実行パスから外した。`npm run test:grammar` と bench の比較対象として残す。生成物の `antlr/parser/*` は **手で編集しない**）
-- `src/lib/runtime/` … PApplet（API）, PGraphics（PixiJS v8 で描画）, PImage, DefaultRunner（フレームループ）
+- `src/lib/runtime/` … PApplet（API。描画は `g` へ委譲）, PGraphics（レンダラ非依存の抽象クラス）, PGraphicsJava2D（Canvas 2D）, PImage, DefaultRunner（フレームループ）
 - `src/main.ts` ほか … デモ用エディタ。`public/samples/` はデモのサンプル
 - `tools/vt/` … 視覚テスト CLI。`tests/visual/cases/<name>/` がケース、`tests/visual/refs/` が Processing の参照（コミットする）
 - `docs/research/` … 調査・計測の生データと再現スクリプト

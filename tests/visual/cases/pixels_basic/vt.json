@@ -2,7 +2,5 @@
   "tags": [
     "2d",
     "image"
-  ],
-  "expect": "fail",
-  "knownIssue": "loadPixels()/updatePixels()/pixels[] on the main canvas are not implemented."
+  ]
 }

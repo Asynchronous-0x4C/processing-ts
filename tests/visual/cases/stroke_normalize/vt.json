@@ -1,0 +1,7 @@
+{
+  "tags": [
+    "2d"
+  ],
+  "maxDiffRatio": 0.002,
+  "note": "Without the normalization the diff is 0.78%; with it 0.01%. Keep the tolerance tight."
+}

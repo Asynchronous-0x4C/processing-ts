@@ -2,7 +2,7 @@
 
 | 種類 | コマンド | 対象 |
 |---|---|---|
-| 単体テスト | `npm test`（Vitest, `tests/unit/*.test.ts`） | Node で動く純粋なロジック（新コンパイラ `src/compiler/` のリテラル・AST・構文エラー、旧構文解析 `SketchParser`、PVector など、tools/vt の補助関数）。旧トランスパイラ全体は `new PApplet()`（Pixi/DOM）に依存するため対象外 |
+| 単体テスト | `npm test`（Vitest, `tests/unit/*.test.ts`） | Node で動く純粋なロジック（新コンパイラ `src/compiler/` のリテラル・AST・構文エラー、旧構文解析 `SketchParser`、PVector など、tools/vt の補助関数）。ランタイム（`new PApplet()`）は DOM/Canvas に依存するため対象外（視覚テストで確認） |
 | 視覚 / 出力回帰テスト | `npm run test:visual` | 本物の Processing との画像・println 比較（以下） |
 | 型チェック | `npm run typecheck` | src/lib・src/compiler・src/runtime・tools・tests |
 | 文法の適合性 | `npm run test:grammar` | 新しい Lezer 文法、および新コンパイラのフロントエンド（構文解析 + AST 構築、`parseSketch`）と公式文法（ANTLR）の受理/拒否の一致を、同梱 examples・リポジトリのスケッチ・構文エラー変種（`;` `)` `}` を 1 つ消したもの）で比較。変種では構文エラーメッセージの質（消した記号を名指しするか、位置が合っているか）も集計する（結果: `tests/grammar/out/report.md`） |
