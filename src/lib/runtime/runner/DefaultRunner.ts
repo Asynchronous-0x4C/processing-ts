@@ -180,14 +180,13 @@ export class DefaultRunner extends Runner{
       this.report_error(e);
       return;
     }
-    this.applet.width=this.manager.target_element!.clientWidth;
-    this.applet.height=this.manager.target_element!.clientHeight;
     this.applet.__log_listener__=(args:any[])=>{this.log_listeners.forEach(l=>l(args))};
     if(this.manager.sketch_resources_promise!=null)this.applet.__set_preload__((await this.manager.sketch_resources_promise).map((r:{path:string,content:ArrayBuffer})=>({path:r.path,content:new Uint8Array(r.content).buffer})));
     this.initiated=true;
     try{
-      this.applet.__begin__();
       await this.applet.settings();
+      this.applet.__init_surface__();
+      this.applet.__begin__();
       await this.applet.setup();
       this.applet.__end__();
     }catch(e){
@@ -360,9 +359,8 @@ export class DefaultRunner extends Runner{
     return this.applet.__fullscreen__?0:this.applet.width/this.applet.height;
   }
 
-  update_resolution(r: number): void {
-    this.applet?.g.updateResolution(r);
-  }
+  /** The drawing resolution is fixed by pixelDensity(). */
+  update_resolution(_r: number): void {}
 
   addEventListener(type:"log"|"error",listener:(args:any[])=>void){
     switch(type){

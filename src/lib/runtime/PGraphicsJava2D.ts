@@ -107,6 +107,87 @@ export class PGraphicsJava2D extends PGraphics{
     return p;
   }
 
+  /**
+   * The stroke path with Java2D's stroke normalization (Processing keeps the default STROKE_NORMALIZE):
+   * each end point snaps to the pixel center floor(x) + 0.5 in device space, curve control points move
+   * with the end points next to them (cubic: the previous and the current one, quadratic: their mean),
+   * and ellipses are stroked as their cubic segments. Fills are not normalized. Measured against
+   * Processing 4.5.2: a 1px rect outline at x = 10, 10.25 or 10.75 covers exactly pixel column 10.
+   */
+  private normalizedStrokePath(path:Path):Path2D|null{
+    const m=this.matrix,d=this.pixelDensity;
+    const a=m.m00*d,b=m.m10*d,c=m.m01*d,dd=m.m11*d,e=m.m02*d,f=m.m12*d;
+    const det=a*dd-b*c;
+    if(!det||!Number.isFinite(det))return null;
+    const ia=dd/det,ib=-b/det,ic=-c/det,id=a/det;
+    const p=new Path2D();
+    let ax=0,ay=0; // adjustment of the previous end point (device space)
+    let sax=0,say=0; // adjustment of the start of the subpath
+    let has=false; // a current point exists
+    // device point (+ adjustment) → user space
+    const back=(X:number,Y:number):[number,number]=>[ia*(X-e)+ic*(Y-f),ib*(X-e)+id*(Y-f)];
+    const dev=(x:number,y:number):[number,number]=>[a*x+c*y+e,b*x+dd*y+f];
+    const end=(x:number,y:number):[number,number,number,number]=>{
+      const [X,Y]=dev(x,y);
+      const nx=Math.floor(X)+0.5,ny=Math.floor(Y)+0.5;
+      return [nx,ny,nx-X,ny-Y];
+    };
+    const moveTo=(x:number,y:number)=>{
+      const [X,Y,dx,dy]=end(x,y);
+      p.moveTo(...back(X,Y));
+      ax=sax=dx;ay=say=dy;has=true;
+    };
+    const lineTo=(x:number,y:number)=>{
+      const [X,Y,dx,dy]=end(x,y);
+      p.lineTo(...back(X,Y));
+      ax=dx;ay=dy;
+    };
+    const cubicTo=(x1:number,y1:number,x2:number,y2:number,x:number,y:number)=>{
+      const [X,Y,dx,dy]=end(x,y);
+      const [X1,Y1]=dev(x1,y1),[X2,Y2]=dev(x2,y2);
+      p.bezierCurveTo(...back(X1+ax,Y1+ay),...back(X2+dx,Y2+dy),...back(X,Y));
+      ax=dx;ay=dy;
+    };
+    const P=enumPath;
+    for(let i=0;i<path.length;){
+      switch(path[i]){
+        case P.MOVE:moveTo(path[i+1],path[i+2]);i+=3;break;
+        case P.LINE:
+          if(has)lineTo(path[i+1],path[i+2]);else moveTo(path[i+1],path[i+2]);
+          i+=3;break;
+        case P.QUAD:{
+          const [X,Y,dx,dy]=end(path[i+3],path[i+4]);
+          const [CX,CY]=dev(path[i+1],path[i+2]);
+          p.quadraticCurveTo(...back(CX+(ax+dx)/2,CY+(ay+dy)/2),...back(X,Y));
+          ax=dx;ay=dy;i+=5;break;
+        }
+        case P.CUBIC:cubicTo(path[i+1],path[i+2],path[i+3],path[i+4],path[i+5],path[i+6]);i+=7;break;
+        case P.ELLIPSE:{
+          const cx=path[i+1],cy=path[i+2],rx=Math.max(0,path[i+3]),ry=Math.max(0,path[i+4]);
+          const t0=path[i+5],t1=path[i+6];
+          const pt=(t:number)=>[cx+rx*Math.cos(t),cy+ry*Math.sin(t)];
+          const [x0,y0]=pt(t0);
+          if(has)lineTo(x0,y0);else moveTo(x0,y0);
+          // segments of at most 90 degrees
+          const n=Math.max(1,Math.ceil((t1-t0)/(Math.PI/2)-1e-9));
+          const h=(t1-t0)/n,k=4/3*Math.tan(h/4);
+          for(let j=0;j<n;j++){
+            const u0=t0+h*j,u1=u0+h;
+            const [px,py]=pt(u0),[qx,qy]=pt(u1);
+            cubicTo(px-k*rx*Math.sin(u0),py+k*ry*Math.cos(u0),qx+k*rx*Math.sin(u1),qy-k*ry*Math.cos(u1),qx,qy);
+          }
+          i+=7;break;
+        }
+        default:
+          p.closePath();
+          // the current point returns to the start of the subpath
+          ax=sax;ay=say;
+          i+=1;break;
+      }
+    }
+    return p;
+  }
+
   private setStroke(ctx:Native2D){
     const s=this.style;
     ctx.strokeStyle=this.css(s.strokeColor);
@@ -119,14 +200,13 @@ export class PGraphicsJava2D extends PGraphics{
     const ctx=this.ctx;
     if(!ctx)return;
     const s=this.style;
-    const p=this.path2d(path);
     if(fill&&s.fill){
       ctx.fillStyle=this.css(s.fillColor);
-      ctx.fill(p,"nonzero");
+      ctx.fill(this.path2d(path),"nonzero");
     }
     if(stroke&&s.stroke&&s.strokeWeight>0){
       this.setStroke(ctx);
-      ctx.stroke(p);
+      ctx.stroke(this.normalizedStrokePath(path)??this.path2d(path));
     }
   }
 

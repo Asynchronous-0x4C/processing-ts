@@ -53,7 +53,8 @@ export class PSurface{
 
   setCursorStyle(arg: string | { image: PImage; x: number; y: number; }): void {
     if(typeof arg==="string"){
-      this.applet.g.context.canvas!.style.cursor=arg;
+      const canvas=this.applet.g.canvas;
+      if(canvas&&"style" in canvas)canvas.style.cursor=arg;
     }
   }
 

@@ -17,10 +17,10 @@ JS（関数本体）
    │    $rt = { lang（src/runtime/lang の Java 言語ランタイム）, PApplet, classes（java.* と processing.* のクラス）}
    ▼
 スケッチクラス（PApplet のサブクラス）のインスタンス
-   │  DefaultRunner: settings() → setup() → setTimeout ループで draw()、イベントはフレーム後に処理
+   │  DefaultRunner: settings() → __init_surface__() → setup() → setTimeout ループで draw()、イベントはフレーム後に処理
    │  print/println は lang.setOutput 経由で log listener へ（1 行ずつ）。捕捉されない例外は Java 形式で error listener へ送り、スケッチを止める
    ▼
-PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、app.render()）
+PApplet → g: PGraphicsJava2D（PGraphics の Canvas 2D 実装。キャンバスに即時描画）
 ```
 
 旧トランスパイラ（`src/lib/transpiler/`、ANTLR4）は P1-9 で実行パスから外した。構文の判定基準（`npm run test:grammar`）と速度比較（`npm run bench` の parse）のためにリポジトリに残している（antlr4 は devDependency）。
@@ -38,10 +38,12 @@ PApplet → PGraphics（PixiJS v8 の Graphics 1 個に即時描画を積み、a
 | `src/compiler/` | **コンパイラ**（ROADMAP P1）。DOM 非依存で Node / Worker でも動く。詳細は下の「新コンパイラ」 |
 | `src/compiler/grammar/` | 新コンパイラ用の Lezer 文法（@lezer/java のフォーク、MIT）。`processing.grammar` を編集して `npm run gen:grammar` で `parser.ts` を再生成する（生成物はコミット） |
 | `src/runtime/lang/` | 新コンパイラが生成するコード用の Java 言語ランタイム（数値・文字列・例外・配列・ボクシング・java.util の一部）。DOM 非依存。詳細は下の「言語ランタイム」 |
-| `src/lib/runtime/PApplet.ts` | Processing API の本体（約 100 関数）。描画系は `this.g`（PGraphics）へ委譲 |
-| `src/lib/runtime/PGraphics.ts` | PixiJS による描画。`PImage` を継承 |
-| `src/lib/runtime/PGraphicsContext.ts` | fill/stroke/text のスタイル状態、pushStyle/popStyle |
-| `src/lib/runtime/PImage.ts` | Texture と `pixels[]`（Proxy 付き Array）。updatePixels は BMP にエンコードして createImageBitmap |
+| `src/lib/runtime/PApplet.ts` | Processing API の本体。描画系は `this.g`（PGraphicsJava2D）へ委譲（`DELEGATED` の一覧をプロトタイプに設定） |
+| `src/lib/runtime/PGraphics.ts` | レンダラ非依存の抽象クラス（`PImage` を継承）: スタイル/行列スタック、色の計算、図形のパス化、beginShape、image/text のレイアウト |
+| `src/lib/runtime/PGraphicsJava2D.ts` | JAVA2D レンダラ（Canvas 2D）。`PGraphics` のフックを実装 |
+| `src/lib/runtime/PMatrix2D.ts` | 2D アフィン行列（Processing と同じく右から掛ける） |
+| `src/lib/runtime/PImage.ts` | `pixels`（ARGB の Int32Array）とキャンバス（OffscreenCanvas があればそれ）。loadPixels/updatePixels は getImageData/putImageData |
+| `src/lib/runtime/PFont.ts` | CSS のフォントファミリ。同梱の Processing Sans Pro を FontFace で遅延読み込み |
 | `src/lib/runtime/PConstants.ts` | Processing の定数（値は本家と同じ） |
 | `src/lib/runtime/runner/DefaultRunner.ts` | フレームループとイベントキュー（`Runner` 抽象クラスもここ） |
 | `src/lib/runtime/util/` | ArrayList（Array 継承）、HashMap（Map ラッパ）、PVector、関数型インタフェース、IO |
@@ -177,14 +179,14 @@ ANTLR4 の Processing 文法（`antlr/Processing.g4`、生成物 `antlr/parser/`
 - 出力: 生成コードの print/println は `lang` の出力先（`Runner.write_output`）に文字列で届き、改行ごとに log listener へ 1 行ずつ渡す（改行の無い残りは `SketchManager.flushOutput()`）。
 - 例外: setup/draw から抜けた例外は `lang.toJava()` で Java の例外に読み替えて "java.lang.NullPointerException: ..." の形で error listener へ送り、Processing と同じくスケッチを止める。
 
-### 描画（`PGraphics` + PixiJS v8）
+### 描画（`PGraphics` + `PGraphicsJava2D`）
 
-- `size()` で `Application.init({ preserveDrawingBuffer: true, clearBeforeRender: false, ... })`。
-- 全描画を 1 つの `Graphics` に積み、`__end__()`（フレーム終了時）と **`text()`/`image()` のたびに** `app.render()` してから `Graphics.clear()`。前フレームの内容は描画バッファの保持で残す（Processing の「background を呼ばなければ残る」挙動の再現）。
-- 変換行列は Pixi の `Graphics` の transform を直接使用。push/pop は `Graphics.save/restore`。
-- テキストは `BitmapFont.install` したフォントで `BitmapText` → `generateTexture` → `graphics.texture()`。テクスチャは文字列ごとにキャッシュ（60 フレーム未使用で破棄）。
-- `createGraphics()` は `RenderTexture`。`endDraw()` で描画して `loadPixels()`。
-- 色は `[r,g,b,a]` に変換して Pixi の色オブジェクトへ。色の int は Processing と同じ ARGB（`#RRGGBB` は `0xFFRRGGBB`）。fill(x) などの 1 引数は、アルファのビットが無く範囲内なら灰色、それ以外は ARGB。メインの画面は灰色（204）で始まる。
+- size の流れ: settings() の size()/fullScreen()/pixelDensity()/noSmooth() は要求を記録するだけ。runner が settings() の後に `__init_surface__()` を呼び、キャンバスを確保する（size() が無ければ 100x100、密度は `displayDensity()` = HiDPI で 2、既定の背景 204）。それ以降の size() は同じ大きさなら何もせず、違えば `IllegalStateException`（Processing と同じ）。
+- `PGraphics` は図形をフラットなパス（`enumPath`: MOVE/LINE/QUAD/CUBIC/ELLIPSE/CLOSE）にしてレンダラの `drawPath(path, fill, stroke)` に渡す。レンダラが実装するフックは drawPath/drawPoint/backgroundImpl/backgroundImage/drawImage/drawTextLine/textWidthImpl/textAscentImpl/textDescentImpl/applyMatrixToRenderer/applyBlendMode。
+- `PGraphicsJava2D` は即時描画（キャンバスが内容を保持するので background を呼ばなければ残る）。行列は `setTransform`（密度を掛ける）、blendMode は `globalCompositeOperation`、tint は乗算したコピーをキャッシュ。メイン画面の background は alpha を無視する。
+- **ストローク正規化**: Java2D の既定（STROKE_NORMALIZE）を再現し、線の端点をデバイス座標で `floor(x)+0.5` に寄せる（制御点は隣の端点と一緒に動かし、楕円は 3 次ベジェに分割）。塗りは正規化しない。本物で確認した規則（`normalizedStrokePath`）。
+- `createGraphics()` は密度 1 の `PGraphicsJava2D`（透明で始まる）。
+- 色は ARGB の int。色の int は Processing と同じ ARGB（`#RRGGBB` は `0xFFRRGGBB`）。fill(x) などの 1 引数は、アルファのビットが無く範囲内なら灰色、それ以外は ARGB。メインの画面は灰色（204）で始まる。
 - P2D/P3D、シェーダー、ライト、カメラは未実装（`size(w,h,P3D)` の第 3 引数は無視）。
 
 ### ファイル IO（`IOBase` / `XHRIO`）

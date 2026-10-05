@@ -135,7 +135,7 @@ export class PImage extends PConstants{
     }
     const out=new PImage(this.parent);
     out.init(Math.max(0,w),Math.max(0,h),this.format,1);
-    if(this.__canvas__&&w>0&&h>0)out.__ctx__!.drawImage(this.__canvas__,x*this.pixelDensity,y*this.pixelDensity,w*this.pixelDensity,h*this.pixelDensity,0,0,w,h);
+    if(this.__canvas__&&w>0&&h>0)out.__ctx__!.drawImage(this.__canvas__,x*this.pixelDensity,y!*this.pixelDensity,w*this.pixelDensity,h*this.pixelDensity,0,0,w,h);
     out.loadPixels();
     return out;
   }

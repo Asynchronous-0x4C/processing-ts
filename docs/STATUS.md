@@ -1,6 +1,6 @@
-# 現状と既知の問題（2026-10-04 時点）
+# 現状と既知の問題（2026-10-05 時点）
 
-スケッチの変換は新コンパイラ（`src/compiler/`、ROADMAP P1、P1-9 で切り替え）。ランタイムは旧来の PApplet + PixiJS（P2 で作り直す）に Java 言語ランタイム（`src/runtime/lang/`）を組み合わせている。
+スケッチの変換は新コンパイラ（`src/compiler/`、ROADMAP P1、P1-9 で切り替え）。ランタイムは PApplet + レンダラ非依存の PGraphics + Canvas 2D の JAVA2D レンダラ（P2-1。PixiJS は外した）に Java 言語ランタイム（`src/runtime/lang/`）を組み合わせている。
 数値の根拠は [research/2026-10-measurements/RESULTS.md](research/2026-10-measurements/RESULTS.md) と `npm run test:visual` の結果。
 
 ## サマリ
@@ -12,12 +12,12 @@
 | コード生成 | 静的型を使って Java の意味を保つ（整数演算、float、char、キャスト、オーバーロード、ボクシング、例外、ラムダ…）。java.util の互換層あり。`lang` タグの 23 ケース中 22 件で println 出力が本物の Processing と完全一致（ブラウザの `npm run test:visual` と Node の `npm run test:lang` の両方。残り 1 件は noise() の違い） |
 | モード | 静的・アクティブ・Java モード。`size()`/`smooth()`/`pixelDensity()` などの `settings()` への移動も Processing と同じ規則 |
 | 変換速度 | ブラウザで 199 行のコールド変換 22ms、ウォーム 3ms。5k 行のウォーム 40ms（`npm run bench`） |
-| 2D 描画 | 基本図形・変換・色（ARGB）・createGraphics は概ね動く。細部（モード、stroke の端/結合、テキスト）にずれ |
+| 2D 描画 | Canvas 2D の JAVA2D レンダラ。図形・各モード・strokeCap/Join・beginShape の全種別と contour・bezier/curve・変換（shear/applyMatrix）・colorMode（RGB/HSB）・blendMode・tint・createGraphics。Java2D のストローク正規化も再現。2d タグの視覚ケースはすべて PASS |
 | P2D / P3D / PShader | **未実装** |
-| 画像 / pixels | PImage の読み込みと表示は可。メインキャンバスの `loadPixels()/pixels[]` は未実装 |
+| 画像 / pixels | `pixels` は ARGB の Int32Array。メインキャンバスと PImage の loadPixels/updatePixels/get/set/copy/mask/resize。filter/blend/save は未実装。loadImage のデコードは非同期（R9） |
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
-| 互換性コーパス | Processing 同梱 examples 254 本中 **124 本（49%）** がエラーなく完走（JAVA2D 71% / P2D 14% / P3D 3%。切り替え前は 95 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 38 ケース: 29 PASS / 9 XFAIL（[TESTING.md](TESTING.md)）。XFAIL はすべてランタイム（描画）の未実装・不一致 |
+| 互換性コーパス | Processing 同梱 examples 254 本中 **145 本（57%）** がエラーなく完走（JAVA2D 83% / P2D 14% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
+| 視覚テスト | 39 ケース: 36 PASS / 3 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3）と random_seed（noise、R14） |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
@@ -36,20 +36,14 @@
 
 | # | 問題 | 場所 | 検出テスト |
 |---|---|---|---|
-| R3 | rectMode/ellipseMode の RADIUS・CORNERS・CORNER の計算が誤り | `PGraphics.rect/ellipse` | rect_ellipse_modes |
-| R4 | strokeCap/strokeJoin 未実装。既定が cap/join とも round（Processing は ROUND / MITER） | `PGraphicsContext.ts:33` | stroke_styles |
-| R5 | `POINTS` が大きすぎる、`TRIANGLE_FAN` が誤り | `PGraphics.endShape` | shape_vertex |
-| R6 | テキストを BitmapFont から生成したテクスチャで描くためぼやける。既定フォント・ベースライン・textAlign の縦方向・textLeading 等が非対応 | `PGraphics.text` | text_basic |
-| R7 | `text()`/`image()` のたびに `app.render()` を呼ぶ（1 フレームに何度もレンダリング）。毎フレーム Graphics を作り直して再テッセレーション | `PGraphics.ts:270,299,444` | （性能） |
-| R8 | `PImage.updatePixels()` は BMP にエンコード → `createImageBitmap`（非同期）で反映するため遅く、反映が次フレーム以降になる | `PImage.updatePixels` | pixels_basic |
+| R6 | 既定フォント（同梱の Processing Sans Pro）は FontFace で非同期に読み込むため、読み込みが終わるまでの最初のフレームは sans-serif で描かれる（text_basic は許容差内で通るが字形が違う）。`textAscent()`/`textDescent()` の値・`text(float)` の書式は本物と未照合 | `PFont.ensureDefaultFont`, `PGraphicsJava2D` | text_basic |
 | R9 | `loadImage()` は PImage を同期で返すが中身は非同期にデコードされる（直後の `img.width` が 0） | `PApplet.loadImage`, `PImage.load_from_blob` | — |
-| R10 | `pixels[]` は Proxy 付きの通常の Array（遅い）。メインキャンバスの `loadPixels/updatePixels/get/set` 未実装 | `PImage.ts` | pixels_basic |
 | R12 | `frameCount` が最初の draw() で 0（Processing は 1） | `DefaultRunner.step()` | — |
 | R13 | ループが `setTimeout`。非フォーカス時は 1fps に落とす | `DefaultRunner.frame()` | — |
 | R14 | `noise()` は改良 Perlin で Processing のアルゴリズムと別物（`noiseSeed`/`noiseDetail` は受け付けるだけ）。`random()`/`randomSeed()`/`randomGaussian()` は Processing と同じ列 | `PApplet.ts` | random_seed |
-| R15 | `size()` を呼ばないスケッチは描画系が初期化されない（Processing は 100x100 で動く） | `PApplet.size`, `PGraphics.init` | — |
 | R16 | `keyTyped` が文字の無いキー（矢印など）でも呼ばれる。`key`/`keyCode` は Processing の値に変換済み（文字コード、CODED、ENTER=10、DELETE=127） | `DefaultRunner` | — |
-| R17 | 未実装の主な API: bezier/curve 系、strokeCap/Join、blendMode（空実装）、tint、filter、mask、copy/blend、get/set、PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、saveFrame、cursor()、delay、thread など | — | bezier_curve, p3d_box, pshader_filter, pixels_basic |
+| R17 | 未実装の主な API: filter、blend()、PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、save/saveFrame、cursor()、delay、thread など | — | p3d_box, pshader_filter |
+| R18 | Processing の PApplet は `pixelDensity` をフィールドとメソッドの両方に持つが、JS では同名にできないのでメソッドだけ（スケッチから `pixelDensity` をフィールドとして読むと関数になる）。`pixelWidth`/`pixelHeight` はフィールド | `PApplet.ts` | — |
 
 ## 既知の問題（コンパイラ `src/compiler/` と言語ランタイム）
 

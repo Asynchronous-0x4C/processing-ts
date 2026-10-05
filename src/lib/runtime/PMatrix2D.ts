@@ -59,7 +59,7 @@ export class PMatrix2D{
   }
 
   /** this = this × n */
-  apply(n00:number|PMatrix2D,n01?:number,n02?:number,n10?:number,n11?:number,n12?:number){
+  apply(n00:number|PMatrix2D,n01?:number,n02?:number,n10?:number,n11?:number,n12?:number):void{
     if(n00 instanceof PMatrix2D)return this.apply(n00.m00,n00.m01,n00.m02,n00.m10,n00.m11,n00.m12);
     const t0=this.m00,t1=this.m01;
     this.m00=n00*t0+n10!*t1;
@@ -72,7 +72,7 @@ export class PMatrix2D{
   }
 
   /** this = n × this */
-  preApply(n00:number|PMatrix2D,n01?:number,n02?:number,n10?:number,n11?:number,n12?:number){
+  preApply(n00:number|PMatrix2D,n01?:number,n02?:number,n10?:number,n11?:number,n12?:number):void{
     if(n00 instanceof PMatrix2D)return this.preApply(n00.m00,n00.m01,n00.m02,n00.m10,n00.m11,n00.m12);
     const r00=n00*this.m00+n01!*this.m10,r01=n00*this.m01+n01!*this.m11,r02=n00*this.m02+n01!*this.m12+n02!;
     const r10=n10!*this.m00+n11!*this.m10,r11=n10!*this.m01+n11!*this.m11,r12=n10!*this.m02+n11!*this.m12+n12!;

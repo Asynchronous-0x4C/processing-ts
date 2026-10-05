@@ -263,6 +263,8 @@ export abstract class PGraphics extends PImage{
   background(...args:(number|PImage)[]){
     if(args[0] instanceof PImage){
       const img=args[0];
+      // An image still decoding (loadImage() is asynchronous for now, STATUS R9) is skipped.
+      if(!img.isLoaded())return;
       if(img.width!==this.width||img.height!==this.height){
         throw new exceptions.RuntimeException("background image must be the same size as your application");
       }

@@ -1,7 +1,5 @@
 {
   "tags": [
     "2d"
-  ],
-  "expect": "fail",
-  "knownIssue": "RADIUS / CORNERS handling in rect() and ellipse() is wrong."
+  ]
 }

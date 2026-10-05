@@ -1,5 +1,6 @@
 import { PConstants } from "./PConstants";
 import { PGraphics } from "./PGraphics";
+import { PGraphicsJava2D } from "./PGraphicsJava2D";
 import { PImage } from "./PImage";
 import { PSurface } from "./PSurface";
 import { JSONObject } from "./data/JSONObject";
@@ -8,9 +9,9 @@ import { MouseEvent } from "./event/MouseEvent";
 import { IOBase } from "./util/sketchio/IOBase";
 import { JSONArray } from "./data/JSONArray";
 import { XHRIO } from "./util/sketchio/XHRIO";
-import { Application } from "pixi.js";
 import { PFont } from "./PFont";
 import { Random } from "../../runtime/lang/util.ts";
+import { exceptions } from "../../runtime/lang/index.ts";
 
 export interface PAppletSettings{
   canvas: HTMLCanvasElement,
@@ -18,8 +19,27 @@ export interface PAppletSettings{
   max_size:{ width: number; height: number; }
 }
 
+/** PGraphics methods that PApplet forwards to `g` (as Processing's PApplet does). */
+const DELEGATED=[
+  "background","clear","colorMode","fill","noFill","stroke","noStroke","tint","noTint",
+  "strokeWeight","strokeCap","strokeJoin","rectMode","ellipseMode","imageMode","shapeMode","blendMode",
+  "red","green","blue","alpha","hue","saturation","brightness","lerpColor",
+  "pushStyle","popStyle","pushMatrix","popMatrix","push","pop",
+  "translate","rotate","scale","shearX","shearY","applyMatrix","resetMatrix","getMatrix","setMatrix","screenX","screenY",
+  "point","line","triangle","quad","rect","square","ellipse","circle","arc",
+  "bezier","curve","curveTightness","bezierDetail","curveDetail","bezierPoint","bezierTangent","curvePoint","curveTangent",
+  "beginShape","vertex","bezierVertex","quadraticVertex","curveVertex","beginContour","endContour","endShape",
+  "image","textSize","textLeading","textAlign","textMode","textWidth","textAscent","textDescent","text",
+  "get","set","copy",
+] as const;
+
+export interface PApplet extends Pick<PGraphics,typeof DELEGATED[number]>{}
+
+const SIZE_ERROR="size() cannot be used here, see https://processing.org/reference/size_.html";
+
 export class PApplet extends PConstants{
-  g:PGraphics;
+  /** The sketch window's renderer (allocated by __init_surface__() after settings()). */
+  g:PGraphicsJava2D;
   surface:PSurface=new PSurface(this);
   __io__:IOBase|null=null;
   __fullscreen__:boolean=false;
@@ -27,13 +47,18 @@ export class PApplet extends PConstants{
   __date__=new Date();
   __start_milli_seconds__=performance.now();
   __loop__=true;
-  __app__:Application;
+  /** What settings() asked for: size()/fullScreen()/pixelDensity()/smooth(). */
+  __requested__={width:100,height:100,density:0,smooth:true};
 
   private __exit_code__=0;
 
   max_size:{width:number,height:number}={width:0,height:0};
-  width:number=0;
-  height:number=0;
+  width:number=100;
+  height:number=100;
+  pixelWidth:number=100;
+  pixelHeight:number=100;
+  /** loadPixels() points this at the window's pixels (ARGB). */
+  pixels:Int32Array=new Int32Array(0);
   pmouseX:number=0;
   pmouseY:number=0;
   mouseX:number=0;
@@ -56,8 +81,7 @@ export class PApplet extends PConstants{
       this.max_size=settings.max_size;
       this.__io__=new XHRIO(settings.base_path);
     }
-    this.__app__=new Application();
-    this.g=new PGraphics(this,settings?.canvas);
+    this.g=new PGraphicsJava2D(this,settings?.canvas??null,true);
   }
 
   __set_preload__(buffer:{path:string, content:ArrayBuffer}[]){
@@ -72,27 +96,46 @@ export class PApplet extends PConstants{
     this.noLoop();
   }
 
-  async size(width:number,height:number){
+  /**
+   * size(w, h[, renderer]): in settings() it sets the window size; afterwards the same size does nothing
+   * and another size is an error, as in Processing (size() with variables in setup() is not moved to
+   * settings() by the preprocessor).
+   */
+  size(width:number,height:number,_renderer?:string){
     if(this.__initialized__){
-      console.warn("size() or fullScreen() can only be called once");
-      return;
+      if(width===this.width&&height===this.height)return;
+      throw new exceptions.IllegalStateException(SIZE_ERROR);
     }
-    await this.g.init(width,height);
-    this.width=this.g.width;
-    this.height=this.g.height;
-    this.__initialized__=true;
+    this.__requested__.width=width;
+    this.__requested__.height=height;
+    this.__fullscreen__=false;
   }
 
-  async fullScreen(mode:number){
-    if(this.__initialized__){
-      console.warn("size() or fullScreen() can only be called once");
-      return;
-    }
-    this.width=this.max_size.width;
-    this.height=this.max_size.height;
+  fullScreen(_a?:number|string,_b?:number){
+    if(this.__initialized__)throw new exceptions.IllegalStateException(SIZE_ERROR);
     this.__fullscreen__=true;
-    await this.g.init(this.width,this.height);
+  }
+
+  /** Allocate the window after settings(): 100x100 when size() was not called, density displayDensity(). */
+  __init_surface__(){
+    if(this.__initialized__)return;
+    const r=this.__requested__;
+    const w=this.__fullscreen__?Math.floor(this.max_size.width):r.width;
+    const h=this.__fullscreen__?Math.floor(this.max_size.height):r.height;
+    const density=r.density||this.displayDensity();
+    this.g.setSize(w,h,density);
+    if(!r.smooth)this.g.noSmooth();
+    const canvas=this.g.canvas;
+    if(canvas&&"style" in canvas){
+      canvas.style.width=`${w}px`;
+      canvas.style.height=`${h}px`;
+    }
+    this.width=w;
+    this.height=h;
+    this.pixelWidth=this.g.pixelWidth;
+    this.pixelHeight=this.g.pixelHeight;
     this.__initialized__=true;
+    this.g.background(204);
   }
 
   getSurface(){
@@ -103,156 +146,30 @@ export class PApplet extends PConstants{
     this.__frameRate__=framerate;
   }
 
-  background(c1:number|PImage,c2?:number,c3?:number,c4?:number){
-    this.g.background(c1,c2,c3,c4);
+  /** Processing's color int (ARGB), in the current colorMode. */
+  color(...args:number[]):number{
+    return this.g.color(...args);
   }
 
-  colorMode(mode:number,...max:number[]){
-    this.g.colorMode(mode,...max);
+  createFont(name:string,size:number,smooth=true,_charset?:unknown){
+    return new PFont(name,size,smooth);
   }
 
-  fill(...color:number[]){
-    this.g.fill(...color);
+  loadFont(name:string){
+    return new PFont(name.replace(/^.*[\/\\]/,"").replace(/-\d+\.vlw$/i,""),Number(/-(\d+)\.vlw$/i.exec(name)?.[1]??12));
   }
 
-  noFill(){
-    this.g.noFill();
+  textFont(font:PFont,size?:number){
+    this.g.textFont(font,size);
   }
 
-  stroke(...color:number[]){
-    this.g.stroke(...color);
+  loadPixels(){
+    this.g.loadPixels();
+    this.pixels=this.g.pixels;
   }
 
-  noStroke(){
-    this.g.noStroke();
-  }
-
-  strokeWeight(weight:number){
-    this.g.strokeWeight(weight);
-  }
-
-  rectMode(mode:number){
-    this.g.rectMode(mode);
-  }
-
-  ellipseMode(mode:number){
-    this.g.ellipseMode(mode);
-  }
-
-  textAlign(align:number){
-    this.g.textAlign(align);
-  }
-
-  textSize(size:number){
-    this.g.textSize(size);
-  }
-
-  textWidth(str:string):number{
-    return this.g.textWidth(str);
-  }
-
-  createFont(name:string,size:number){
-    return this.g.createFont(name,size);
-  }
-
-  textFont(font:PFont){
-    this.g.textFont(font);
-  }
-
-  imageMode(mode:number){
-    this.g.imageMode(mode);
-  }
-
-  point(x:number,y:number){
-    this.g.point(x,y);
-  }
-
-  rect(x:number,y:number,width:number,height:number){
-    this.g.rect(x,y,width,height);
-  }
-
-  quad(x1:number,y1:number,x2:number,y2:number,x3:number,y3:number,x4:number,y4:number){
-    this.g.quad(x1,y1,x2,y2,x3,y3,x4,y4);
-  }
-
-  ellipse(x:number,y:number,width:number,height:number){
-    this.g.ellipse(x,y,width,height);
-  }
-
-  circle(x:number,y:number,r:number){
-    this.g.circle(x,y,r);
-  }
-
-  arc(x:number,y:number,width:number,height:number,start:number,stop:number){
-    this.g.arc(x,y,width,height,start,stop);
-  }
-
-  triangle(x1:number,y1:number,x2:number,y2:number,x3:number,y3:number){
-    this.g.triangle(x1,y1,x2,y2,x3,y3);
-  }
-
-  line(x1:number,y1:number,x2:number,y2:number){
-    this.g.line(x1,y1,x2,y2);
-  }
-
-  text(text:string,x:number,y:number,w?:number,h?:number){
-    this.g.text(text,x,y,w,h);
-  }
-
-  image(image:PImage,x:number,y:number,w?:number,h?:number){
-    this.g.image(image,x,y,w,h);
-  }
-
-  translate(x:number,y:number){
-    this.g.translate(x,y);
-  }
-
-  rotate(angle:number){
-    this.g.rotate(angle);
-  }
-
-  scale(x:number,y?:number){
-    this.g.scale(x,y);
-  }
-
-  push(){
-    this.g.push();
-  }
-
-  pop(){
-    this.g.pop();
-  }
-
-  pushStyle(){
-    this.g.pushStyle();
-  }
-
-  popStyle(){
-    this.g.popStyle();
-  }
-
-  pushMatrix(){
-    this.g.pushMatrix();
-  }
-
-  popMatrix(){
-    this.g.popMatrix();
-  }
-
-  resetMatrix(){
-    this.g.resetMatrix();
-  }
-
-  beginShape(mode?:number){
-    this.g.beginShape(mode);
-  }
-
-  vertex(x:number,y:number){
-    this.g.vertex(x,y);
-  }
-
-  endShape(mode?:number){
-    this.g.endShape(mode);
+  updatePixels(x?:number,y?:number,w?:number,h?:number){
+    this.g.updatePixels(x,y,w,h);
   }
 
   _keyPressed(e:KeyEvent){}
@@ -270,49 +187,6 @@ export class PApplet extends PConstants{
   _mouseWheel(e:MouseEvent){}
 
   _windowResized(){}
-
-  /** Processing's color int: ARGB (0xAARRGGBB) as a signed 32-bit int. RGB values 0-255. */
-  color(...color:number[]):number{
-    // color(argb) with alpha bits (or out of the gray range) is returned as it is.
-    if(color.length==1&&Number.isInteger(color[0])&&((color[0]&0xff000000)!==0||color[0]>255||color[0]<0))return color[0]|0;
-    const c=color.map(v=>Math.max(Math.min(Math.trunc(v),255),0));
-    let a=255,r:number,g:number,b:number;
-    if(c.length==1){
-      r=g=b=c[0];
-    }else if(c.length==2){
-      r=g=b=c[0];a=c[1];
-    }else if(c.length==3){
-      [r,g,b]=c;
-    }else if(c.length==4){
-      [r,g,b,a]=c;
-    }else{
-      throw new Error("Invalid color length: "+color.length);
-    }
-    return (a<<24|r<<16|g<<8|b)|0;
-  }
-
-  red(c:number){
-    return Math.fround((c>>16)&0xff);
-  }
-
-  green(c:number){
-    return Math.fround((c>>8)&0xff);
-  }
-
-  blue(c:number){
-    return Math.fround(c&0xff);
-  }
-
-  alpha(c:number){
-    return Math.fround(c>>>24);
-  }
-
-  lerpColor(c1:number,c2:number,amt:number){
-    amt=this.constrain(amt,0,1);
-    const ch=(c:number)=>[(c>>16)&0xff,(c>>8)&0xff,c&0xff,c>>>24];
-    const a=ch(c1),b=ch(c2);
-    return this.color(this.lerp(a[0],b[0],amt),this.lerp(a[1],b[1],amt),this.lerp(a[2],b[2],amt),this.lerp(a[3],b[3],amt));
-  }
 
   join(list:string[],separator:string){
     return list.join(separator);
@@ -522,15 +396,25 @@ export class PApplet extends PConstants{
 
   noiseDetail(_lod:number,_falloff?:number){}
 
-  /** Rendering quality and density are fixed in the browser; called from settings() like in Processing. */
-  smooth(_level?:number){}
+  /** smooth()/noSmooth() (settings()): shapes are always antialiased; noSmooth() turns off image smoothing. */
+  smooth(_level?:number){
+    this.__requested__.smooth=true;
+    if(this.__initialized__)this.g.smooth();
+  }
 
-  noSmooth(){}
+  noSmooth(){
+    this.__requested__.smooth=false;
+    if(this.__initialized__)this.g.noSmooth();
+  }
 
-  pixelDensity(_density:number){}
+  /** pixelDensity(1 or 2) in settings(); the default is displayDensity(). */
+  pixelDensity(density:number){
+    if(!this.__initialized__)this.__requested__.density=density;
+  }
 
-  displayDensity(){
-    return 1;
+  /** 2 on HiDPI screens, as in Processing 4.5. */
+  displayDensity(_display?:number){
+    return typeof devicePixelRatio==="number"&&devicePixelRatio>=2?2:1;
   }
 
   hint(_which:number){}
@@ -615,11 +499,14 @@ export class PApplet extends PConstants{
   }
 
   createImage(width:number,height:number,format:number):PImage{
-    return new PImage(this,{pixels:[],width,height,format});
+    return new PImage(this,{width,height,format});
   }
 
-  createGraphics(width:number,height:number,renderer:string):PGraphics{
-    return new PGraphics(this,{x:width,y:height});
+  /** createGraphics(w, h[, renderer]): an offscreen JAVA2D surface (transparent, density 1). */
+  createGraphics(width:number,height:number,_renderer?:string,_path?:string):PGraphics{
+    const pg=new PGraphicsJava2D(this,null);
+    pg.setSize(width,height,1);
+    return pg;
   }
 
   loadJSONObject(path:string){
@@ -711,4 +598,13 @@ export class PApplet extends PConstants{
     }
     return p;
   })();
+}
+for(const name of DELEGATED){
+  Object.defineProperty(PApplet.prototype,name,{
+    value:function(this:PApplet,...args:unknown[]){
+      return (this.g[name] as (...a:unknown[])=>unknown).apply(this.g,args);
+    },
+    writable:true,
+    configurable:true,
+  });
 }
