@@ -16,8 +16,8 @@
 | P2D / P3D / PShader | **未実装** |
 | 画像 / pixels | `pixels` は ARGB の Int32Array。メインキャンバスと PImage の loadPixels/updatePixels/get/set/copy/mask/resize。filter/blend/save は未実装。loadImage のデコードは非同期（R9） |
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
-| 互換性コーパス | Processing 同梱 examples 254 本中 **154 本（61%）** がエラーなく完走（JAVA2D 87% / P2D 18% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本、PVector の作り直しの前は 145 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 44 ケース: 41 PASS / 3 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3）と random_seed（noise、R14） |
+| 互換性コーパス | Processing 同梱 examples 254 本中 **156 本（61%）** がエラーなく完走（JAVA2D 89% / P2D 18% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本、2026-10-06 の PVector の作り直しと配列関数の前は 145 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
+| 視覚テスト | 45 ケース: 42 PASS / 3 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3）と random_seed（noise、R14） |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
@@ -42,6 +42,7 @@
 | R14 | `noise()` は改良 Perlin で Processing のアルゴリズムと別物（`noiseSeed`/`noiseDetail` は受け付けるだけ）。`random()`/`randomSeed()`/`randomGaussian()` は Processing と同じ列 | `PApplet.ts` | random_seed |
 | R16 | キーイベントの細部が本物と未照合（keyReleased 時の `key`/`keyCode` の更新、Ctrl+文字の `key`、複数キー同時押しの `keyPressed`）。`key`/`keyCode` の変換（文字コード、CODED、ENTER=10、DELETE=127）と、keyTyped を文字の出るキーだけで呼ぶこと（AWT の KEY_TYPED と同じ）は済み | `DefaultRunner`, `event/KeyEvent.ts` | key-event.test.ts |
 | R17 | 未実装の主な API: filter、blend()、PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、save/saveFrame、cursor()、delay、thread など | — | p3d_box, pshader_filter |
+| R19 | `match()` は JS の match の結果（一致しないグループが undefined）、`matchAll()` はイテレータを返す（Processing は String[] / String[][]、一致なしは null）。ケースの作りかけは無し（Processing 4.5.2 は Java 15 の `\s` エスケープを構文エラーにするので、正規表現は `\s` と書くこと） | `PApplet.match`/`matchAll` | — |
 | R18 | Processing の PApplet は `pixelDensity` をフィールドとメソッドの両方に持つが、JS では同名にできないのでメソッドだけ（スケッチから `pixelDensity` をフィールドとして読むと関数になる）。`pixelWidth`/`pixelHeight` はフィールド | `PApplet.ts` | — |
 
 ## 既知の問題（コンパイラ `src/compiler/` と言語ランタイム）

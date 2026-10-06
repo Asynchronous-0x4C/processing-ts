@@ -64,8 +64,11 @@ describe("decodeColor", () => {
 describe("string and char literals", () => {
   it("interprets escape sequences", () => {
     expect(decodeString('"a\\tb\\n"').value).toBe("a\tb\n");
-    expect(decodeString('"\\"q\\" \\\\ \\u00e9 \\101 \\0 \\s"').value).toBe('"q" \\ é A \0  ');
+    expect(decodeString('"\\"q\\" \\\\ \\u00e9 \\101 \\0"').value).toBe('"q" \\ é A \0');
     expect(decodeString('"\\q"').error).toMatch(/Illegal escape/);
+    // Java 15's \s is a syntax error in Processing 4.5.2.
+    expect(decodeString('"\\s*"').error).toMatch(/Illegal escape character '\\s'/);
+    expect(decodeChar("'\\s'").error).toMatch(/Illegal escape/);
   });
 
   it("reads char literals as UTF-16 code units", () => {

@@ -68,7 +68,8 @@ export function decodeColor(text: string): number {
   return hex.length === 6 ? (0xff000000 | parseInt(hex, 16)) | 0 : parseInt(hex, 16) | 0;
 }
 
-const SIMPLE_ESCAPES: Record<string, string> = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", s: " ", '"': '"', "'": "'", "\\": "\\" };
+// No `\s` (Java 15): Processing 4.5.2's lexer rejects it (checked with the real Processing).
+const SIMPLE_ESCAPES: Record<string, string> = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", '"': '"', "'": "'", "\\": "\\" };
 
 /**
  * Interpret escape sequences in the body of a string/char literal (without quotes). `\uXXXX` is
