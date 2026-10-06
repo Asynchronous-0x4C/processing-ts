@@ -1,4 +1,4 @@
-import { SketchManager } from "../..";
+import type { SketchManager } from "../../SketchManager";
 import { Cursor } from "../awt/Cursor";
 import { PApplet } from "../PApplet";
 import { ArrayList } from "../util/ArrayList";

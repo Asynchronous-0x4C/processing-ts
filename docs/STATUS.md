@@ -74,14 +74,18 @@
 
 ## 既知の問題（ビルド / リポジトリ）
 
-- `dist/` と `library.js` がコミットされている（ビルド成果物）。`tsc` を実行すると `dist/types` が書き換わるので注意（型チェックは `npm run typecheck` を使う）。
+- `dist/` と `library.js` がコミットされている（ビルド成果物。現在コミットされているのは P2-1 以前の PixiJS 版で、README の手順（CDN の Pixi を読み込む）もそれに合わせたまま。次のリリースで両方を更新する）。`tsc` を実行すると `dist/types` が書き換わるので注意（型チェックは `npm run typecheck` を使う）。
 - README の「Processing 4.4 までの構文をサポート」は実態より強い表現。
 
 ## バンドルサイズ（現状）
 
+`npm run size`（esbuild でバンドルして minify。2026-10-06、P2-10 の前半の後）。PixiJS は依存から外した。
+
 | 成果物 | min | gzip |
 |---|---:|---:|
-| `dist/index.js`（pixi は外部） | 711 KiB | 103 KiB |
-| 上記 + pixi.js を同梱した場合 | 897 KiB | 229 KiB |
-| うち antlr4 ランタイム + 生成パーサ | 342 KiB | 69 KiB |
-| pixi.js 8.9.1（使用しているクラスのみ） | 490 KiB | 141 KiB |
+| ライブラリ全体（`src/lib/index.ts`、@lezer を含む） | 646 KiB | 155 KiB |
+| ランタイム単体（2D の PApplet・レンダラ・言語ランタイム。コンパイラなし） | 114 KiB | 36 KiB |
+| コンパイラ（`src/compiler/index.ts`） | 529 KiB | 119 KiB |
+| 言語ランタイム（`src/runtime/lang`） | 63 KiB | 19 KiB |
+
+既定フォント（TTF 288 KB）はバンドルに含めず、`dist/fonts/` から text() を使うときだけ読む。

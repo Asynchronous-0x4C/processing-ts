@@ -1,10 +1,11 @@
 {
   "size": {
-    "library (pixi.js external)": {
-      "gzipKiB": 157.9
+    "library (src/lib/index.ts)": {
+      "gzipKiB": 162.8
     },
-    "library + pixi.js": {
-      "gzipKiB": 306.5
+    "runtime (2D, no compiler: src/lib/runtime/runner)": {
+      "gzipKiB": 50,
+      "targetKiB": 50
     },
     "parser (antlr4 + generated)": {
       "gzipKiB": 72.5

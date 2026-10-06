@@ -144,6 +144,7 @@
 - [ ] **P2-9 VFS と fetch 事前読み込み（PWA 対応）**（M）`data/` の解決、マニフェスト/リテラル抽出による事前読み込み、画像の事前デコード、IndexedDB への保存、selectInput/selectOutput、未読み込みパスのエラーメッセージ。同期 XHR を削除。
   完了条件: Service Worker でキャッシュしたページをオフラインにしても data/ を使うケースが動く（vt ハーネスに `--offline` モードを追加して確認）。
 - [ ] **P2-10 PixiJS の削除と予算確認**（S）完了条件: `npm run size` でランタイム（2D、パーサなし）が 50 KiB gz 以下。2d タグのケースがすべて PASS。コーパスの 2D 決定的スケッチの視覚一致率 90% 以上。
+  → 前半済み（2026-10-06）: `pixi.js` を依存から削除。`npm run size` の項目を「library」1 つにし、ランタイム単体（`src/lib/runtime/runner`。2D + 言語ランタイム、コンパイラなし）を追加: **36 KiB gz（予算 50 KiB）**。`DefaultRunner` の `SketchManager` の import を型のみにしてコンパイラを巻き込まないようにした。ビルドの `library.js` 生成を Pixi のグローバル置換から esbuild での 1 ファイル化に変更し、既定フォントを base64 で埋め込まずに `dist/fonts/` へコピーするようにした（`vite build` の出力が gzip 327 → 170 KiB）。残り: 2D の決定的スケッチの視覚一致率（コーパスの `--ref`）。
 
 ## P3: WebGL2（P2D / P3D / PShader）
 

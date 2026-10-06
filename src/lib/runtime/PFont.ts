@@ -1,6 +1,9 @@
 /** Family of Processing's default font (bundled: fonts/ProcessingSansPro-Regular.ttf, SIL OFL 1.1). */
 export const DEFAULT_FONT_FAMILY="Processing Sans Pro";
 
+/** Next to this module in the source tree and in dist/ (the library build copies fonts/ there). */
+const DEFAULT_FONT_FILE="fonts/ProcessingSansPro-Regular.ttf";
+
 let defaultFontState:"idle"|"loading"|"ready"|"failed"="idle";
 
 /** Start loading the bundled default font (once); text drawn before it is ready uses sans-serif. */
@@ -8,7 +11,8 @@ export function ensureDefaultFont(){
   if(defaultFontState!=="idle"||typeof FontFace==="undefined")return;
   defaultFontState="loading";
   try{
-    const url=new URL("./fonts/ProcessingSansPro-Regular.ttf",import.meta.url);
+    // Not a string literal on purpose: Vite's library build would inline a literal `new URL(…, import.meta.url)` as base64 (+288 KB).
+    const url=new URL("./"+DEFAULT_FONT_FILE,import.meta.url);
     const face=new FontFace(DEFAULT_FONT_FAMILY,`url(${url.href})`);
     const fonts=(globalThis as unknown as {document?:{fonts:FontFaceSet}}).document?.fonts??(globalThis as unknown as {fonts?:FontFaceSet}).fonts;
     face.load().then((f)=>{

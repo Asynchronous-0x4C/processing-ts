@@ -174,8 +174,8 @@ async function benchTranspile(): Promise<{ md: string; failed: boolean; data: un
 
 // --- size: esbuild bundles (minified ESM) and their gzip/brotli sizes
 const SIZE_ENTRIES = [
-  { name: "library (pixi.js external)", entry: "src/lib/index.ts", external: ["pixi.js"] },
-  { name: "library + pixi.js", entry: "src/lib/index.ts", external: [] },
+  { name: "library (src/lib/index.ts)", entry: "src/lib/index.ts", external: [] },
+  { name: "runtime (2D, no compiler: src/lib/runtime/runner)", entry: "src/lib/runtime/runner/index.ts", external: [] },
   { name: "parser (antlr4 + generated)", entry: "src/lib/transpiler/SketchParser.ts", external: [] },
   { name: "parser (lezer, src/compiler/grammar)", entry: "src/compiler/grammar/parser.ts", external: [] },
   { name: "compiler front end (lezer + AST, src/compiler/parse.ts)", entry: "src/compiler/parse.ts", external: [] },

@@ -199,6 +199,7 @@ ANTLR4 の Processing 文法（`antlr/Processing.g4`、生成物 `antlr/parser/`
 ## ビルドと配布
 
 - `npm run build` = `vite build`（ライブラリモード, `src/lib/index.ts`）+ `tsc`（型定義のみ `dist/types`）。
-- `vite-plugin-externalize-deps` で依存（pixi.js・@lezer）を外部化。ライブラリは新コンパイラ（gzip 約 119 KiB。うちライブラリモデル 36 KiB、Lezer 30 KiB）と言語ランタイム（19 KiB）を含む。EVALUATION.md の目標構成ではコンパイラを別のサブパスにする。
-- 独自プラグインが `dist/library.js` を生成（先頭の pixi import を `const X=PIXI.X` に置換し、CDN 版 Pixi のグローバルを使う形）。ルートの `library.js` はそのコピーで README からダウンロードさせている。
+- `vite-plugin-externalize-deps` で依存（@lezer/common・@lezer/lr）を外部化。ライブラリ（gzip 155 KiB、`npm run size`）は新コンパイラ（約 119 KiB。うちライブラリモデル 36 KiB、Lezer 30 KiB）とランタイム（2D + 言語ランタイムで約 36 KiB）を含む。EVALUATION.md の目標構成ではコンパイラを別のサブパスにする。
+- 既定フォントは `src/lib/runtime/fonts/` を独自プラグイン（`copy-fonts`）が `dist/fonts/` にライセンス文ごとコピーし、`PFont.ts` が実行時に `new URL("./fonts/…", import.meta.url)` で読む（URL を文字列リテラルで書くと Vite のライブラリモードが base64 で埋め込み、gzip で +170 KiB になるので、わざと連結にしている）。
+- 独自プラグイン（`single-file-library`）が `dist/index.js` を esbuild で依存ごと 1 ファイルにまとめて `dist/library.js` を生成する（バンドラなしで `import` できる形。既定フォントは同じく `fonts/` から読む）。ルートの `library.js` はそのコピーで README からダウンロードさせている（コミット済みのものは P2-1 以前の Pixi 版。次のリリースで置き換える）。
 - dev サーバ（`npm run dev`, port 8080, base `/processing-ts/`）起動時に `public/samples/*/*/sketch.properties` から `src/scripts/samples.json` を生成（カテゴリ/名前順）。ライブラリのビルドでは `public/` を出力に含めない（`copyPublicDir: false`）。

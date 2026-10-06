@@ -42,7 +42,7 @@ export class BrowserRunner {
       clearScreen: false,
       server: { host: "127.0.0.1", port: 5199, strictPort: false, fs: { allow: [root, ...(this.opts.extraFsAllow ?? [])] } },
       // Pre-bundle up front so Vite does not reload the page mid-run when it discovers deps.
-      optimizeDeps: { entries: ["tools/vt/harness/index.html"], include: ["pixi.js", "antlr4"] },
+      optimizeDeps: { entries: ["tools/vt/harness/index.html"], include: ["@lezer/common", "@lezer/lr"] },
     });
     await this.server.listen();
     this.baseUrl = (this.server.resolvedUrls?.local[0] ?? "http://127.0.0.1:5199/").replace(/\/$/, "");

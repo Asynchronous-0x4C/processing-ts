@@ -172,7 +172,7 @@ node tools/bench/cli.ts all --update-budget   # 意図した変更でサイズ/�
 - 予算: `tools/bench/budget.json`。超えると終了コード 1（回帰検出用）。サイズは +5%、時間は +50%（最低 5ms）の余裕で `--update-budget` が書き換える。
 - 結果: `tests/bench/out/<command>.md` と `.json`（gitignore 済み）。
 
-2026-10-04 時点の主な値（P1-9 の後）: ブラウザでの変換は `simple_shooter_game`（199 行）が cold 22ms・warm 3ms、`synthetic-5k` が cold 84ms・warm 40ms（旧トランスパイラは 199 行の cold が約 170ms）。Node の compile は `synthetic-5k` の warm 54〜64ms（うち Lezer の解析 約 20ms）。バンドル: ライブラリ 150 KiB gz（pixi 込み 292 KiB gz）、うち新コンパイラ 119 KiB gz（フロントエンド 40.6 KiB、Lezer パーサ単体 30.5 KiB、ライブラリモデル 36 KiB）、言語ランタイム 19 KiB gz。
+2026-10-04 時点の主な値（P1-9 の後）: ブラウザでの変換は `simple_shooter_game`（199 行）が cold 22ms・warm 3ms、`synthetic-5k` が cold 84ms・warm 40ms（旧トランスパイラは 199 行の cold が約 170ms）。Node の compile は `synthetic-5k` の warm 54〜64ms（うち Lezer の解析 約 20ms）。バンドル（P2-10 の後）: ライブラリ 155 KiB gz（PixiJS は P2-1 で削除）、ランタイム単体（2D + 言語ランタイム、コンパイラなし）36 KiB gz、うち新コンパイラ 119 KiB gz（フロントエンド 40.6 KiB、Lezer パーサ単体 30.5 KiB、ライブラリモデル 36 KiB）、言語ランタイム 19 KiB gz。
 
 ## 今後追加すべきテスト（ROADMAP 参照）
 

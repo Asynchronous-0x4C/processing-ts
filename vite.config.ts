@@ -1,4 +1,5 @@
-import fs, { globSync, writeFile } from "fs";
+import fs, { globSync } from "fs";
+import { build as esbuild } from "esbuild";
 import path, { resolve } from "path"
 import { defineConfig } from "vite"
 import { externalizeDeps } from 'vite-plugin-externalize-deps'
@@ -64,16 +65,25 @@ export default defineConfig({
       },
     },
     {
-      name: 'import-resolver',
+      // The default font is loaded at run time from fonts/ next to the bundle (src/lib/runtime/PFont.ts); ship it with its license.
+      name: 'copy-fonts',
       apply: 'build',
-      writeBundle(options,bundle){
-        let b;
-        if(b=bundle["index.js"]){
-          const codes=b.code.split("\n");
-          const imports:string=codes[0];
-          codes[0]=imports.match(/{(\s*([\w,\s])+)}/)![1].trim().split(",").map(i=>i.trim()).map(i=>`const ${i}=PIXI.${i};`).join("\n");
-          writeFile(path.join(options.dir!,"library.js"),codes.join("\n"),"utf8",(err)=>{if(err)console.log(err)});
-        }
+      writeBundle(options){
+        fs.cpSync(resolve(__dirname,'src/lib/runtime/fonts'),path.join(options.dir!,'fonts'),{recursive:true});
+      },
+    },
+    {
+      // dist/library.js: single-file ESM with the dependencies (@lezer/*) bundled in, for use without a bundler.
+      name: 'single-file-library',
+      apply: 'build',
+      async writeBundle(options,bundle){
+        if(!bundle["index.js"])return;
+        await esbuild({
+          entryPoints:[path.join(options.dir!,"index.js")],
+          bundle:true, format:"esm", platform:"browser", target:"esnext",
+          outfile:path.join(options.dir!,"library.js"), logLevel:"warning",
+          nodePaths:[resolve(__dirname,"node_modules")],
+        });
       },
     }
   ]
