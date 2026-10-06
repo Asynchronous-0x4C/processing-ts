@@ -17,6 +17,11 @@ export function loadDefaultFont():Promise<void>{
   return defaultFontPromise;
 }
 
+/** The bundled default font has finished loading (metrics measured before that are of the fallback). */
+export function defaultFontReady(){
+  return defaultFontState==="ready";
+}
+
 /** Start loading the bundled default font (once); text drawn before it is ready uses sans-serif. */
 export function ensureDefaultFont(){
   if(defaultFontState!=="idle"||typeof FontFace==="undefined")return;
@@ -51,6 +56,8 @@ export class PFont{
   name:string;
   size:number;
   smooth:boolean;
+  /** ascent()/descent() per unit of text size, measured once by the renderer (see PGraphicsJava2D.fontMetrics). */
+  __metrics__:{ascent:number;descent:number}|null=null;
 
   constructor(name:string=DEFAULT_FONT_FAMILY,size:number=12,smooth:boolean=true){
     this.name=name;
@@ -72,6 +79,11 @@ export class PFont{
 
   getDefaultSize(){
     return this.size;
+  }
+
+  /** Whether the font is the bundled default (its metrics change once the FontFace has loaded). */
+  isDefaultFamily(){
+    return this.name.replace(/\.(ttf|otf|vlw)$/i,"")===DEFAULT_FONT_FAMILY;
   }
 
   /** The CSS font-family list for this font. */

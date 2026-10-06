@@ -5,5 +5,5 @@
   ],
   "threshold": 0.3,
   "maxDiffRatio": 0.03,
-  "note": "Font rasterization differs between Java2D and Chromium; loose tolerance. The bundled default font loads asynchronously, so the first frames still use sans-serif (STATUS R6)."
+  "note": "Font rasterization differs between Java2D and Chromium; loose tolerance."
 }

@@ -1,0 +1,9 @@
+{
+  "tags": [
+    "2d",
+    "text"
+  ],
+  "threshold": 0.3,
+  "maxDiffRatio": 0.03,
+  "note": "Default font metrics and the formatting of text(float)/text(int)/text(char). Font rasterization differs between Java2D and Chromium; loose tolerance."
+}

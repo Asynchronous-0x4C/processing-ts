@@ -75,6 +75,17 @@ export function libraryCall(g: Gen, m: MethodSymbol, recv: Emit | null, as: A.Ex
   const sig = m.params.map(code).join(",");
   void node;
 
+  // --- text(float/int/char, …): the runtime takes the text as a string ----------------------------------
+  if (name === "text" && recv && (owner === "processing.core.PApplet" || owner === "processing.core.PGraphics")) {
+    const p0 = m.params[0];
+    if (p0?.tag === "prim" && (p0.name === "float" || p0.name === "int" || p0.name === "char")) {
+      const xs = args(g, m, as);
+      // Processing draws a float as nfs(num, 0, 3): " 1.500", "-0.250".
+      const first = p0.name === "float" ? `${g.h("nfsFloat")}(${xs[0].c}, 0, 3)` : g.str(xs[0], p0).c;
+      return call(`${par(recv, P.Call)}.text(${[first, ...xs.slice(1).map((x) => x.c)].join(", ")})`);
+    }
+  }
+
   // --- printing -------------------------------------------------------------------------------------
   if (owner === "processing.core.PApplet") {
     switch (name) {
@@ -128,11 +139,13 @@ export function libraryCall(g: Gen, m: MethodSymbol, recv: Emit | null, as: A.Ex
         if (sig.includes("[")) break;
         const xs = args(g, m, as).map((x) => x.c);
         const isFloat = m.params[0].tag === "prim" && m.params[0].name === "float";
-        let text: string;
-        if (name === "nfc") text = isFloat ? `${g.h("nfFloat")}(${xs[0]}, 0, ${xs[1] ?? 0}, true)` : `${g.h("nfInt")}(${xs[0]}, 0, true)`;
-        else if (isFloat) text = `${g.h("nfFloat")}(${xs[0]}, ${xs[1] ?? 0}, ${xs[2] ?? 0})`;
-        else text = `${g.h("nfInt")}(${xs[0]}, ${xs[1] ?? 0})`;
-        return name === "nfs" || name === "nfp" ? call(`${g.h(name)}(${text})`) : call(text);
+        const plus = name === "nfp" ? ", true" : "";
+        if (name === "nfc") return call(isFloat ? `${g.h("nfFloat")}(${xs[0]}, 0, ${xs[1] ?? 0}, true)` : `${g.h("nfInt")}(${xs[0]}, 0, true)`);
+        if (name === "nfs" || name === "nfp") {
+          return call(isFloat ? `${g.h("nfsFloat")}(${xs[0]}, ${xs[1] ?? 0}, ${xs[2] ?? 0}${plus})` : `${g.h("nfsInt")}(${xs[0]}, ${xs[1] ?? 0}${plus})`);
+        }
+        if (isFloat && xs.length === 1) return call(`${g.h("nfFloatShort")}(${xs[0]})`);
+        return call(isFloat ? `${g.h("nfFloat")}(${xs[0]}, ${xs[1] ?? 0}, ${xs[2] ?? 0})` : `${g.h("nfInt")}(${xs[0]}, ${xs[1] ?? 0})`);
       }
       case "unhex": return call(`${g.h("unhex")}(${args(g, m, as)[0].c})`);
       case "unbinary": return call(`${g.h("unbinary")}(${args(g, m, as)[0].c})`);

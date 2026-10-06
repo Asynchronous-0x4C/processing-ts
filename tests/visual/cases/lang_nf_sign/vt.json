@@ -1,0 +1,6 @@
+{
+  "tags": [
+    "lang"
+  ],
+  "note": "Sign handling of nf()/nfs()/nfp()/nfc() for values that round to zero and for -0.0."
+}

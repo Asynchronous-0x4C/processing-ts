@@ -278,8 +278,17 @@ export function nfFloat(x: number, left: number, right: number, commas = false):
   intPart = intPart.replace(/^0+(?=\d)/, "").padStart(Math.max(left, 1), "0");
   if (commas) intPart = group(intPart);
   const out = frac ? `${intPart}.${frac}` : intPart;
-  return neg && /[1-9]/.test(out) ? "-" + out : out;
+  // DecimalFormat keeps the sign of negative values that round to zero (-0.00012 → "-0.000", -0.0 → "-0.000").
+  return neg ? "-" + out : out;
 }
 
-export const nfs = (s: string) => (s.startsWith("-") ? s : " " + s);
-export const nfp = (s: string) => (s.startsWith("-") ? s : "+" + s);
+/** nf(float) with one argument: an integral value in int range prints as an int (-0.0 → "0"), others as Float.toString. */
+export function nfFloatShort(x: number): string {
+  const i = d2i(x);
+  return x === i ? String(i) : floatToString(x);
+}
+
+/** nfs(float, left, right) / nfp(…): the sign is decided by the number (nfs(-0.0, 0, 3) is " -0.000" in Processing). */
+export const nfsFloat = (x: number, left: number, right: number, plus = false) => (x < 0 ? "" : plus ? "+" : " ") + nfFloat(x, left, right);
+/** nfs(int, digits) / nfp(…) */
+export const nfsInt = (n: number, digits: number, plus = false) => (n < 0 ? "" : plus ? "+" : " ") + nfInt(n, digits);

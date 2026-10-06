@@ -1,4 +1,4 @@
-# 現状と既知の問題（2026-10-05 時点）
+# 現状と既知の問題（2026-10-06 時点）
 
 スケッチの変換は新コンパイラ（`src/compiler/`、ROADMAP P1、P1-9 で切り替え）。ランタイムは PApplet + レンダラ非依存の PGraphics + Canvas 2D の JAVA2D レンダラ（P2-1。PixiJS は外した）に Java 言語ランタイム（`src/runtime/lang/`）を組み合わせている。
 数値の根拠は [research/2026-10-measurements/RESULTS.md](research/2026-10-measurements/RESULTS.md) と `npm run test:visual` の結果。
@@ -9,7 +9,7 @@
 |---|---|
 | 構文解析 | Lezer の Processing 文法（`src/compiler/grammar/`）。公式文法（ANTLR）と受理/拒否が 1,190/1,190 件一致（`npm run test:grammar`）。構文エラーはタブ・行・列つきで複数件 |
 | 意味解析（型） | 型検査器（`src/compiler/check.ts`）。本物の Processing の `cli --build` と 2,381/2,384 件一致、見逃し 0（`npm run test:check`。不一致 3 件はすべて `java.awt`） |
-| コード生成 | 静的型を使って Java の意味を保つ（整数演算、float、char、キャスト、オーバーロード、ボクシング、例外、ラムダ…）。java.util の互換層あり。`lang` タグの 23 ケース中 22 件で println 出力が本物の Processing と完全一致（ブラウザの `npm run test:visual` と Node の `npm run test:lang` の両方。残り 1 件は noise() の違い） |
+| コード生成 | 静的型を使って Java の意味を保つ（整数演算、float、char、キャスト、オーバーロード、ボクシング、例外、ラムダ…）。java.util の互換層あり。`lang` タグの 24 ケース中 23 件で println 出力が本物の Processing と完全一致（ブラウザの `npm run test:visual` と Node の `npm run test:lang` の両方。残り 1 件は noise() の違い） |
 | モード | 静的・アクティブ・Java モード。`size()`/`smooth()`/`pixelDensity()` などの `settings()` への移動も Processing と同じ規則 |
 | 変換速度 | ブラウザで 199 行のコールド変換 22ms、ウォーム 3ms。5k 行のウォーム 40ms（`npm run bench`） |
 | 2D 描画 | Canvas 2D の JAVA2D レンダラ。図形・各モード・strokeCap/Join・beginShape の全種別と contour・bezier/curve・変換（shear/applyMatrix）・colorMode（RGB/HSB）・blendMode・tint・createGraphics。Java2D のストローク正規化も再現。2d タグの視覚ケースはすべて PASS |
@@ -17,7 +17,7 @@
 | 画像 / pixels | `pixels` は ARGB の Int32Array。メインキャンバスと PImage の loadPixels/updatePixels/get/set/copy/mask/resize。filter/blend/save は未実装。loadImage のデコードは非同期（R9） |
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **145 本（57%）** がエラーなく完走（JAVA2D 83% / P2D 14% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 39 ケース: 36 PASS / 3 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3）と random_seed（noise、R14） |
+| 視覚テスト | 41 ケース: 38 PASS / 3 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3）と random_seed（noise、R14） |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
@@ -36,7 +36,7 @@
 
 | # | 問題 | 場所 | 検出テスト |
 |---|---|---|---|
-| R6 | `textAscent()`/`textDescent()` の値・`text(float)` の書式は本物と未照合。（既定フォントは、text 系を呼ぶスケッチでは setup() の前に読み込みを待つようにした。コンパイラの `usesText`） | `PGraphicsJava2D` | text_basic |
+| R6 | テキストの寸法の残りの差: `textWidth()` は Java2D（ヒンティングされた送り幅）とブラウザで約 0.3% 違う。`textAscent()`/`textDescent()` は「作成時のサイズでの d の高さ / p の深さ（整数ピクセル）× textSize」で、既定フォント（サイズ 12 で作成）は一致するが、Java2D は TrueType のヒンティングをかけるので他のサイズ・フォントでは 1px ずれることがある（Processing Sans Pro を 40 で作ると本物は 29、こちらは 28）。また本物の `createFont("Processing Sans Pro", …)` は同梱フォントを見つけられず Dialog（Arial 相当）になるが、こちらは同梱フォントを使う | `PGraphicsJava2D.fontMetrics` | text_metrics |
 | R9 | `loadImage()` は PImage を同期で返すが中身は非同期にデコードされる（直後の `img.width` が 0） | `PApplet.loadImage`, `PImage.load_from_blob` | — |
 | R12 | `frameCount` が最初の draw() で 0（Processing は 1） | `DefaultRunner.step()` | — |
 | R13 | ループが `setTimeout`。非フォーカス時は 1fps に落とす | `DefaultRunner.frame()` | — |

@@ -1,6 +1,9 @@
 import { PGraphics, enumPath, type Path, CAP } from "./PGraphics";
 import { PImage, createNativeCanvas, type Native2D, type NativeCanvas } from "./PImage";
-import { DEFAULT_FONT_FAMILY, PFont, ensureDefaultFont } from "./PFont";
+import { DEFAULT_FONT_FAMILY, PFont, defaultFontReady, ensureDefaultFont } from "./PFont";
+
+/** The font text uses before textFont(): Processing creates the default font at size 12. */
+const DEFAULT_PFONT=new PFont(DEFAULT_FONT_FAMILY,12);
 import type { PApplet } from "./PApplet";
 
 const BEVEL=32,ROUND_JOIN=2;
@@ -325,14 +328,33 @@ export class PGraphicsJava2D extends PGraphics{
     return this.measure(line)?.width??line.length*this.style.textSize*0.5;
   }
 
+  /**
+   * Ascent and descent per unit of text size, as Processing's PFont has them: the height of "d" above and
+   * the depth of "p" below the baseline in whole pixels at the size the font was created at (12 for the
+   * default font), divided by that size. textAscent() is this times the current text size (in float).
+   * Matches Processing for the bundled default font; Java2D hints other fonts, which can differ by a pixel.
+   */
+  private fontMetrics():{ascent:number;descent:number}{
+    const f=this.style.textFont??DEFAULT_PFONT;
+    if(f.__metrics__)return f.__metrics__;
+    const ctx=this.ctx??this.parent?.g?.ctx;
+    if(!ctx)return {ascent:0.75,descent:Math.fround(1/6)};
+    ensureDefaultFont();
+    ctx.font=`${f.size}px ${f.cssFamily()}`;
+    const ascent=Math.round(ctx.measureText("d").actualBoundingBoxAscent);
+    const descent=Math.round(ctx.measureText("p").actualBoundingBoxDescent);
+    const m={ascent:Math.fround(ascent/f.size),descent:Math.fround(descent/f.size)};
+    // Until the default font has loaded, the measurement is of the fallback: do not keep it.
+    if(!f.isDefaultFamily()||defaultFontReady())f.__metrics__=m;
+    return m;
+  }
+
   protected textAscentImpl(){
-    const m=this.measure("H");
-    return m?.fontBoundingBoxAscent??this.style.textSize*0.8;
+    return Math.fround(this.fontMetrics().ascent*this.style.textSize);
   }
 
   protected textDescentImpl(){
-    const m=this.measure("H");
-    return m?.fontBoundingBoxDescent??this.style.textSize*0.2;
+    return Math.fround(this.fontMetrics().descent*this.style.textSize);
   }
 }
 
