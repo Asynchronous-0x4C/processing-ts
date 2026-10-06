@@ -6,12 +6,14 @@
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
 - 完了: P0-1〜P0-7、P1-1〜P1-9（新コンパイラ）、**P2-1（描画の抽象化と Canvas 2D の JAVA2D レンダラ。PixiJS を実行パスから外した）**、P2-10 の前半（pixi.js の削除・ランタイム単体 36 KiB gz）、P2-6 の大部分（既定フォントの事前読み込み・テキストの寸法と数値の書式）。P0-8（CI）は任意で未着手。
+- 2026-10-06 のセッション（コミット 16afdf0〜）: P2-10 の前半、P2-6（R6）、`nf`/`nfs`/`nfp` の符号、P2-8 の一部（frameCount・redraw・keyTyped）、PVector の作り直し（Processing と出力が完全一致）、printMatrix、配列関数・splitTokens・match/matchAll（P5 の一部）、`\s` エスケープの拒否。新ケース: text_metrics・lang_nf_sign・frame_count・pvector_api・matrix_print・array_functions・regex_match。
+  - **P2-7 の noise は意図的に飛ばした**: Processing の出力と一致させるには LGPL の実装（Perlin の値ノイズ・余弦補間の表・オクターブ）と同じアルゴリズムを再現することになるので、進め方をユーザーに確認してから着手する。
 - **次にやること**（優先度は「進め方」の方針どおり。P2-1 が済んだので P2 の残りと P3 は並行可能）:
-  1. **P2-7 の noise**（S〜M）: random_seed の最後の XFAIL。Processing の noise は LGPL なので移植せず、出力から挙動を確かめて実装する（方針の判断が必要ならユーザーに確認）。
+  1. **P2-7 の noise**（S〜M）: random_seed の最後の XFAIL。**着手前にユーザーに方針を確認する**（上記）。
   2. **P2-8 の残り**: vt の入力スクリプト（イベントの再現テスト）を先に作り、R16 の残り（キーイベントの細部）を本物と照合、R13（setTimeout のループ → requestAnimationFrame）。
   3. **P3-1〜（WebGL2: P2D/P3D/PShader）**: `PGraphics` のフック（drawPath/drawPoint/backgroundImpl/drawImage/drawTextLine/…/applyMatrixToRenderer/applyBlendMode）を実装する 2 つ目のレンダラとして作る。PMatrix3D と 3D の行列スタックは `PGraphics` の拡張が必要。
   4. 本物で確かめてから決めること（推測で実装しない）: strokeWeight 1 以下の point()、SQUARE キャップの point、角丸 rect の角の曲線、arc の分割、colorCalc の 255 倍の丸め、`fill(300.0)` のような整数値の float の範囲外、背景の alpha。
-  - 互換性コーパスの失敗（`tests/corpus/report.md` の「多いエラー」）がそのまま残りの作業一覧（createShape・loadShader・lights・rotateX/Y/Z・loadShape・loadXML など。2D で残るのは requestImage・parseInt(String[]) など少数）。
+  - 互換性コーパスの失敗（`tests/corpus/report.md` の「多いエラー」）がそのまま残りの作業一覧（createShape・loadShader・lights・rotateX/Y/Z・loadShape・loadXML など）。2D（JAVA2D）で残る失敗は 19 本: loadShape（SVG、5 本）、IntList/IntDict・loadTable・loadXML・createWriter・sketchPath・save（P5/P2-5）、thread、requestImage、EdgeDetection/PixelArray（loadImage が非同期で width が 0 のまま。R9 → P2-9）、Sequential（タイムアウト）。
   - 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。
 - ランタイムの構成（P2-1 後）: `PApplet`（`src/lib/runtime/PApplet.ts`）は描画 API を `g: PGraphicsJava2D` へ委譲（`DELEGATED` の一覧をプロトタイプに設定）。生成コードとの約束は ARCHITECTURE.md の「生成コードの形」と `codegen.ts` 冒頭（`$rt = { lang, PApplet, classes }`、`_mousePressed` など、`frameRate()` は `_frameRate`）。size() は同期になったが、生成コードの `await size()` はそのままで動く（不要になった async の除去は任意）。
 - 基準値: 視覚テスト 43 PASS / 3 XFAIL、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 156/254（61%。JAVA2D 89%。`npm run vt -- corpus`）、API カバレッジ（関数）102/253（未更新）、文法一致 1,289/1,289、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ全体 155 KiB gz（うちコンパイラ 119 KiB）、ランタイム単体（2D + 言語ランタイム）36 KiB gz。
