@@ -4,7 +4,7 @@ import { PApplet } from "../PApplet";
 import { ArrayList } from "../util/ArrayList";
 import { Runnable, Consumer, Supplier, Function, FunctionalInterface } from "../util/function";
 import { Event, MouseEvent, KeyEvent } from "../event";
-import { javaKey } from "../event/KeyEvent";
+import { javaKey, typesCharacter } from "../event/KeyEvent";
 import { PVector } from "../util/PVector";
 import { HashMap } from "../util/HashMap";
 import { PImage } from "../PImage";
@@ -228,7 +228,12 @@ export class DefaultRunner extends Runner{
     this.applet.frameRate=1000/deltaTime;
     this.applet.__begin__();
     try{
-      if(this.applet.__loop__||this.applet.frameCount==0)await this.applet.draw();
+      // frameCount counts drawn frames and is already 1 in the first draw(), as in Processing.
+      if(this.applet.__loop__||this.applet.__redraw__||this.applet.frameCount==0){
+        this.applet.__redraw__=false;
+        this.applet.frameCount++;
+        await this.applet.draw();
+      }
     }catch(e){
       this.report_error(e);
       this.stop();
@@ -240,7 +245,6 @@ export class DefaultRunner extends Runner{
       this.stop();
       console.log(`Sketch finished with exit code ${code}.`);
     }
-    this.applet.frameCount++;
     this.applet.pmouseX=this.applet.mouseX;
     this.applet.pmouseY=this.applet.mouseY;
     while(this.event_queue.length>0){
@@ -274,7 +278,7 @@ export class DefaultRunner extends Runner{
           this.applet.key=(event.event as KeyEvent).key;
           this.applet.keyCode=(event.event as KeyEvent).keyCode;
           this.applet._keyPressed(event.event as KeyEvent);
-          this.applet._keyTyped(event.event as KeyEvent);
+          if(typesCharacter((event.event as KeyEvent).key))this.applet._keyTyped(event.event as KeyEvent);
           break;
         case "_keyReleased":
           this.applet.keyPressed=false;

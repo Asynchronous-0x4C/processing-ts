@@ -19,6 +19,14 @@ export function javaKey(domKey:string,domKeyCode:number):{key:number,keyCode:num
   return {key:CODED,keyCode:domKeyCode};
 }
 
+/**
+ * Whether pressing the key also types a character (keyTyped()). As in AWT, keys without a character
+ * (arrows, modifiers, function keys: key == CODED) do not; Enter, Backspace, Tab, Esc and Delete do.
+ */
+export function typesCharacter(key:number):boolean{
+  return key!==CODED;
+}
+
 export class KeyEvent implements Event{
   /** Character code (CODED for keys without one), as Processing's char key. */
   key:number;

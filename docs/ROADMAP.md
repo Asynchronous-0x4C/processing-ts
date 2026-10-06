@@ -8,13 +8,13 @@
 - 完了: P0-1〜P0-7、P1-1〜P1-9（新コンパイラ）、**P2-1（描画の抽象化と Canvas 2D の JAVA2D レンダラ。PixiJS を実行パスから外した）**、P2-10 の前半（pixi.js の削除・ランタイム単体 36 KiB gz）、P2-6 の大部分（既定フォントの事前読み込み・テキストの寸法と数値の書式）。P0-8（CI）は任意で未着手。
 - **次にやること**（優先度は「進め方」の方針どおり。P2-1 が済んだので P2 の残りと P3 は並行可能）:
   1. **P2-7 の noise**（S〜M）: random_seed の最後の XFAIL。Processing の noise は LGPL なので移植せず、出力から挙動を確かめて実装する（方針の判断が必要ならユーザーに確認）。
-  2. **P2-8 の R12（frameCount）と R16（keyTyped）** などの小さいランタイムの不一致。
+  2. **P2-8 の残り**: vt の入力スクリプト（イベントの再現テスト）を先に作り、R16 の残り（キーイベントの細部）を本物と照合、R13（setTimeout のループ → requestAnimationFrame）。
   3. **P3-1〜（WebGL2: P2D/P3D/PShader）**: `PGraphics` のフック（drawPath/drawPoint/backgroundImpl/drawImage/drawTextLine/…/applyMatrixToRenderer/applyBlendMode）を実装する 2 つ目のレンダラとして作る。PMatrix3D と 3D の行列スタックは `PGraphics` の拡張が必要。
   4. 本物で確かめてから決めること（推測で実装しない）: strokeWeight 1 以下の point()、SQUARE キャップの point、角丸 rect の角の曲線、arc の分割、colorCalc の 255 倍の丸め、`fill(300.0)` のような整数値の float の範囲外、背景の alpha。
   - 互換性コーパスの失敗（`tests/corpus/report.md` の「多いエラー」）がそのまま残りの作業一覧（createShape・loadShader・lights・PFont.list・PVector の static メソッドなど）。
   - 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。
 - ランタイムの構成（P2-1 後）: `PApplet`（`src/lib/runtime/PApplet.ts`）は描画 API を `g: PGraphicsJava2D` へ委譲（`DELEGATED` の一覧をプロトタイプに設定）。生成コードとの約束は ARCHITECTURE.md の「生成コードの形」と `codegen.ts` 冒頭（`$rt = { lang, PApplet, classes }`、`_mousePressed` など、`frameRate()` は `_frameRate`）。size() は同期になったが、生成コードの `await size()` はそのままで動く（不要になった async の除去は任意）。
-- 基準値: 視覚テスト 38 PASS / 3 XFAIL、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 145/254（57%。JAVA2D 83%。`npm run vt -- corpus`）、API カバレッジ（関数）102/253（未更新）、文法一致 1,190/1,190、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ全体 155 KiB gz（うちコンパイラ 119 KiB）、ランタイム単体（2D + 言語ランタイム）36 KiB gz。
+- 基準値: 視覚テスト 39 PASS / 3 XFAIL、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 145/254（57%。JAVA2D 83%。`npm run vt -- corpus`）、API カバレッジ（関数）102/253（未更新）、文法一致 1,190/1,190、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ全体 155 KiB gz（うちコンパイラ 119 KiB）、ランタイム単体（2D + 言語ランタイム）36 KiB gz。
 
 ## 進め方
 
@@ -142,7 +142,8 @@
 createFont/loadFont(.vlw)/textFont/textSize/textAlign（縦方向も）/textLeading/textWidth/textAscent/textDescent/矩形内の折り返し、既定フォントは同梱の `src/lib/runtime/fonts/ProcessingSansPro-Regular.ttf`（288 KB の TTF）。text() が使われたときだけ FontFace で遅延読み込みし、ライブラリのビルドではライセンス文と一緒に dist へ出力する（`package.json` の `files` と THIRD_PARTY_NOTICES.md も確認）。WOFF2 化やサブセット化は OFL 上の Modified Version になるが、名前（Processing Sans Pro）に予約名 "Source" を含まないので可。その場合も OFL とコピーライト表記を残す。
 - [ ] **P2-7 乱数とノイズ**（S, R14）`java.util.Random` 互換、randomGaussian、Processing の noise と noiseDetail/noiseSeed。完了条件: random_seed が PASS（stdout の値まで一致）。
   → 一部済み（P1-9）: random/randomSeed/randomGaussian は java.util.Random（`src/runtime/lang/util.ts`）で Processing と同じ値（random_seed の円 40 個が一致）。残り: noise。Processing の noise は LGPL の実装なので移植せず、出力から挙動を確かめて実装する（方針の判断が必要ならユーザーに確認）。
-- [ ] **P2-8 ループとイベント**（M, R12, R13, R16）requestAnimationFrame ベースで frameRate を守る、frameCount の意味、redraw()、mouseDragged/mouseClicked/keyTyped の発火条件、key/keyCode/CODED、mouseWheel の MouseEvent、focused、cursor/noCursor。イベントの再現テストは vt ハーネスに「入力スクリプト」（フレーム番号ごとのマウス/キー操作）を追加して行う。
+- [ ] **P2-8 ループとイベント**（M, R12, R13, R16）
+  → 一部済み（2026-10-06）: `frameCount` は描いたフレームだけを数え、最初の draw() で 1（R12。ケース `frame_count`）。`redraw()` を追加（noLoop 中に次のフレームを 1 回描く）。keyTyped は文字の出るキーだけで呼ぶ（R16 の一部）。requestAnimationFrame ベースで frameRate を守る、frameCount の意味、redraw()、mouseDragged/mouseClicked/keyTyped の発火条件、key/keyCode/CODED、mouseWheel の MouseEvent、focused、cursor/noCursor。イベントの再現テストは vt ハーネスに「入力スクリプト」（フレーム番号ごとのマウス/キー操作）を追加して行う。
 - [ ] **P2-9 VFS と fetch 事前読み込み（PWA 対応）**（M）`data/` の解決、マニフェスト/リテラル抽出による事前読み込み、画像の事前デコード、IndexedDB への保存、selectInput/selectOutput、未読み込みパスのエラーメッセージ。同期 XHR を削除。
   完了条件: Service Worker でキャッシュしたページをオフラインにしても data/ を使うケースが動く（vt ハーネスに `--offline` モードを追加して確認）。
 - [ ] **P2-10 PixiJS の削除と予算確認**（S）完了条件: `npm run size` でランタイム（2D、パーサなし）が 50 KiB gz 以下。2d タグのケースがすべて PASS。コーパスの 2D 決定的スケッチの視覚一致率 90% 以上。

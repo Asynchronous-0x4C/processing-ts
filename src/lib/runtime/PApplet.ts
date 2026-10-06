@@ -47,6 +47,8 @@ export class PApplet extends PConstants{
   __date__=new Date();
   __start_milli_seconds__=performance.now();
   __loop__=true;
+  /** redraw() was called: draw one frame even under noLoop(). */
+  __redraw__=false;
   /** What settings() asked for: size()/fullScreen()/pixelDensity()/smooth(). */
   __requested__={width:100,height:100,density:0,smooth:true};
 
@@ -535,6 +537,11 @@ export class PApplet extends PConstants{
 
   loop(){
     this.__loop__=true;
+  }
+
+  /** Draw one more frame under noLoop() (on the next frame, not inside this call). */
+  redraw(){
+    this.__redraw__=true;
   }
 
   noLoop(){

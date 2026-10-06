@@ -1,0 +1,8 @@
+{
+  "tags": [
+    "2d",
+    "loop"
+  ],
+  "frames": 3,
+  "note": "frameCount during setup() and the first draw() calls."
+}

@@ -1,0 +1,4 @@
+setup: frameCount 0
+draw: frameCount 1
+draw: frameCount 2
+draw: frameCount 3
