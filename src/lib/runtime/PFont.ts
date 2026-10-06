@@ -5,6 +5,17 @@ export const DEFAULT_FONT_FAMILY="Processing Sans Pro";
 const DEFAULT_FONT_FILE="fonts/ProcessingSansPro-Regular.ttf";
 
 let defaultFontState:"idle"|"loading"|"ready"|"failed"="idle";
+let defaultFontPromise:Promise<void>=Promise.resolve();
+
+/**
+ * Load the bundled default font (once). The runner awaits this before setup() when the sketch uses text
+ * (CompileResult.usesText); otherwise it starts on the first text() and earlier text falls back to sans-serif.
+ * Never rejects: a font that fails to load leaves the sans-serif fallback.
+ */
+export function loadDefaultFont():Promise<void>{
+  ensureDefaultFont();
+  return defaultFontPromise;
+}
 
 /** Start loading the bundled default font (once); text drawn before it is ready uses sans-serif. */
 export function ensureDefaultFont(){
@@ -15,7 +26,7 @@ export function ensureDefaultFont(){
     const url=new URL("./"+DEFAULT_FONT_FILE,import.meta.url);
     const face=new FontFace(DEFAULT_FONT_FAMILY,`url(${url.href})`);
     const fonts=(globalThis as unknown as {document?:{fonts:FontFaceSet}}).document?.fonts??(globalThis as unknown as {fonts?:FontFaceSet}).fonts;
-    face.load().then((f)=>{
+    defaultFontPromise=face.load().then((f)=>{
       fonts?.add(f);
       defaultFontState="ready";
     },()=>{

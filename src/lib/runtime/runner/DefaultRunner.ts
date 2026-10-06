@@ -9,7 +9,7 @@ import { PVector } from "../util/PVector";
 import { HashMap } from "../util/HashMap";
 import { PImage } from "../PImage";
 import { PGraphics } from "../PGraphics";
-import { PFont } from "../PFont";
+import { PFont, loadDefaultFont } from "../PFont";
 import { JSONObject } from "../data/JSONObject";
 import { JSONArray } from "../data/JSONArray";
 import { javaClasses, lang } from "../../../runtime/lang/index.ts";
@@ -28,6 +28,9 @@ const PROCESSING_CLASSES:Record<string,unknown>={
   "processing.event.KeyEvent":KeyEvent,
   "processing.event.Event":Event,
 };
+
+/** What the compiler found out about the sketch (CompileResult). */
+export type RunOptions={usesText?:boolean};
 
 export abstract class Runner{
   pre_count:number=-1;
@@ -75,7 +78,7 @@ export abstract class Runner{
     return classes;
   }
 
-  abstract init(sketch:string,map?:SourceMapV3|null):void;
+  abstract init(sketch:string,map?:SourceMapV3|null,options?:RunOptions):void;
   abstract loop():void;
   abstract step():Promise<number>;
   abstract stop():void;
@@ -168,7 +171,7 @@ export class DefaultRunner extends Runner{
     this.event_queue=[];
   }
 
-  async init(sketch:string,_map?:SourceMapV3|null){
+  async init(sketch:string,_map?:SourceMapV3|null,options:RunOptions={}){
     this.event_queue=[];
     this.flushOutput();
     lang.setOutput((text)=>this.write_output(text));
@@ -182,6 +185,8 @@ export class DefaultRunner extends Runner{
     }
     this.applet.__log_listener__=(args:any[])=>{this.log_listeners.forEach(l=>l(args))};
     if(this.manager.sketch_resources_promise!=null)this.applet.__set_preload__((await this.manager.sketch_resources_promise).map((r:{path:string,content:ArrayBuffer})=>({path:r.path,content:new Uint8Array(r.content).buffer})));
+    // Text in setup() and the first frames must already use the default font, as in Processing.
+    if(options.usesText)await loadDefaultFont();
     this.initiated=true;
     try{
       await this.applet.settings();

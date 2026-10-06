@@ -59,6 +59,18 @@ describe("compileSketch", () => {
     const seg = decode(r.map!)[genLine][0];
     expect(seg.slice(1)).toEqual([1, 3, 4]);
   });
+
+  it("reports whether the sketch draws or measures text (the runtime loads the default font first)", () => {
+    const uses = (src: string) => compileSketch(sketch(src)).usesText;
+    expect(uses("void setup() { size(320, 240); rect(0, 0, 10, 10); textSize(20); }")).toBe(false);
+    expect(uses("void draw() { text(\"a\", 10, 10); }")).toBe(true);
+    expect(uses("float w = textWidth(\"abc\");")).toBe(true);
+    expect(uses("void setup() { PGraphics pg = createGraphics(10, 10); pg.beginDraw(); pg.text(1.5, 0, 0); pg.endDraw(); }")).toBe(true);
+    expect(uses("class A { float h() { return textAscent() + textDescent(); } }")).toBe(true);
+    // A sketch method of the same name is not the library's.
+    expect(uses("void text(String s) { println(s); }\nvoid setup() { text(\"x\"); }")).toBe(false);
+    expect(uses("void draw() { text(1, 2); }")).toBe(false); // error: no code
+  });
 });
 
 describe("sketch modes", () => {

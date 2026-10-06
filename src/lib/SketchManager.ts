@@ -23,7 +23,7 @@ export class CompileErrors{
 }
 
 /** A compiled sketch: `result` is the JavaScript run by the runner (see src/compiler/codegen.ts). */
-export type CompiledSketch={result:string;error:CompileErrors|null;map?:SourceMapV3|null;timings?:{compile:number}};
+export type CompiledSketch={result:string;error:CompileErrors|null;map?:SourceMapV3|null;timings?:{compile:number};usesText?:boolean};
 
 /**
  * Manage transpile and execution of sketch.
@@ -135,7 +135,7 @@ export class SketchManager{
     if(error.error){
       this.runner.error_listeners.forEach(l=>l(error.getErrorMessage()));
     }
-    return {result:r.code??"",error,map:r.map,timings:{compile:performance.now()-t0}};
+    return {result:r.code??"",error,map:r.map,timings:{compile:performance.now()-t0},usesText:r.usesText};
   }
 
   /**
@@ -145,7 +145,7 @@ export class SketchManager{
   async runTranspiledSketch(sketch:CompiledSketch){
     this.stopSketch();
     if(sketch.error!=null&&sketch.error.error)return;
-    await this.runner.init(sketch.result,sketch.map);
+    await this.runner.init(sketch.result,sketch.map,{usesText:sketch.usesText});
     if(this.settings.keep_aspect_ratio){
       this.setAspectRatio();
     }

@@ -31,6 +31,8 @@ export interface CompileResult {
   /** JavaScript: the body of `new Function("$rt", "__renderer__", code)` (see codegen.ts). Null on errors. */
   code: string | null;
   map: SourceMapV3 | null;
+  /** See GenerateResult.usesText (false when there are errors). */
+  usesText: boolean;
   parse: ParseResult;
   check: CheckResult | null;
 }
@@ -38,7 +40,7 @@ export interface CompileResult {
 /** Parse, type-check and generate JavaScript. No code is generated when there are errors (warnings are fine). */
 export function compileSketch(tabs: readonly { name: string; text: string }[], options: GenerateOptions = {}): CompileResult {
   const { parse, check, diagnostics } = analyzeSketch(tabs);
-  if (!check || diagnostics.some((d) => d.severity === "error")) return { diagnostics, code: null, map: null, parse, check };
-  const { code, map } = generate(check, parse.source, options);
-  return { diagnostics, code, map, parse, check };
+  if (!check || diagnostics.some((d) => d.severity === "error")) return { diagnostics, code: null, map: null, usesText: false, parse, check };
+  const { code, map, usesText } = generate(check, parse.source, options);
+  return { diagnostics, code, map, usesText, parse, check };
 }

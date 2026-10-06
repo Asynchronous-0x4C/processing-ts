@@ -36,7 +36,7 @@
 
 | # | 問題 | 場所 | 検出テスト |
 |---|---|---|---|
-| R6 | 既定フォント（同梱の Processing Sans Pro）は FontFace で非同期に読み込むため、読み込みが終わるまでの最初のフレームは sans-serif で描かれる（text_basic は許容差内で通るが字形が違う）。`textAscent()`/`textDescent()` の値・`text(float)` の書式は本物と未照合 | `PFont.ensureDefaultFont`, `PGraphicsJava2D` | text_basic |
+| R6 | `textAscent()`/`textDescent()` の値・`text(float)` の書式は本物と未照合。（既定フォントは、text 系を呼ぶスケッチでは setup() の前に読み込みを待つようにした。コンパイラの `usesText`） | `PGraphicsJava2D` | text_basic |
 | R9 | `loadImage()` は PImage を同期で返すが中身は非同期にデコードされる（直後の `img.width` が 0） | `PApplet.loadImage`, `PImage.load_from_blob` | — |
 | R12 | `frameCount` が最初の draw() で 0（Processing は 1） | `DefaultRunner.step()` | — |
 | R13 | ループが `setTimeout`。非フォーカス時は 1fps に落とす | `DefaultRunner.frame()` | — |

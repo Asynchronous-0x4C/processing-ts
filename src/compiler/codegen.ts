@@ -32,6 +32,8 @@ export interface GenerateOptions {
 export interface GenerateResult {
   code: string;
   map: SourceMapV3;
+  /** The sketch calls a text drawing/measuring method of PApplet or PGraphics (the runtime loads the default font before setup()). */
+  usesText: boolean;
 }
 
 // JS operator precedence (higher binds tighter).
@@ -90,6 +92,9 @@ function defaultValue(t: Type): string {
 }
 
 const PAPPLET = "processing.core.PApplet";
+/** Library methods whose result depends on the default font being loaded (GenerateResult.usesText). */
+const TEXT_METHODS = new Set(["text", "textWidth", "textAscent", "textDescent"]);
+const TEXT_OWNERS = new Set([PAPPLET, "processing.core.PGraphics"]);
 
 /**
  * Methods the current runtime (src/lib/runtime) calls under other names: event handlers share their
@@ -123,6 +128,8 @@ export class Gen {
   private indent = 0;
   /** Current class whose code is being emitted. */
   cls!: ClassSymbol;
+  /** See GenerateResult.usesText. */
+  private usesText = false;
   private fn: FnCtx = { temps: 0, async: false };
   /** Library classes and interfaces referenced, by binary name → local alias. */
   private readonly libAliases = new Map<string, string>();
@@ -332,7 +339,7 @@ export class Gen {
     const code = body.join("\n") + "\n";
     const map = new SourceMapBuilder();
     for (const [gl, gc, s, l, c] of this.rawMappings) map.add(gl - savedLines + offset, gc, s, l, c);
-    return { code, map: map.toJSON(this.source.tabs.map((t) => t.name), this.source.tabs.map((t) => t.text)) };
+    return { code, map: map.toJSON(this.source.tabs.map((t) => t.name), this.source.tabs.map((t) => t.text)), usesText: this.usesText };
   }
 
   /** [generated line, column, tab, line, column] (0-based), lines relative to the user block. */
@@ -1173,6 +1180,7 @@ export class Gen {
     if (!m) return { c: `${this.h("unreachable")}()`, p: P.Call };
     const isStatic = (m.flags & Flags.Static) !== 0;
     if (!m.owner.isSource) {
+      if (TEXT_METHODS.has(m.name) && TEXT_OWNERS.has(m.owner.fullName)) this.usesText = true;
       // Library method: intrinsics first.
       let recv: Emit | null = null;
       if (e.target && !isStatic) recv = e.target.kind === "Super" ? { c: "super", p: P.Primary } : this.expr(e.target);
