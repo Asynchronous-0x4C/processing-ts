@@ -16,8 +16,8 @@
 | P2D / P3D / PShader | **未実装** |
 | 画像 / pixels | `pixels` は ARGB の Int32Array。メインキャンバスと PImage の loadPixels/updatePixels/get/set/copy/mask/resize。filter/blend/save は未実装。loadImage のデコードは非同期（R9） |
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
-| 互換性コーパス | Processing 同梱 examples 254 本中 **145 本（57%）** がエラーなく完走（JAVA2D 83% / P2D 14% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 42 ケース: 39 PASS / 3 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3）と random_seed（noise、R14） |
+| 互換性コーパス | Processing 同梱 examples 254 本中 **154 本（61%）** がエラーなく完走（JAVA2D 87% / P2D 18% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本、PVector の作り直しの前は 145 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
+| 視覚テスト | 44 ケース: 41 PASS / 3 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3）と random_seed（noise、R14） |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
@@ -25,7 +25,7 @@
 - **PApplet（約 105）**: settings setup draw size fullScreen / background colorMode fill noFill stroke noStroke strokeWeight / rectMode ellipseMode imageMode / point line rect quad ellipse circle arc triangle beginShape vertex endShape / text textAlign textSize textWidth textFont createFont / image loadImage createImage createGraphics / translate rotate scale push pop pushMatrix popMatrix pushStyle popStyle resetMatrix / color red green blue alpha lerpColor / abs ceil floor min max sqrt pow exp sin cos tan asin acos atan atan2 radians degrees constrain map norm dist lerp random noise / int float str split join trim match matchAll nf nfc nfp nfs / year month day hour minute second millis / println / loadStrings saveStrings loadJSONObject saveJSONObject loadJSONArray saveJSONArray / loop noLoop exit getSurface
 - **追加（P1-9）**: randomSeed randomGaussian（java.util.Random で Processing と同じ列）、smooth noSmooth pixelDensity displayDensity hint noiseSeed noiseDetail（受け付けるだけ）。print/println/str/nf/数学関数などはコンパイラが Java の書式で直接生成する
 - **変数**: width height mouseX mouseY pmouseX pmouseY mousePressed mouseButton key（文字コード） keyCode keyPressed frameCount frameRate
-- **クラス**: PVector（add sub mult div mag magSq normalize limit setMag set copy）、JSONObject、JSONArray、PImage（loadPixels updatePixels get）、PGraphics、PFont、PSurface（setCursor setTitle 等）。java.lang/java.util は言語ランタイム（`src/runtime/lang/`、ARCHITECTURE.md）
+- **クラス**: PVector（Processing の全メソッド。static の add/sub/mult/div/dot/cross/dist/angleBetween/fromAngle/random2D/random3D/lerp を含む。成分は float で演算ごとに丸める。toString/equals/hashCode も Processing と同じ。ケース pvector_api）、PMatrix2D（print を含む）、JSONObject、JSONArray、PImage（loadPixels updatePixels get）、PGraphics、PFont、PSurface（setCursor setTitle 等）。java.lang/java.util は言語ランタイム（`src/runtime/lang/`、ARCHITECTURE.md）
 - カテゴリ別の実装状況と未実装の一覧は [api-coverage.md](api-coverage.md)（`npm run coverage` で自動生成。リファレンスの関数 102/253 = 40%）。
 
 ## 解消済み（旧トランスパイラ）

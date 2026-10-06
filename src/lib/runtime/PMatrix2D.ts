@@ -1,3 +1,6 @@
+import { println } from "../../runtime/lang/print.ts";
+import { nfsFloat } from "../../runtime/lang/misc.ts";
+import { d2i } from "../../runtime/lang/numbers.ts";
 /**
  * 2D affine matrix as Processing's PMatrix2D: x' = m00*x + m01*y + m02, y' = m10*x + m11*y + m12.
  * Operations multiply on the right (translate() then rotate() rotates in the translated frame), like
@@ -101,6 +104,18 @@ export class PMatrix2D{
     this.m02=(t01*t12-t11*t02)/d;
     this.m12=(t10*t02-t00*t12)/d;
     return true;
+  }
+
+  /**
+   * Print the two rows to the console as Processing does: each element as nfs(value, digits, 4), where
+   * digits is the number of integer digits of the largest magnitude, separated by a space.
+   */
+  print(){
+    const els=[this.m00,this.m01,this.m02,this.m10,this.m11,this.m12];
+    const digits=String(d2i(Math.max(...els.map(Math.abs)))).length;
+    const row=(a:number[])=>a.map((v)=>nfsFloat(Math.fround(v),digits,4)).join(" ");
+    println(row(els.slice(0,3)));
+    println(row(els.slice(3)));
   }
 
   isIdentity(){

@@ -1,0 +1,26 @@
+// printMatrix(), PMatrix2D.print() and getMatrix() values after transforms.
+size(320, 240);
+printMatrix();
+translate(100, 50);
+rotate(0.5);
+printMatrix();
+scale(2.5, -1);
+shearX(0.2);
+printMatrix();
+PMatrix2D m = (PMatrix2D) getMatrix();
+println(m.m00 + " " + m.m01 + " " + m.m02 + " " + m.m10 + " " + m.m11 + " " + m.m12);
+m.print();
+resetMatrix();
+translate(12345.678, -0.001);
+printMatrix();
+PMatrix2D big = new PMatrix2D(1000000, 0, -3, 0.5, 1, 2);
+big.print();
+PMatrix2D inv = big.get();
+println(inv.invert() + " " + inv.determinant());
+inv.print();
+PMatrix2D tiny = new PMatrix2D(0.0001, 0, 0, 0, 0.00002, 0);
+tiny.print();
+resetMatrix();
+translate(-5000, -20);
+printMatrix();
+new PMatrix2D(-0.5, 0, 0, 0, 0, 0).print();

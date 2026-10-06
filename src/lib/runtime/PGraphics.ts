@@ -349,6 +349,10 @@ export abstract class PGraphics extends PImage{
     this.applyMatrixToRenderer();
   }
 
+  printMatrix(){
+    this.matrix.print();
+  }
+
   getMatrix(target?:PMatrix2D){
     if(target){
       target.set(this.matrix);

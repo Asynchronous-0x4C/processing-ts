@@ -10,6 +10,7 @@ import { HashMap } from "../util/HashMap";
 import { PImage } from "../PImage";
 import { PGraphics } from "../PGraphics";
 import { PFont, loadDefaultFont } from "../PFont";
+import { PMatrix2D } from "../PMatrix2D";
 import { JSONObject } from "../data/JSONObject";
 import { JSONArray } from "../data/JSONArray";
 import { javaClasses, lang } from "../../../runtime/lang/index.ts";
@@ -22,6 +23,7 @@ const PROCESSING_CLASSES:Record<string,unknown>={
   "processing.core.PImage":PImage,
   "processing.core.PGraphics":PGraphics,
   "processing.core.PFont":PFont,
+  "processing.core.PMatrix2D":PMatrix2D,
   "processing.data.JSONObject":JSONObject,
   "processing.data.JSONArray":JSONArray,
   "processing.event.MouseEvent":MouseEvent,

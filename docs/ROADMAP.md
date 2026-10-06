@@ -11,10 +11,10 @@
   2. **P2-8 の残り**: vt の入力スクリプト（イベントの再現テスト）を先に作り、R16 の残り（キーイベントの細部）を本物と照合、R13（setTimeout のループ → requestAnimationFrame）。
   3. **P3-1〜（WebGL2: P2D/P3D/PShader）**: `PGraphics` のフック（drawPath/drawPoint/backgroundImpl/drawImage/drawTextLine/…/applyMatrixToRenderer/applyBlendMode）を実装する 2 つ目のレンダラとして作る。PMatrix3D と 3D の行列スタックは `PGraphics` の拡張が必要。
   4. 本物で確かめてから決めること（推測で実装しない）: strokeWeight 1 以下の point()、SQUARE キャップの point、角丸 rect の角の曲線、arc の分割、colorCalc の 255 倍の丸め、`fill(300.0)` のような整数値の float の範囲外、背景の alpha。
-  - 互換性コーパスの失敗（`tests/corpus/report.md` の「多いエラー」）がそのまま残りの作業一覧（createShape・loadShader・lights・PFont.list・PVector の static メソッドなど）。
+  - 互換性コーパスの失敗（`tests/corpus/report.md` の「多いエラー」）がそのまま残りの作業一覧（createShape・loadShader・lights・rotateX/Y/Z・loadShape・loadXML など。2D で残るのは requestImage・parseInt(String[]) など少数）。
   - 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。
 - ランタイムの構成（P2-1 後）: `PApplet`（`src/lib/runtime/PApplet.ts`）は描画 API を `g: PGraphicsJava2D` へ委譲（`DELEGATED` の一覧をプロトタイプに設定）。生成コードとの約束は ARCHITECTURE.md の「生成コードの形」と `codegen.ts` 冒頭（`$rt = { lang, PApplet, classes }`、`_mousePressed` など、`frameRate()` は `_frameRate`）。size() は同期になったが、生成コードの `await size()` はそのままで動く（不要になった async の除去は任意）。
-- 基準値: 視覚テスト 39 PASS / 3 XFAIL、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 145/254（57%。JAVA2D 83%。`npm run vt -- corpus`）、API カバレッジ（関数）102/253（未更新）、文法一致 1,190/1,190、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ全体 155 KiB gz（うちコンパイラ 119 KiB）、ランタイム単体（2D + 言語ランタイム）36 KiB gz。
+- 基準値: 視覚テスト 41 PASS / 3 XFAIL、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 154/254（61%。JAVA2D 87%。`npm run vt -- corpus`）、API カバレッジ（関数）102/253（未更新）、文法一致 1,190/1,190、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ全体 155 KiB gz（うちコンパイラ 119 KiB）、ランタイム単体（2D + 言語ランタイム）36 KiB gz。
 
 ## 進め方
 
@@ -136,6 +136,7 @@
 - [ ] **P2-3 図形と既定値**（M, R1, R3, R4, R5, R15）既定の背景 204・白塗り・黒線 1px、各モード、arc の OPEN/CHORD/PIE、strokeCap/Join、beginShape の全種別、beginContour、bezier/curve 系と detail/tightness、`square`、size() 無しのスケッチ。
   → 大部分は P2-1 で実装（R3・R4・R5・R15 は解消、関連ケースは PASS）。残り: 本物での照合（strokeWeight 1 以下や SQUARE キャップの point()、角丸 rect の角の曲線、arc の分割）と、arc/beginContour/curveTightness の専用ケース。
 - [ ] **P2-4 変換**（S）PMatrix2D、applyMatrix、shearX/Y、printMatrix、push/pop のスタイルと行列。
+  → 大部分済み: PMatrix2D・applyMatrix・shearX/Y・push/pop は P2-1。2026-10-06 に `printMatrix()`/`PMatrix2D.print()`（本物と同じ書式: 各要素を `nfs(v, 最大絶対値の整数部の桁数, 4)`）と、スケッチから `PMatrix2D` を使えるようにした（ケース `matrix_print`）。残り: PMatrix2D の残りのメソッド（mult(float[])・transpose など）の照合、`screenX/Y` の照合。
 - [ ] **P2-5 画像**（L, R8〜R10）→ 一部済み（P2-1）: Int32Array の pixels、get/set/copy/mask/tint/resize、メインキャンバスの loadPixels/updatePixels、createGraphics（R8・R10 は解消、pixels_basic は PASS）。残り: blend/filter/save/saveFrame、R9。Int32Array の pixels と CPU/キャンバス間の遅延同期、get/set/copy/blend/mask/filter/tint/resize、メインキャンバスの loadPixels/updatePixels、createGraphics（OffscreenCanvas）、save/saveFrame。
 - [ ] **P2-6 テキスト**（M, R6）
   → 一部済み（2026-10-06）: 既定フォントは、text 系（text/textWidth/textAscent/textDescent）を呼ぶスケッチでは setup() の前に読み込みを待つ（コンパイラの `CompileResult.usesText` → `runner.init`）。ライブラリのビルドではフォントを `dist/fonts/` にライセンス文ごとコピーする（P2-10）。本物と照合して直したもの（ケース `text_metrics`・`lang_nf_sign`）: `textAscent`/`textDescent` は作成時のサイズでの d/p のピクセル高さ × textSize（既定は 9/12・2/12）、それに伴い既定の行送り、`text(float)` は `nfs(x, 0, 3)`、`text(char)` は文字、`nf`/`nfs`/`nfp`/`nfc` の 0 に丸まる負数の符号（`-0.000`）と `nfs(-0.0)`、1 引数の `nf(float)`。残り: loadFont(.vlw)、矩形内の折り返しの照合、textWidth の差（R6）、WOFF2 化。

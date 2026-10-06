@@ -25,7 +25,7 @@ const DELEGATED=[
   "strokeWeight","strokeCap","strokeJoin","rectMode","ellipseMode","imageMode","shapeMode","blendMode",
   "red","green","blue","alpha","hue","saturation","brightness","lerpColor",
   "pushStyle","popStyle","pushMatrix","popMatrix","push","pop",
-  "translate","rotate","scale","shearX","shearY","applyMatrix","resetMatrix","getMatrix","setMatrix","screenX","screenY",
+  "translate","rotate","scale","shearX","shearY","applyMatrix","resetMatrix","printMatrix","getMatrix","setMatrix","screenX","screenY",
   "point","line","triangle","quad","rect","square","ellipse","circle","arc",
   "bezier","curve","curveTightness","bezierDetail","curveDetail","bezierPoint","bezierTangent","curvePoint","curveTangent",
   "beginShape","vertex","bezierVertex","quadraticVertex","curveVertex","beginContour","endContour","endShape",
