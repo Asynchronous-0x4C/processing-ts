@@ -1,0 +1,6 @@
+{
+  "tags": [
+    "api"
+  ],
+  "note": "PVector instance and static methods with float arithmetic; compared through println."
+}
