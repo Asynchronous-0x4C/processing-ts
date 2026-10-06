@@ -196,12 +196,16 @@ export class PApplet extends PConstants{
     return list.join(separator);
   }
 
-  matchAll(str:string,regexp:string){
-    return str.matchAll(new RegExp(regexp,"g"));
+  /** All matches as String[][] (each: whole match, then the groups; unmatched groups null), or null. Patterns are DOTALL and MULTILINE, as in Processing. */
+  matchAll(str:string,regexp:string):(string|null)[][]|null{
+    const all=Array.from(str.matchAll(new RegExp(regexp,"gms")),(m)=>Array.from(m,(g)=>g??null));
+    return all.length>0?all:null;
   }
 
-  match(str:string,regexp:string){
-    return str.match(new RegExp(regexp));
+  /** The first match as String[] (whole match, then the groups; unmatched groups null), or null. */
+  match(str:string,regexp:string):(string|null)[]|null{
+    const m=new RegExp(regexp,"ms").exec(str);
+    return m?Array.from(m,(g)=>g??null):null;
   }
 
   nf(num:number|number[],left?:number,right?:number):string[]|string{

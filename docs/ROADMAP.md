@@ -14,7 +14,7 @@
   - 互換性コーパスの失敗（`tests/corpus/report.md` の「多いエラー」）がそのまま残りの作業一覧（createShape・loadShader・lights・rotateX/Y/Z・loadShape・loadXML など。2D で残るのは requestImage・parseInt(String[]) など少数）。
   - 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。
 - ランタイムの構成（P2-1 後）: `PApplet`（`src/lib/runtime/PApplet.ts`）は描画 API を `g: PGraphicsJava2D` へ委譲（`DELEGATED` の一覧をプロトタイプに設定）。生成コードとの約束は ARCHITECTURE.md の「生成コードの形」と `codegen.ts` 冒頭（`$rt = { lang, PApplet, classes }`、`_mousePressed` など、`frameRate()` は `_frameRate`）。size() は同期になったが、生成コードの `await size()` はそのままで動く（不要になった async の除去は任意）。
-- 基準値: 視覚テスト 42 PASS / 3 XFAIL、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 156/254（61%。JAVA2D 89%。`npm run vt -- corpus`）、API カバレッジ（関数）102/253（未更新）、文法一致 1,289/1,289、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ全体 155 KiB gz（うちコンパイラ 119 KiB）、ランタイム単体（2D + 言語ランタイム）36 KiB gz。
+- 基準値: 視覚テスト 43 PASS / 3 XFAIL、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 156/254（61%。JAVA2D 89%。`npm run vt -- corpus`）、API カバレッジ（関数）102/253（未更新）、文法一致 1,289/1,289、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ全体 155 KiB gz（うちコンパイラ 119 KiB）、ランタイム単体（2D + 言語ランタイム）36 KiB gz。
 
 ## 進め方
 
@@ -172,7 +172,7 @@ createFont/loadFont(.vlw)/textFont/textSize/textAlign（縦方向も）/textLead
 
 ## P5: API の完全化
 
-→ 一部済み（2026-10-06）: 配列関数（append/concat/expand/reverse/shorten/sort/splice/subset/arrayCopy）と splitTokens（ケース `array_functions`、`src/lib/runtime/util/arrayFunctions.ts`）。
+→ 一部済み（2026-10-06）: 配列関数（append/concat/expand/reverse/shorten/sort/splice/subset/arrayCopy）と splitTokens（ケース `array_functions`、`src/lib/runtime/util/arrayFunctions.ts`）、match/matchAll が String[]/String[][]（一致なしは null、DOTALL + MULTILINE。ケース `regex_match`）。
 
 IntList/FloatList/StringList、IntDict/FloatDict/StringDict（＋ Double/Long 系）、Table/TableRow、XML、parseJSON*/parseXML、createReader/createWriter/BufferedReader/PrintWriter、loadBytes/saveBytes、配列関数（append/concat/expand/reverse/shorten/sort/splice/subset/arrayCopy）、splitTokens、binary/unbinary/unhex、print/printArray、thread、delay、requestImage、launch、selectFolder、window* 系。マニフェストとの差分表で残りをゼロに近づける。
 

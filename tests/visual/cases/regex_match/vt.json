@@ -1,0 +1,6 @@
+{
+  "tags": [
+    "api"
+  ],
+  "note": "match()/matchAll() return Java arrays (null groups, null for no match); patterns are DOTALL and MULTILINE."
+}
