@@ -10,6 +10,8 @@ import { IOBase } from "./util/sketchio/IOBase";
 import { JSONArray } from "./data/JSONArray";
 import { XHRIO } from "./util/sketchio/XHRIO";
 import { PFont } from "./PFont";
+import * as arrayFunctions from "./util/arrayFunctions";
+import type { JavaArray } from "./util/arrayFunctions";
 import { Random } from "../../runtime/lang/util.ts";
 import { exceptions } from "../../runtime/lang/index.ts";
 
@@ -534,6 +536,21 @@ export class PApplet extends PConstants{
   saveJSONArray(data:JSONArray,path:string){
     this.__io__?.save_string(path,data.toString());
   }
+
+  // --- array functions and splitTokens (util/arrayFunctions.ts) --------------------------------------
+
+  append<T extends JavaArray>(a:T,value:unknown):T{return arrayFunctions.append(a,value);}
+  concat<T extends JavaArray>(a:T,b:T):T{return arrayFunctions.concat(a,b);}
+  expand<T extends JavaArray>(a:T,newSize?:number):T{return arrayFunctions.expand(a,newSize);}
+  reverse<T extends JavaArray>(a:T):T{return arrayFunctions.reverse(a);}
+  shorten<T extends JavaArray>(a:T):T{return arrayFunctions.shorten(a);}
+  sort<T extends JavaArray>(a:T,count?:number):T{return arrayFunctions.sort(a,count);}
+  splice<T extends JavaArray>(a:T,value:unknown,index:number):T{return arrayFunctions.splice(a,value,index);}
+  subset<T extends JavaArray>(a:T,start:number,count?:number):T{return arrayFunctions.subset(a,start,count);}
+  arrayCopy(src:JavaArray,a:number|JavaArray,b?:JavaArray|number,c?:number,d?:number){arrayFunctions.arrayCopy(src,a,b,c,d);}
+  /** @deprecated Processing's old name of arrayCopy(). */
+  arraycopy(src:JavaArray,a:number|JavaArray,b?:JavaArray|number,c?:number,d?:number){arrayFunctions.arrayCopy(src,a,b,c,d);}
+  splitTokens(value:string,delim?:string):string[]{return arrayFunctions.splitTokens(value,delim);}
 
   loop(){
     this.__loop__=true;
