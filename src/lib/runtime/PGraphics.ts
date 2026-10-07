@@ -1,5 +1,6 @@
 import { PImage } from "./PImage";
 import { PMatrix2D } from "./PMatrix2D";
+import { Matrix2D } from "./Matrix2D";
 import { PFont } from "./PFont";
 import type { PApplet } from "./PApplet";
 import { exceptions } from "../../runtime/lang/index.ts";
@@ -62,9 +63,9 @@ type ShapeVertex={x:number,y:number,kind:"v"|"b"|"q"|"c",c?:number[]};
 export abstract class PGraphics extends PImage{
   declare parent:PApplet;
   style=new PStyle();
-  matrix=new PMatrix2D();
+  matrix=new Matrix2D();
   private styleStack:PStyle[]=[];
-  private matrixStack:PMatrix2D[]=[];
+  private matrixStack:Matrix2D[]=[];
   /** The sketch window (as opposed to createGraphics()). */
   primary=false;
 
@@ -321,7 +322,7 @@ export abstract class PGraphics extends PImage{
 
   pushMatrix(){
     if(this.matrixStack.length>=32)throw new exceptions.RuntimeException("Too many calls to pushMatrix().");
-    this.matrixStack.push(this.matrix.get() as PMatrix2D);
+    this.matrixStack.push(this.matrix.get() as Matrix2D);
   }
 
   popMatrix(){
@@ -378,15 +379,16 @@ export abstract class PGraphics extends PImage{
   }
 
   printMatrix(){
-    this.matrix.print();
+    new PMatrix2D(this.matrix).print();
   }
 
+  /** getMatrix([target]): the current matrix as a PMatrix2D (floats). */
   getMatrix(target?:PMatrix2D){
     if(target){
       target.set(this.matrix);
       return target;
     }
-    return this.matrix.get() as PMatrix2D;
+    return new PMatrix2D(this.matrix);
   }
 
   setMatrix(m:PMatrix2D){

@@ -17,6 +17,14 @@ describe("Java number formatting", () => {
     expect(lang.floatToString(acc)).toBe("1.0000001");
   });
 
+  it("prints powers of two with JDK 17's narrower interval (one digit more than the shortest)", () => {
+    // from Java 17: Float.toString((float) Math.pow(2, k)), Double.toString(Math.pow(2, k))
+    expect(lang.floatToString(2 ** -27)).toBe("7.4505806E-9");
+    expect(lang.floatToString(2 ** -10)).toBe("9.765625E-4");
+    expect(lang.doubleToString(2 ** -144)).toBe("4.4841550858394146E-44");
+    expect(lang.doubleToString(2 ** -134)).toBe("4.5917748078995606E-41");
+  });
+
   it("formats doubles and longs like Double.toString / Long.toString", () => {
     expect(lang.doubleToString(Number.MAX_VALUE)).toBe("1.7976931348623157E308");
     expect(lang.doubleToString(Math.PI)).toBe("3.141592653589793");

@@ -159,14 +159,35 @@ function integerDigits(a: number, significantBits: number): { digits: string; ex
   return { digits: str.replace(/0+$/, "") || "0", exp: str.length + dropped };
 }
 
-/** Shortest digits (at least two) that round-trip through `roundTrip`, ties to even. */
-function shortestDigits(a: number, maxDigits: number, roundTrip: (x: number) => number): { digits: string; exp: number } {
+/**
+ * Shortest digits (at least two) that round-trip through `roundTrip`, ties to even. `halfGap`, when
+ * given, is the largest distance from `a` the digits may be (instead of round-tripping).
+ */
+function shortestDigits(a: number, maxDigits: number, roundTrip: (x: number) => number, halfGap?: number): { digits: string; exp: number } {
   const exact = exactDecimal(a);
   for (let p = 2; p < maxDigits; p++) {
     const r = roundDigits(exact, p);
-    if (roundTrip(Number(`0.${r.digits}e${r.exp}`)) === a) return r;
+    if (halfGap !== undefined ? closer(r, exact, exactDecimal(halfGap)) : roundTrip(Number(`0.${r.digits}e${r.exp}`)) === a) return r;
   }
   return roundDigits(exact, maxDigits);
+}
+
+/** |d - a| < h, exactly (decimal digit strings: value = 0.digits × 10^exp). */
+function closer(d: { digits: string; exp: number }, a: { digits: string; exp: number }, h: { digits: string; exp: number }): boolean {
+  const lo = Math.min(d.exp - d.digits.length, a.exp - a.digits.length, h.exp - h.digits.length);
+  const int = (x: { digits: string; exp: number }) => BigInt(x.digits) * 10n ** BigInt(x.exp - x.digits.length - lo);
+  const diff = int(d) - int(a);
+  return (diff < 0n ? -diff : diff) < int(h);
+}
+
+/**
+ * For a float or double whose significand is a power of two, JDK 17 accepts only digits within half the
+ * gap to the value below (the smaller one) on both sides: 2^-27f prints as 7.4505806E-9, not 7.450581E-9.
+ */
+function powerOfTwoHalfGap(a: number, bits: number, minNormal: number): number | undefined {
+  const e = Math.round(Math.log2(a));
+  if (2 ** e !== a || a < minNormal * 2) return undefined;
+  return 2 ** (e - bits - 1);
 }
 
 /**
@@ -182,7 +203,7 @@ export function floatToString(x: number): string {
   if (x === 0) return 1 / x < 0 ? "-0.0" : "0.0";
   const neg = x < 0;
   const a = neg ? -x : x;
-  const d = Number.isInteger(a) && a >= 1 && a < 2 ** 63 ? integerDigits(a, 24) : shortestDigits(a, 9, Math.fround);
+  const d = Number.isInteger(a) && a >= 1 && a < 2 ** 63 ? integerDigits(a, 24) : shortestDigits(a, 9, Math.fround, powerOfTwoHalfGap(a, 24, 2 ** -126));
   return javaLayout(neg, d.digits, d.exp);
 }
 
@@ -194,7 +215,7 @@ export function doubleToString(x: number): string {
   if (x === 0) return 1 / x < 0 ? "-0.0" : "0.0";
   const neg = x < 0;
   const a = neg ? -x : x;
-  const d = Number.isInteger(a) && a >= 1 && a < 2 ** 63 ? integerDigits(a, 53) : shortestDigits(a, 17, (v) => v);
+  const d = Number.isInteger(a) && a >= 1 && a < 2 ** 63 ? integerDigits(a, 53) : shortestDigits(a, 17, (v) => v, powerOfTwoHalfGap(a, 53, 2 ** -1022));
   return javaLayout(neg, d.digits, d.exp);
 }
 

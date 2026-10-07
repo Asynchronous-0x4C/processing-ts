@@ -17,7 +17,7 @@
 | 画像 / pixels | `pixels` は ARGB の Int32Array（普通の PImage では pixels が正で、半透明の画素も書いた値のまま）。loadPixels/updatePixels/get/set/copy/mask/resize/save（png/jpg/tif/tga）、filter（全種類。BLUR の半径の上限など本物の癖も再現）、blend/blendColor（SOFT_LIGHT 以外は本物と全件一致）。loadImage は setup() 前に事前デコードした画像を同期で返す |
 | ファイル IO | `SketchFiles`: スケッチが読むファイル（コンパイラが見つけた定数の名前とホストの一覧）を setup() の前に fetch。`data/` → スケッチフォルダの順。Service Worker でオフラインでも動く（`vt run --offline`）。保存はメモリ + ホストへの通知 |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **156 本（61%）** がエラーなく完走（JAVA2D 89% / P2D 18% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本、2026-10-06 の PVector の作り直しと配列関数の前は 145 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 57 ケース: 55 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
+| 視覚テスト | 58 ケース: 56 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
@@ -25,7 +25,7 @@
 - **PApplet（約 105）**: settings setup draw size fullScreen / background colorMode fill noFill stroke noStroke strokeWeight / rectMode ellipseMode imageMode / point line rect quad ellipse circle arc triangle beginShape vertex endShape / text textAlign textSize textWidth textFont createFont / image loadImage createImage createGraphics / translate rotate scale push pop pushMatrix popMatrix pushStyle popStyle resetMatrix / color red green blue alpha lerpColor / abs ceil floor min max sqrt pow exp sin cos tan asin acos atan atan2 radians degrees constrain map norm dist lerp random noise / int float str split join trim match matchAll nf nfc nfp nfs / year month day hour minute second millis / println / loadStrings saveStrings loadJSONObject saveJSONObject loadJSONArray saveJSONArray / loop noLoop exit getSurface
 - **追加（P1-9）**: randomSeed randomGaussian（java.util.Random で Processing と同じ列）、smooth noSmooth pixelDensity displayDensity hint（受け付けるだけ）、noiseSeed noiseDetail（noise() は Processing と同じ値。ケース noise_values）。print/println/str/nf/数学関数などはコンパイラが Java の書式で直接生成する
 - **変数**: width height mouseX mouseY pmouseX pmouseY mousePressed mouseButton key（文字コード） keyCode keyPressed frameCount frameRate
-- **クラス**: PVector（Processing の全メソッド。static の add/sub/mult/div/dot/cross/dist/angleBetween/fromAngle/random2D/random3D/lerp を含む。成分は float で演算ごとに丸める。toString/equals/hashCode も Processing と同じ。ケース pvector_api）、PMatrix2D（print を含む）、JSONObject、JSONArray、PImage（loadPixels updatePixels get）、PGraphics、PFont、PSurface（setCursor setTitle 等）。java.lang/java.util は言語ランタイム（`src/runtime/lang/`、ARCHITECTURE.md）
+- **クラス**: PVector（Processing の全メソッド。static の add/sub/mult/div/dot/cross/dist/angleBetween/fromAngle/random2D/random3D/lerp を含む。成分は float で演算ごとに丸める。toString/equals/hashCode も Processing と同じ。ケース pvector_api）、PMatrix2D（全メソッド。float 演算で本物と値まで一致、ケース matrix_api）、JSONObject、JSONArray、PImage（loadPixels updatePixels get）、PGraphics、PFont、PSurface（setCursor setTitle 等）。java.lang/java.util は言語ランタイム（`src/runtime/lang/`、ARCHITECTURE.md）
 - カテゴリ別の実装状況と未実装の一覧は [api-coverage.md](api-coverage.md)（`npm run coverage` で自動生成。リファレンスの関数 102/253 = 40%）。
 
 ## 解消済み（旧トランスパイラ）
@@ -55,7 +55,7 @@
 | C4 | 変換速度: ブラウザで 199 行のコールド変換が 22ms（目標 20ms をわずかに超える。ライブラリモデルの初回展開と JIT のウォームアップ）。5k 行のウォームは 40ms（目標 50ms 以内）で、そのうち Lezer の解析が約 20ms | `grammar/processing.grammar`, `library.ts` |
 | C5 | `java.awt` など JDK のモデル外のクラスは使えない（`unsupported` で報告。同梱 examples では Yellowtail の `java.awt.Polygon` のみ） | `tools/manifest/ManifestGen.java`（LIBRARY_ROOTS） |
 | C6 | long は JS の number（double）で表すため、絶対値が 2^53 を超える値の演算と表示が不正確（`9007199254740993L` → `9007199254740992`）。`Long.MAX_VALUE`/`MIN_VALUE` の表示と飽和キャストは正しい | `runtime/lang/numbers.ts`, `codegen.ts` |
-| C7 | `Float.toString` の JDK 17 の再現が 4e25〜7.5e25 付近の一部の値で異なる（Java 17 で出力した 399,211 個の float のうち 73 個） | `runtime/lang/numbers.ts` |
+| C7 | `Float.toString` の JDK 17 の再現が 4e25〜7.5e25 付近の一部の値で異なる（Java 17 で出力したランダムな float 30 万個のうち 81 個、double 20 万個のうち 4 個（3e25 付近））。非正規化数の 2 の累乗の一部も異なる | `runtime/lang/numbers.ts` |
 | C8 | Integer/Long/Short/Byte のボックスは JS の number のまま: `Integer a = 1000, b = 1000; a == b` が true（Java はキャッシュ範囲外なので false）、整数の `getClass()` は常に `java.lang.Integer`、null の Integer をアンボクシングしても NullPointerException にならない（Character/Float/Double は `JChar`/`JFloat`/`JDouble` なので Java どおり） | `codegen.ts`（box/unbox） |
 | C9 | Java モード: スケッチのクラスのコンストラクタは使えない（`unsupported` で報告）。スケッチ以外のトップレベルのクラスはスケッチの static メンバーとして扱うので、スケッチの static メンバーを単純名で参照できてしまう（Java ではエラー） | `sketch.ts` |
 | C10 | Processing 4.5.2 は Java 9 以降の文脈キーワード（`module` `open` `opens` `requires` `exports` `to` `uses` `provides` `with` `transitive` `yield` `record` `sealed` `permits` `var`）を変数名・フィールド名に使えない（構文エラー。ローカル変数の `int to` は前処理が InternalError で落ちる）。新コンパイラは受理する | `grammar/processing.grammar` または `cst-to-ast.ts` |
