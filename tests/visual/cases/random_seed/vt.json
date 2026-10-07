@@ -2,9 +2,7 @@
   "tags": [
     "lang"
   ],
-  "note": "Needs java.util.Random and Processing noise() ports to match exactly.",
-  "expect": "fail",
-  "knownIssue": "noise()/noiseSeed() are not Processing's algorithm yet (R14); random()/randomSeed() match (java.util.Random).",
+  "note": "randomSeed()/noiseSeed(): java.util.Random and Processing's noise() reproduce Processing's output.",
   "langExpect": "fail",
   "langKnownIssue": "random() and noise() are runtime functions; the Node stub has none"
 }

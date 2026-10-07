@@ -1,0 +1,6 @@
+{
+  "tags": [
+    "api"
+  ],
+  "note": "noise()/noiseSeed()/noiseDetail() values printed with println (exact float match with Processing)."
+}

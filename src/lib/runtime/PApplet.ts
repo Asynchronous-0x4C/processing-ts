@@ -13,6 +13,7 @@ import { PFont } from "./PFont";
 import * as arrayFunctions from "./util/arrayFunctions";
 import type { JavaArray } from "./util/arrayFunctions";
 import { Random } from "../../runtime/lang/util.ts";
+import { Noise } from "./util/noise";
 import { exceptions } from "../../runtime/lang/index.ts";
 
 export interface PAppletSettings{
@@ -399,10 +400,20 @@ export class PApplet extends PConstants{
     return Math.fround((this.__random__??=new Random()).nextGaussian());
   }
 
-  /** The noise is not Processing's yet (STATUS R14); the seed and detail are accepted. */
-  noiseSeed(_seed:number){}
+  /** Processing's noise (util/noise.ts): its own generator, separate from random(). */
+  __noise__=new Noise();
 
-  noiseDetail(_lod:number,_falloff?:number){}
+  noise(x:number,y?:number,z?:number):number{
+    return this.__noise__.noise(x,y,z);
+  }
+
+  noiseSeed(seed:number){
+    this.__noise__.seed(seed);
+  }
+
+  noiseDetail(lod:number,falloff?:number){
+    this.__noise__.detail(lod,falloff);
+  }
 
   /** smooth()/noSmooth() (settings()): shapes are always antialiased; noSmooth() turns off image smoothing. */
   smooth(_level?:number){
@@ -426,41 +437,6 @@ export class PApplet extends PConstants{
   }
 
   hint(_which:number){}
-
-  noise(x: number, y: number = 0, z: number = 0): number {
-    const X = Math.floor(x) & 255;
-    const Y = Math.floor(y) & 255;
-    const Z = Math.floor(z) & 255;
-
-    x -= Math.floor(x);
-    y -= Math.floor(y);
-    z -= Math.floor(z);
-
-    const u = this.__fade__(x);
-    const v = this.__fade__(y);
-    const w = this.__fade__(z);
-
-    const A = this.__permutation__[X] + Y;
-    const AA = this.__permutation__[A] + Z;
-    const AB = this.__permutation__[A + 1] + Z;
-    const B = this.__permutation__[X + 1] + Y;
-    const BA = this.__permutation__[B] + Z;
-    const BB = this.__permutation__[B + 1] + Z;
-
-    return this.lerp(
-      this.lerp(
-        this.lerp(this.__grad__(this.__permutation__[AA], x, y, z), this.__grad__(this.__permutation__[BA], x - 1, y, z), u),
-        this.lerp(this.__grad__(this.__permutation__[AB], x, y - 1, z), this.__grad__(this.__permutation__[BB], x - 1, y - 1, z), u),
-        v
-      ),
-      this.lerp(
-        this.lerp(this.__grad__(this.__permutation__[AA + 1], x, y, z - 1), this.__grad__(this.__permutation__[BA + 1], x - 1, y, z - 1), u),
-        this.lerp(this.__grad__(this.__permutation__[AB + 1], x, y - 1, z - 1), this.__grad__(this.__permutation__[BB + 1], x - 1, y - 1, z - 1), u),
-        v
-      ),
-      w
-    );
-  }
 
   int(x:number){
     return Math.floor(x);
@@ -589,43 +565,9 @@ export class PApplet extends PConstants{
     this.g.__stop__();
   }
 
-  private __fade__(t: number): number {
-    return t * t * t * (t * (t * 6 - 15) + 10);
-  }
-
   lerp(start: number, stop: number, amt: number): number {
     return start + amt * (stop - start);
   }
-
-  private __grad__(hash: number, x: number, y: number, z: number): number {
-    const h = hash & 15;
-    const u = h < 8 ? x : y;
-    const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
-    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
-  }
-
-  private __permutation__ = (() => {
-    const p = new Uint8Array(512);
-    const perm = [
-      151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69,
-      142, 8, 99, 37, 240, 21, 10, 23, 190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219,
-      203, 117, 35, 11, 32, 57, 177, 33, 88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175,
-      74, 165, 71, 134, 139, 48, 27, 166, 77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133, 230,
-      220, 105, 92, 41, 55, 46, 245, 40, 244, 102, 143, 54, 65, 25, 63, 161, 1, 216, 80, 73, 209,
-      76, 132, 187, 208, 89, 18, 169, 200, 196, 135, 130, 116, 188, 159, 86, 164, 100, 109, 198,
-      173, 186, 3, 64, 52, 217, 226, 250, 124, 123, 5, 202, 38, 147, 118, 126, 255, 82, 85, 212,
-      207, 206, 59, 227, 47, 16, 58, 17, 182, 189, 28, 42, 223, 183, 170, 213, 119, 248, 152, 2,
-      44, 154, 163, 70, 221, 153, 101, 155, 167, 43, 172, 9, 129, 22, 39, 253, 19, 98, 108, 110,
-      79, 113, 224, 232, 178, 185, 112, 104, 218, 246, 97, 228, 251, 34, 242, 193, 238, 210, 144,
-      12, 191, 179, 162, 241, 81, 51, 145, 235, 249, 14, 239, 107, 49, 192, 214, 31, 181, 199,
-      106, 157, 184, 84, 204, 176, 115, 121, 50, 45, 127, 4, 150, 254, 138, 236, 205, 93, 222,
-      114, 67, 29, 24, 72, 243, 141, 128, 195, 78, 66, 215, 61, 156, 180,
-    ];
-    for (let i = 0; i < 256; i++) {
-      p[256 + i] = p[i] = perm[i];
-    }
-    return p;
-  })();
 }
 for(const name of DELEGATED){
   Object.defineProperty(PApplet.prototype,name,{
