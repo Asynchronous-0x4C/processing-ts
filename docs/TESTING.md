@@ -158,10 +158,12 @@ pixelmatch（`includeAA: false` でアンチエイリアス差を無視）で不
 ```sh
 npm run vt -- corpus                         # 254 本すべて（約 5 分）。tests/corpus/report.md を更新（コミットして進捗を追う）
 npm run vt -- corpus --filter Basics/Shape   # 絞り込み（結果は tests/corpus/out/ にだけ書く）
+npm run vt -- corpus --ref                   # 決定的な JAVA2D のスケッチを本物の Processing のフレームと画像比較（初回は参照生成で +5 分程度）
 ```
 
 - 例は `<Processing>/app/resources/modes/java/examples` から読む（リポジトリにはコピーしない）。`--examples <dir>` で指定も可。
-- 各スケッチを変換し、setup + draw を `--frames`（既定 5）回実行して「ok / 変換エラー / setup エラー / draw エラー / タイムアウト」に分類する。**見た目の一致は見ていない**。
+- 各スケッチを変換し、setup + draw を `--frames`（既定 5）回実行して「ok / 変換エラー / setup エラー / draw エラー / タイムアウト」に分類する。
+- `--ref` を付けると、JAVA2D で完走したスケッチのうち決定的なもの（種なしの random()/noise()、時刻、frameRate、ネットワークを使わない。`corpus.ts` の `isDeterministic`）を本物の Processing の同じフレームと比べる（視覚テストと同じ基準。参照は `node_modules/.cache/processing-ts-corpus/` にソースのハッシュでキャッシュ）。不一致のものは `tests/corpus/out/visual/<名前>.png` に合成画像（左: Processing / 中: processing-ts / 右: 差分）を書く。
 - report.md の「多いエラー」は実行時エラーを正規化して集計したもので、未実装 API の優先順位付けに使える。
 
 ## stdout 適合テスト（新コンパイラ、tools/lang）

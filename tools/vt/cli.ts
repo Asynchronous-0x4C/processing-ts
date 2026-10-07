@@ -74,8 +74,9 @@ function usage(): never {
   node tools/vt/cli.ts shot <sketchDir> [--frames n] [--ref] [--out dir] [--offline]
       Ad-hoc: render any sketch folder; with --ref also render it with Processing and diff.
   node tools/vt/cli.ts list [--tag t]
-  node tools/vt/cli.ts corpus [--filter Basics/Shape] [--frames n] [--examples dir] [--timeout ms]
+  node tools/vt/cli.ts corpus [--filter Basics/Shape] [--frames n] [--examples dir] [--timeout ms] [--ref]
       Run Processing's bundled examples (254) through processing-ts and tally transpile/runtime errors.
+      --ref also compares deterministic JAVA2D sketches with Processing's frame (cached references).
       Writes tests/corpus/report.md (commit it to track progress).
 
   Processing is found via --processing <path>, $PROCESSING_PATH, or the platform default.
@@ -403,7 +404,10 @@ async function cmdCorpus() {
     filter: flags.filter,
     frames,
     timeoutMs: flags.timeout ? Number(flags.timeout) : 20_000,
-    onResult: (r, i, n) => console.log(`[${String(i + 1).padStart(3)}/${n}] ${r.outcome.padEnd(9)} ${r.name}${r.error ? "  " + r.error.slice(0, 90) : ""}`),
+    ref: flags.ref
+      ? { processing: requireProcessing(), cacheDir: path.join(ROOT, "node_modules/.cache/processing-ts-corpus"), outDir: path.join(ROOT, "tests/corpus/out/visual") }
+      : undefined,
+    onResult: (r, i, n) => console.log(`[${String(i + 1).padStart(3)}/${n}] ${r.outcome.padEnd(9)} ${r.visual ? (r.visual + (r.diffRatio !== undefined ? ` ${(r.diffRatio * 100).toFixed(2)}%` : "")).padEnd(14) : ""}${r.name}${r.error ? "  " + r.error.slice(0, 90) : ""}`),
   });
   const exe = findProcessing(flags.processing);
   const md = corpusReport(results, { examples, frames, processing: exe ? processingVersion(exe) : "unknown" });

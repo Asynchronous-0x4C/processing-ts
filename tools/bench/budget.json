@@ -1,10 +1,10 @@
 {
   "size": {
     "library (src/lib/index.ts)": {
-      "gzipKiB": 162.8
+      "gzipKiB": 173.1
     },
     "runtime (2D, no compiler: src/lib/runtime/runner)": {
-      "gzipKiB": 50,
+      "gzipKiB": 47.4,
       "targetKiB": 50
     },
     "parser (antlr4 + generated)": {
@@ -17,10 +17,10 @@
       "gzipKiB": 42.7
     },
     "compiler (front end + type checker + library model + codegen, src/compiler/index.ts)": {
-      "gzipKiB": 125
+      "gzipKiB": 125.5
     },
     "language runtime (src/runtime/lang)": {
-      "gzipKiB": 20
+      "gzipKiB": 20.2
     }
   },
   "parse": {

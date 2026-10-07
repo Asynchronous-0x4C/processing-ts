@@ -723,6 +723,15 @@ export abstract class PGraphics extends PImage{
     }
   }
 
+  /** text(char, x, y): CENTER moves down by half the ascent, TOP by the ascent, BOTTOM up by the descent. */
+  textChar(c:string,x:number,y:number){
+    const s=this.style;
+    if(s.textAlignY===CENTER)y+=this.textAscent()/2;
+    else if(s.textAlignY===TOP)y+=this.textAscent();
+    else if(s.textAlignY===BOTTOM)y-=this.textDescent();
+    this.textLine(c,x,y);
+  }
+
   private textLine(line:string,x:number,y:number){
     const a=this.style.textAlign;
     if(a===CENTER)x-=this.textWidthImpl(line)/2;

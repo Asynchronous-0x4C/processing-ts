@@ -156,8 +156,12 @@ export class PFont{
     return this.name.replace(/\.(ttf|otf|vlw)$/i,"")===DEFAULT_FONT_FAMILY;
   }
 
+  /** The CSS family of a font file of the sketch (createFont("a.ttf", size)), registered by SketchFiles. */
+  __css__:string|null=null;
+
   /** The CSS font-family list for this font. */
   cssFamily():string{
+    if(this.__css__)return `"${this.__css__}", sans-serif`;
     const name=this.name.replace(/\.(ttf|otf|vlw)$/i,"");
     const family=LOGICAL[name]??`"${name.replace(/"/g,"")}"`;
     return family===`"${DEFAULT_FONT_FAMILY}"`?`"${DEFAULT_FONT_FAMILY}", sans-serif`:`${family}, sans-serif`;

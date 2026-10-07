@@ -100,7 +100,7 @@ const TEXT_OWNERS = new Set([PAPPLET, "processing.core.PGraphics"]);
 /** PApplet methods whose String arguments name files to read (GenerateResult.files). */
 const FILE_METHODS = new Set([
   "loadImage", "requestImage", "loadStrings", "loadBytes", "loadJSONObject", "loadJSONArray", "loadTable", "loadXML",
-  "loadFont", "loadShape", "loadShader", "createInput", "createReader",
+  "loadFont", "loadShape", "loadShader", "createInput", "createReader", "createFont",
 ]);
 
 /**

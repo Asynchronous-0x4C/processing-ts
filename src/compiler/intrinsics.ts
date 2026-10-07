@@ -82,7 +82,9 @@ export function libraryCall(g: Gen, m: MethodSymbol, recv: Emit | null, as: A.Ex
       const xs = args(g, m, as);
       // Processing draws a float as nfs(num, 0, 3): " 1.500", "-0.250".
       const first = p0.name === "float" ? `${g.h("nfsFloat")}(${xs[0].c}, 0, 3)` : g.str(xs[0], p0).c;
-      return call(`${par(recv, P.Call)}.text(${[first, ...xs.slice(1).map((x) => x.c)].join(", ")})`);
+      // text(char, x, y) aligns vertically by the ascent alone (Processing): the runtime's textChar.
+      const fn = p0.name === "char" && xs.length === 3 ? "textChar" : "text";
+      return call(`${par(recv, P.Call)}.${fn}(${[first, ...xs.slice(1).map((x) => x.c)].join(", ")})`);
     }
   }
 

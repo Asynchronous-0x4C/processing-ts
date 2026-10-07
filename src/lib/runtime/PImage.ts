@@ -70,6 +70,11 @@ export class PImage extends PConstants{
   __ctx__:Native2D|null=null;
   /** pixels[] holds the image: set by loadPixels()/updatePixels(), cleared when only the canvas changed. */
   __fresh__=false;
+  /**
+   * The canvas has not received pixels[] yet (a new image): the first draw copies them, so pixels written
+   * without updatePixels() still show, as in Processing (which builds its image from pixels when first drawn).
+   */
+  __unsynced__=false;
 
   /** Drawing surfaces (PGraphics) change their canvas directly, so pixels[] is always re-read from it. */
   __live__():boolean{
@@ -86,8 +91,10 @@ export class PImage extends PConstants{
     this.parent=parent;
     if(settings){
       this.init(settings.width,settings.height,settings.format??2);
-      if(settings.pixels)this.pixels.set(Array.from(settings.pixels).slice(0,this.pixels.length));
-      this.updatePixels();
+      if(settings.pixels){
+        this.pixels.set(Array.from(settings.pixels).slice(0,this.pixels.length));
+        this.updatePixels();
+      }
     }
   }
 
@@ -104,6 +111,7 @@ export class PImage extends PConstants{
     this.__ctx__=this.__canvas__.getContext("2d",{willReadFrequently:true}) as Native2D;
     // A new image: transparent black, in both.
     this.__fresh__=true;
+    this.__unsynced__=true;
   }
 
   /**
@@ -114,6 +122,7 @@ export class PImage extends PConstants{
     this.init(bmp.width,bmp.height,2,1);
     this.__ctx__!.drawImage(bmp,0,0);
     this.__fresh__=false;
+    this.__unsynced__=false;
     this.loadPixels();
     let format=1;
     if(ext!=="jpg"&&ext!=="jpeg"){
@@ -161,6 +170,7 @@ export class PImage extends PConstants{
     this.__ctx__!.drawImage(bmp,0,0);
     bmp.close();
     this.__fresh__=false;
+    this.__unsynced__=false;
     this.loadPixels();
   }
 
@@ -174,6 +184,7 @@ export class PImage extends PConstants{
 
   /** Canvas to draw this image from. */
   __native__():NativeCanvas|null{
+    if(this.__unsynced__&&!this.__live__()&&this.__pixels_valid__())this.updatePixels();
     return this.__canvas__;
   }
 
@@ -192,6 +203,7 @@ export class PImage extends PConstants{
     argbToRgba(this.pixels,img.data,this.format===1);
     this.__ctx__.putImageData(img,0,0,x,y,w,h);
     this.__fresh__=true;
+    this.__unsynced__=false;
   }
 
   /** get() (a copy), get(x, y) (an ARGB color, 0 outside), get(x, y, w, h) (a copy of the region) */
@@ -298,6 +310,7 @@ export class PImage extends PConstants{
     this.init(Math.round(w),Math.round(h),this.format,1);
     this.__ctx__!.drawImage(old,0,0,this.pixelWidth,this.pixelHeight);
     this.__fresh__=false;
+    this.__unsynced__=false;
     this.loadPixels();
   }
 

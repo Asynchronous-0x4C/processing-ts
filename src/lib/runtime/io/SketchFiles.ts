@@ -59,6 +59,8 @@ export class SketchFiles {
   private readonly files = new Map<string, Uint8Array>();
   private readonly images = new Map<string, ImageBitmap>();
   private readonly savedPixels = new Map<string, SavedPixels>();
+  /** CSS families of the font files (.ttf/.otf) registered with the document, by key. */
+  private readonly fonts = new Map<string, string>();
   /** Keys that were fetched and not found. */
   private readonly absent = new Set<string>();
   onSave: ((file: SavedFile) => void) | null = null;
@@ -100,6 +102,29 @@ export class SketchFiles {
     }
     await Promise.all(jobs);
     await Promise.all([...this.files.keys()].filter((k) => isImageFile(k) && !this.images.has(k)).map((k) => this.decode(k)));
+    await Promise.all([...this.files.keys()].filter((k) => /\.(ttf|otf|woff2?)$/i.test(k) && !this.fonts.has(k)).map((k) => this.registerFont(k)));
+  }
+
+  /** Make a font file usable by CSS name (createFont("a.ttf", size)). */
+  private async registerFont(key: string) {
+    const bytes = this.files.get(key);
+    const set = (globalThis as { document?: { fonts?: FontFaceSet } }).document?.fonts;
+    if (!bytes || typeof FontFace === "undefined" || !set) return;
+    const family = "__sketchfont_" + key.replace(/[^A-Za-z0-9]/g, "_");
+    try {
+      const face = new FontFace(family, bytes.slice().buffer as ArrayBuffer);
+      await face.load();
+      set.add(face);
+      this.fonts.set(key, family);
+    } catch {
+      // not a font the browser can read
+    }
+  }
+
+  /** The CSS family of the font file `name` refers to (null when missing or unreadable). */
+  fontFamily(name: string): string | null {
+    const key = this.find(name);
+    return key === null ? null : this.fonts.get(key) ?? null;
   }
 
   private readonly fetching = new Map<string, Promise<boolean>>();

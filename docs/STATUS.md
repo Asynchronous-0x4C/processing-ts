@@ -1,4 +1,4 @@
-# 現状と既知の問題（2026-10-06 時点）
+# 現状と既知の問題（2026-10-07 時点）
 
 スケッチの変換は新コンパイラ（`src/compiler/`、ROADMAP P1、P1-9 で切り替え）。ランタイムは PApplet + レンダラ非依存の PGraphics + Canvas 2D の JAVA2D レンダラ（P2-1。PixiJS は外した）に Java 言語ランタイム（`src/runtime/lang/`）を組み合わせている。
 数値の根拠は [research/2026-10-measurements/RESULTS.md](research/2026-10-measurements/RESULTS.md) と `npm run test:visual` の結果。
@@ -11,12 +11,12 @@
 | 意味解析（型） | 型検査器（`src/compiler/check.ts`）。本物の Processing の `cli --build` と 2,381/2,384 件一致、見逃し 0（`npm run test:check`。不一致 3 件はすべて `java.awt`） |
 | コード生成 | 静的型を使って Java の意味を保つ（整数演算、float、char、キャスト、オーバーロード、ボクシング、例外、ラムダ…）。java.util の互換層あり。`lang` タグの 24 ケースすべてで println 出力が本物の Processing と完全一致（ブラウザの `npm run test:visual`。Node の `npm run test:lang` は random() を持たないスタブなので random_seed を除く 23 件） |
 | モード | 静的・アクティブ・Java モード。`size()`/`smooth()`/`pixelDensity()` などの `settings()` への移動も Processing と同じ規則 |
-| 変換速度 | ブラウザで 199 行のコールド変換 22ms、ウォーム 3ms。5k 行のウォーム 40ms（`npm run bench`） |
+| 変換速度 | ブラウザで 199 行のコールド変換 22ms、ウォーム 3ms。5k 行のウォーム 41ms（`npm run bench`） |
 | 2D 描画 | Canvas 2D の JAVA2D レンダラ。図形・各モード・strokeCap/Join・beginShape の全種別と contour・bezier/curve・変換（shear/applyMatrix）・colorMode（RGB/HSB）・blendMode・tint・createGraphics。Java2D のストローク正規化も再現。2d タグの視覚ケースはすべて PASS |
-| P2D / P3D / PShader | **未実装** |
+| P2D / P3D / PShader | **未実装**（P3） |
 | 画像 / pixels | `pixels` は ARGB の Int32Array（普通の PImage では pixels が正で、半透明の画素も書いた値のまま）。loadPixels/updatePixels/get/set/copy/mask/resize/save（png/jpg/tif/tga）、filter（全種類。BLUR の半径の上限など本物の癖も再現）、blend/blendColor（SOFT_LIGHT 以外は本物と全件一致）。loadImage は setup() 前に事前デコードした画像を同期で返す |
 | ファイル IO | `SketchFiles`: スケッチが読むファイル（コンパイラが見つけた定数の名前とホストの一覧）を setup() の前に fetch。`data/` → スケッチフォルダの順。Service Worker でオフラインでも動く（`vt run --offline`）。保存はメモリ + ホストへの通知 |
-| 互換性コーパス | Processing 同梱 examples 254 本中 **156 本（61%）** がエラーなく完走（JAVA2D 89% / P2D 18% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本、2026-10-06 の PVector の作り直しと配列関数の前は 145 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
+| 互換性コーパス | Processing 同梱 examples 254 本中 **161 本（63%）** がエラーなく完走（JAVA2D 92% / P2D 18% / P3D 7%）。JAVA2D で完走した決定的なスケッチ 115 本は本物と見た目がすべて一致（`npm run vt -- corpus --ref`）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API（P3 の WebGL・PShape、P5 の IntList/Table/XML/thread など）。内訳は [tests/corpus/report.md](../tests/corpus/report.md) |
 | 視覚テスト | 59 ケース: 57 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 

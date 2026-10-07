@@ -16,6 +16,15 @@ import { Noise } from "./util/noise";
 import { blendColor } from "./util/imageOps";
 import { exceptions } from "../../runtime/lang/index.ts";
 
+/** The smallest/largest of the arguments or of one array (Processing reads list[0] first: an empty array throws). */
+function extreme(a:(number|ArrayLike<number>)[],better:(x:number,y:number)=>boolean):number{
+  const list=a.length===1&&typeof a[0]!=="number"?a[0]:a as number[];
+  if(list.length===0)throw new exceptions.ArrayIndexOutOfBoundsException("Index 0 out of bounds for length 0");
+  let m=list[0];
+  for(let i=1;i<list.length;i++)if(better(list[i],m))m=list[i];
+  return m;
+}
+
 export interface PAppletSettings{
   canvas: HTMLCanvasElement,
   base_path: string,
@@ -35,7 +44,7 @@ const DELEGATED=[
   "point","line","triangle","quad","rect","square","ellipse","circle","arc",
   "bezier","curve","curveTightness","bezierDetail","curveDetail","bezierPoint","bezierTangent","curvePoint","curveTangent",
   "beginShape","vertex","bezierVertex","quadraticVertex","curveVertex","beginContour","endContour","endShape",
-  "image","textSize","textLeading","textAlign","textMode","textWidth","textAscent","textDescent","text",
+  "image","textSize","textLeading","textAlign","textMode","textWidth","textAscent","textDescent","text","textChar",
   "get","set","copy","filter","blend",
 ] as const;
 
@@ -160,8 +169,11 @@ export class PApplet extends PConstants{
     return this.g.colorF(...args);
   }
 
+  /** createFont(name, size[, smooth, charset]): an installed font by name, or a .ttf/.otf file of the sketch. */
   createFont(name:string,size:number,smooth=true,_charset?:unknown){
-    return new PFont(name,size,smooth);
+    const font=new PFont(name,size,smooth);
+    if(/\.(ttf|otf)$/i.test(name))font.__css__=this.__files__.fontFamily(name);
+    return font;
   }
 
   /**
@@ -440,9 +452,15 @@ export class PApplet extends PConstants{
 
   ceil=Math.ceil;
 
-  min=Math.min;
+  /** min(a, b[, c]) or min(array) (the compiler handles the numeric forms itself; arrays come here). */
+  min(...a:(number|ArrayLike<number>)[]):number{
+    return extreme(a,(x,y)=>x<y);
+  }
 
-  max=Math.max;
+  /** max(a, b[, c]) or max(array) */
+  max(...a:(number|ArrayLike<number>)[]):number{
+    return extreme(a,(x,y)=>x>y);
+  }
 
   sqrt=Math.sqrt;
 
@@ -568,8 +586,9 @@ export class PApplet extends PConstants{
     return x.toString();
   }
 
-  split(str:string,splitter:string){
-    return str.split(splitter);
+  /** split(str, delim): by a char (arrives as its code) or a literal string; empty pieces are kept. */
+  split(str:string,splitter:string|number){
+    return str.split(typeof splitter==="number"?String.fromCharCode(splitter):splitter);
   }
 
   println(...args:any[]){

@@ -2,21 +2,19 @@
 
 2026-10-04 作成。方針の根拠は [EVALUATION.md](EVALUATION.md)、現状の問題は [STATUS.md](STATUS.md)（T*/R* は STATUS.md の問題 ID）。
 
-## 現在地（2026-10-06 時点。セッションの終わりに更新する）
+## 現在地（2026-10-07 時点。セッションの終わりに更新する）
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
-- 完了: P0-1〜P0-7、P1-1〜P1-9（新コンパイラ）、**P2-1（描画の抽象化と Canvas 2D の JAVA2D レンダラ。PixiJS を実行パスから外した）**、P2-10 の前半（pixi.js の削除・ランタイム単体 36 KiB gz）、P2-6 の大部分（既定フォントの事前読み込み・テキストの寸法と数値の書式）。P0-8（CI）は任意で未着手。
-- 2026-10-06 のセッション（コミット 16afdf0〜）: P2-10 の前半、P2-6（R6）、`nf`/`nfs`/`nfp` の符号、P2-8 の一部（frameCount・redraw・keyTyped）、PVector の作り直し（Processing と出力が完全一致）、printMatrix、配列関数・splitTokens・match/matchAll（P5 の一部）、`\s` エスケープの拒否。新ケース: text_metrics・lang_nf_sign・frame_count・pvector_api・matrix_print・array_functions・regex_match。
-  - **P2-7 の noise は意図的に飛ばした**: Processing の出力と一致させるには LGPL の実装（Perlin の値ノイズ・余弦補間の表・オクターブ）と同じアルゴリズムを再現することになるので、進め方をユーザーに確認してから着手する。
-- **次にやること**（優先度は「進め方」の方針どおり。P2-1 が済んだので P2 の残りと P3 は並行可能）:
-  1. **P2-7 の noise**（S〜M）: random_seed の最後の XFAIL。**着手前にユーザーに方針を確認する**（上記）。
-  2. **P2-8 の残り**: vt の入力スクリプト（イベントの再現テスト）を先に作り、R16 の残り（キーイベントの細部）を本物と照合、R13（setTimeout のループ → requestAnimationFrame）。
-  3. **P3-1〜（WebGL2: P2D/P3D/PShader）**: `PGraphics` のフック（drawPath/drawPoint/backgroundImpl/drawImage/drawTextLine/…/applyMatrixToRenderer/applyBlendMode）を実装する 2 つ目のレンダラとして作る。PMatrix3D と 3D の行列スタックは `PGraphics` の拡張が必要。
-  4. 本物で確かめてから決めること（推測で実装しない）: strokeWeight 1 以下の point()、SQUARE キャップの point、角丸 rect の角の曲線、arc の分割、colorCalc の 255 倍の丸め、`fill(300.0)` のような整数値の float の範囲外、背景の alpha。
-  - 互換性コーパスの失敗（`tests/corpus/report.md` の「多いエラー」）がそのまま残りの作業一覧（createShape・loadShader・lights・rotateX/Y/Z・loadShape・loadXML など）。2D（JAVA2D）で残る失敗は 19 本: loadShape（SVG、5 本）、IntList/IntDict・loadTable・loadXML・createWriter・sketchPath・save（P5/P2-5）、thread、requestImage、EdgeDetection/PixelArray（loadImage が非同期で width が 0 のまま。R9 → P2-9）、Sequential（タイムアウト）。
-  - 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。
-- ランタイムの構成（P2-1 後）: `PApplet`（`src/lib/runtime/PApplet.ts`）は描画 API を `g: PGraphicsJava2D` へ委譲（`DELEGATED` の一覧をプロトタイプに設定）。生成コードとの約束は ARCHITECTURE.md の「生成コードの形」と `codegen.ts` 冒頭（`$rt = { lang, PApplet, classes }`、`_mousePressed` など、`frameRate()` は `_frameRate`）。size() は同期になったが、生成コードの `await size()` はそのままで動く（不要になった async の除去は任意）。
-- 基準値: 視覚テスト 43 PASS / 3 XFAIL、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 156/254（61%。JAVA2D 89%。`npm run vt -- corpus`）、API カバレッジ（関数）102/253（未更新）、文法一致 1,289/1,289、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ全体 155 KiB gz（うちコンパイラ 119 KiB）、ランタイム単体（2D + 言語ランタイム）36 KiB gz。
+- **P0〜P2 は完了**（P0-8 の CI だけ任意で未着手）。P1（新コンパイラ）と P2（Canvas 2D の JAVA2D ランタイム）が揃い、互換性コーパスの決定的な JAVA2D スケッチ 115 本は **すべて本物と見た目が一致**（`npm run vt -- corpus --ref`）。
+- 2026-10-07 のセッション（コミット fb9cfc0〜）: P2-7 noise（ユーザー決定: LGPL のコードを見ずに出力から再実装）、P2-8 イベントと rAF ループ（vt の入力スクリプト）、P2-9 VFS（fetch で事前読み込み・同期 XHR 廃止・`--offline`）、P2-5 filter/blend（出力から式を決定）と PImage の pixels を正にする同期、P2-3 point/arc、P2-2 色の int/float、P2-4 PMatrix2D（float）と JDK 17 の 2 の累乗の表示、P2-6 .vlw と矩形内の折り返しと image() の座標の切り捨て、P2-10 コーパスの画像比較。新ケース 13 件（noise_values・events_*・files_*・image_filter・image_blend・shapes_detail・color_calc・matrix_api・font_vlw）。
+- **次にやること**（優先度は「進め方」の方針どおり: 速さ ＞ P2D/P3D・PShader ＞ その他の API）:
+  1. **P3-1〜（WebGL2: P2D/P3D/PShader）**: `PGraphics` のフック（drawPath/drawPoint/backgroundImpl/drawImage/drawTextLine/…/applyMatrixToRenderer/applyBlendMode）を実装する 2 つ目のレンダラとして作る。PMatrix3D と 3D の行列スタックは `PGraphics` の拡張が必要（2D の行列は double の内部クラス `Matrix2D`、スケッチ向けは float の `PMatrix2D`）。コーパスの失敗の大半（createShape・loadShader・lights・rotateX/Y/Z…）がここ。
+  2. **P3-6 PShape**（loadShape の SVG/OBJ）: JAVA2D でも残る失敗 5 本の原因。
+  3. **P5 の API**: IntList/IntDict・Table・XML・createWriter/createReader・sketchPath・thread/method（名前でスケッチのメソッドを呼ぶ仕組み。selectInput/selectOutput もこれと java.io.File が必要）。JAVA2D の残りの失敗 9 本はこれ。
+  4. 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。
+  - 本物の挙動を調べるときの道具: `npm run vt -- shot <dir> --ref`（println と画像）、`node tools/vt/zoom.ts`（画素の拡大比較）、vt.json の `input`（マウス/キー）。LGPL の Processing のコードは見ずに、出力に式を当てはめて決める（noise・filter・blend・点の被覆はこの方法で全件一致）。
+- ランタイムの構成: `PApplet`（`src/lib/runtime/PApplet.ts`）は描画 API を `g: PGraphicsJava2D` へ委譲（`DELEGATED`）。生成コードとの約束は ARCHITECTURE.md の「生成コードの形」と `codegen.ts`（`$rt = { lang, PApplet, classes }`、イベントは `_mousePressed` など、float 版の色関数は `fillF` など、`text(char)` は `textChar`）。ファイルは `SketchFiles`（setup() 前に fetch）。
+- 基準値: 視覚テスト 57 PASS / 2 XFAIL（XFAIL は p3d_box・pshader_filter）、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 161/254（63%。JAVA2D 92%、決定的な JAVA2D 115 本の見た目は 100% 一致）、文法一致 1,289/1,289、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ全体 164.8 KiB gz（うちコンパイラ 119.5 KiB）、ランタイム単体 45.1 KiB gz（予算 50）。
 
 ## 進め方
 
@@ -163,8 +161,9 @@ createFont/loadFont(.vlw)/textFont/textSize/textAlign（縦方向も）/textLead
   完了条件: Service Worker でキャッシュしたページをオフラインにしても data/ を使うケースが動く（vt ハーネスに `--offline` モードを追加して確認）。
   → 結果（2026-10-07）: `src/lib/runtime/io/SketchFiles.ts`。コンパイラが定数のファイル名を集め（`CompileResult.files`）、ランタイムが setup() の前に `data/` → スケッチフォルダの順で fetch し画像をデコードしておく。loadImage は同期で完成した PImage を返す（R9 解消）。同期 XHR と localStorage の IO を削除。見つからないファイルは本物と同じメッセージで null。loadStrings の改行と BOM、PNG/JPEG の format（checkAlpha 相当）、loadBytes、TGA を読み戻すと上下が反転すること（本物の挙動）まで本物で確認。保存（saveStrings/saveBytes/save/saveFrame。TIFF/TGA は自前のエンコーダ）はメモリ上に置いて同じ実行中に読み戻せ、ホストの "save" リスナーに渡す。`SketchManager.addFile()`・`SketchData.files` を追加し、デモはサンプルのフォルダを base_uri にしてアップロードした非 .pde ファイルを data/ として渡す。vt: `--offline`（と vt.json の `offline`）で Service Worker のキャッシュからオフライン実行、参照生成はスケッチフォルダの全ファイルをコピー。新ケース files_load・files_save・files_offline。
   - 残り（P5 へ）: selectInput/selectOutput/selectFolder（java.io.File とコールバックの名前呼び出しが必要）。IndexedDB への保存はやめて、ホストへの通知（"save" リスナー）にした。
-- [ ] **P2-10 PixiJS の削除と予算確認**（S）完了条件: `npm run size` でランタイム（2D、パーサなし）が 50 KiB gz 以下。2d タグのケースがすべて PASS。コーパスの 2D 決定的スケッチの視覚一致率 90% 以上。
+- [x] **P2-10 PixiJS の削除と予算確認**（S）完了条件: `npm run size` でランタイム（2D、パーサなし）が 50 KiB gz 以下。2d タグのケースがすべて PASS。コーパスの 2D 決定的スケッチの視覚一致率 90% 以上。
   → 前半済み（2026-10-06）: `pixi.js` を依存から削除。`npm run size` の項目を「library」1 つにし、ランタイム単体（`src/lib/runtime/runner`。2D + 言語ランタイム、コンパイラなし）を追加: **36 KiB gz（予算 50 KiB）**。`DefaultRunner` の `SketchManager` の import を型のみにしてコンパイラを巻き込まないようにした。ビルドの `library.js` 生成を Pixi のグローバル置換から esbuild での 1 ファイル化に変更し、既定フォントを base64 で埋め込まずに `dist/fonts/` へコピーするようにした（`vite build` の出力が gzip 327 → 170 KiB）。残り: 2D の決定的スケッチの視覚一致率（コーパスの `--ref`）。
+  → 結果（2026-10-07）: `npm run vt -- corpus --ref` を追加（決定的な JAVA2D スケッチを本物の同じフレームと比べる。参照はキャッシュ）。最初は 118 本中 111 本（94%）一致、不一致を調べて直した結果 **115 本すべて一致**: `max(int[])`/`min(int[])` の配列版、pixels を書いてから updatePixels() せずに描いた画像（本物は初回描画時に pixels から作る）、`createFont("x.ttf")`（data のフォントを FontFace で事前登録）、`text(char)` の縦位置、`split(s, TAB)` の char の区切り。ランタイム単体 45.1 KiB gz（予算 50）、ライブラリの予算は機能追加に合わせて更新。
 
 ## P3: WebGL2（P2D / P3D / PShader）
 
