@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DONE_MARKER, detectMode, injectForReference, type SketchSource } from "./sketch.ts";
+import type { InputAction } from "./input.ts";
 
 export type ReferenceResult = {
   ok: boolean;
@@ -43,7 +44,7 @@ const PROCESSING_NOISE = [
  */
 export async function renderReference(
   sketch: SketchSource,
-  opts: { processing: string; frames: number; outPng: string; timeoutMs?: number; mode?: "static" | "active" },
+  opts: { processing: string; frames: number; outPng: string; timeoutMs?: number; mode?: "static" | "active"; input?: InputAction[] },
 ): Promise<ReferenceResult> {
   const started = Date.now();
   const mainName = sketch.main.replace(/\.pde$/, "");
@@ -54,7 +55,7 @@ export async function renderReference(
   const tmpPng = path.join(work, "frame.png");
   const tmpStdout = path.join(work, "stdout.txt");
   for (const f of sketch.files) {
-    const content = f.name === sketch.main ? injectForReference(f.content, mode, opts.frames, tmpPng, tmpStdout) : f.content;
+    const content = f.name === sketch.main ? injectForReference(f.content, mode, opts.frames, tmpPng, tmpStdout, opts.input) : f.content;
     fs.writeFileSync(path.join(sketchDir, f.name), content);
   }
   const dataDir = path.join(sketch.dir, "data");

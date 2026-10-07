@@ -86,7 +86,10 @@ tests/visual/refs/<name>.png / .stdout.txt / .meta.json   ← `ref` が生成。
   "knownIssue": "…",      // 失敗の理由（expect とセットで書き、直ったら一緒に消す）
   "stdout": true,         // println 出力を比較するか（既定 true）
   "mode": "static",       // Processing のモード判定を上書き（通常は自動判定）
-  "tags": ["2d"],         // 2d / 3d / shader / text / color / image / lang など
+  "input": [             // マウス/キー操作（任意。下の「入力スクリプト」）
+    { "frame": 2, "type": "click", "x": 100, "y": 50, "button": "left" }
+  ],
+  "tags": ["2d"],         // 2d / 3d / shader / text / color / image / lang / events など
   "note": "…"
 }
 ```
@@ -120,6 +123,20 @@ tests/visual/refs/<name>.png / .stdout.txt / .meta.json   ← `ref` が生成。
    ハーネスは `SketchManager({ manual_step: true })` で setup → `step()` を `frames` 回 → `canvas.toDataURL()`。
    `data/` は `/@fs/<絶対パス>/data/` として配信し、`loadImage("a.png")` が `data/a.png` を読むようにしている。
 4. `println` は `SketchManager.addEventListener("log")` で収集。
+
+### 入力スクリプト: `tools/vt/input.ts`
+
+`vt.json` の `input` に書いた操作を、両方の実行でフレームの間に再生する（`frame: n` は n 回目の draw() の後。0 は setup() の直後。どちらも次の draw() の後でハンドラが呼ばれる）。
+
+| type | 引数 | 内容 |
+|---|---|---|
+| `move` | x, y | マウスの移動（ボタンを押していればドラッグ） |
+| `down` / `up` / `click` | x, y, button（left/middle/right） | 押す / 離す / 押して離す（同じ位置なら clicked も出る） |
+| `wheel` | x, y, delta | ホイール（ノッチ数。正が下向き）。Chromium は同じフレームのホイールを合成するので 1 フレーム 1 回にする |
+| `key` / `keydown` / `keyup` | key（DOM のキー名: `"a"`, `"Enter"`, `"ArrowLeft"`, `"Control"` など） | 押して離す / 押す / 離す |
+
+- Processing 側: `handleDraw()` の後で `surface.getNative()`（AWT のキャンバス）に `java.awt.event.MouseEvent`/`KeyEvent`/`MouseWheelEvent` を dispatch する。Windows が実際に作るのと同じ並び（pressed → typed → released、動かさずに離したときの clicked、押したままの移動は dragged）にしているので、PSurfaceAWT の AWT → Processing の変換はそのまま通る。OS が AWT イベントを作る部分（Ctrl+A の文字が 1 になるなど）は input.ts の仮定。
+- processing-ts 側: Playwright の `page.mouse`/`page.keyboard`（本物の DOM イベント）。ハーネスは `start()` → `step()` × frames → `finish()` に分かれている。
 
 ### 比較: `tools/vt/image.ts`
 

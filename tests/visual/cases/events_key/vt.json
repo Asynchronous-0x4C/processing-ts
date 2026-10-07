@@ -1,0 +1,24 @@
+{
+  "tags": [
+    "events"
+  ],
+  "frames": 12,
+  "note": "Key input replayed between frames (letters, Enter, arrows, Ctrl+letter, two keys held at once).",
+  "input": [
+    { "frame": 0, "type": "key", "key": "a" },
+    { "frame": 1, "type": "key", "key": "Enter" },
+    { "frame": 2, "type": "keydown", "key": "ArrowLeft" },
+    { "frame": 3, "type": "keyup", "key": "ArrowLeft" },
+    { "frame": 4, "type": "keydown", "key": "Control" },
+    { "frame": 4, "type": "key", "key": "a" },
+    { "frame": 4, "type": "keyup", "key": "Control" },
+    { "frame": 5, "type": "key", "key": " " },
+    { "frame": 6, "type": "key", "key": "Backspace" },
+    { "frame": 7, "type": "keydown", "key": "x" },
+    { "frame": 7, "type": "keydown", "key": "y" },
+    { "frame": 8, "type": "keyup", "key": "x" },
+    { "frame": 9, "type": "keyup", "key": "y" },
+    { "frame": 10, "type": "key", "key": "Delete" },
+    { "frame": 10, "type": "key", "key": "Tab" }
+  ]
+}

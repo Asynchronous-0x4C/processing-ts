@@ -1,0 +1,7 @@
+draw 1 0 0
+draw 2 0 0
+pressed 27 27 true
+released 27 27
+draw 3 27 27
+pressed 27 27 true
+draw 4 27 0

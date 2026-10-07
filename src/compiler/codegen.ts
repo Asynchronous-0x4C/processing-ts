@@ -308,7 +308,10 @@ export class Gen {
     } else if (!m.owner.isSource) n = m.name;
     else {
       const lib = this.overriddenLibrary(m);
-      if (lib) n = lib.name;
+      // Sketch methods are plain functions, so PApplet overloads (mousePressed() and
+      // mousePressed(MouseEvent)) need distinct names; the $Sketch class picks the one to call.
+      if (lib && !(m.owner.isSketch && this.overloaded.has(m.name))) n = lib.name;
+      else if (lib) n = escapeName(m.name) + "$" + m.params.map(typeCode).join("$");
       else {
         n = escapeName(m.name);
         if (this.overloaded.has(m.name)) n += "$" + m.params.map(typeCode).join("$");
@@ -398,13 +401,20 @@ export class Gen {
     // The sketch class: methods the runtime calls.
     this.line(`class $Sketch extends $rt.PApplet {`);
     this.indent++;
+    // One entry per runtime name: of overloads such as keyPressed() and keyPressed(KeyEvent), PApplet
+    // calls the one with the event (its default implementation calls the other).
+    const entries = new Map<string, A.MethodDecl>();
     for (const m of decl.body) {
       if (m.kind !== "MethodDecl" || !m.sym || !m.body) continue;
       const lib = this.overriddenLibrary(m.sym);
       if (!lib || lib.owner.fullName !== PAPPLET) continue;
-      const fn = this.methodName(m.sym);
       const name = RUNTIME_HANDLER_NAMES[m.name.text] ?? m.name.text;
-      const isAsync = this.asyncSketchMethods.has(m.sym);
+      const prev = entries.get(name);
+      if (!prev || prev.sym!.params.length < m.sym.params.length) entries.set(name, m);
+    }
+    for (const [name, m] of entries) {
+      const fn = this.methodName(m.sym!);
+      const isAsync = this.asyncSketchMethods.has(m.sym!);
       this.line(`${isAsync ? "async " : ""}${name}(...a) { return ${isAsync ? "await " : ""}${fn}(...a); }`);
     }
     this.indent--;

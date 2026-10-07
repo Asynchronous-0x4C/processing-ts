@@ -1,0 +1,11 @@
+{
+  "tags": [
+    "events"
+  ],
+  "frames": 4,
+  "note": "Esc intercepted in keyPressed() (key = 0) does not quit; key/keyCode afterwards.",
+  "input": [
+    { "frame": 1, "type": "key", "key": "Escape" },
+    { "frame": 2, "type": "keydown", "key": "Escape" }
+  ]
+}

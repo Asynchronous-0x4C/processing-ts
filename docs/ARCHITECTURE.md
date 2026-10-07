@@ -172,10 +172,14 @@ ANTLR4 の Processing 文法（`antlr/Processing.g4`、生成物 `antlr/parser/`
 ### 実行ループ（`DefaultRunner`）
 
 - `init()`: `new Function("$rt", "__renderer__", code)` でスケッチを生成 → `settings()` → `setup()` → `loop()`。`$rt.classes` は `javaClasses`（src/runtime/lang）と Processing のクラス（`processing.core.PVector` など）、`addDependency()` で足したクラス。
-- フレームは `setTimeout(1000/frameRate)`（rAF ではない）。ウィンドウ非フォーカス時は 1fps。
-- `step()`（今回追加）: 1 フレーム分（draw + イベント処理）を実行する。`SketchSettings.manual_step: true` のときはループを自動開始せず、`SketchManager.step(n)` で進める（視覚テスト用）。
-- `frameCount` は setup 中 0、**最初の draw() でも 0**（Processing は 1）。draw 後にインクリメント。
-- イベントは DOM イベントをキューに積み、draw の後でまとめて処理。`key` は文字コード（矢印などは CODED、Enter は 10）、`keyCode` は Java の VK コード。`keyTyped` は keyPressed のたびに呼ばれる。
+- フレームは requestAnimationFrame のループで、`frameRate()` の間隔ごとに `step()` を呼ぶ（表示より高いフレームレートでは 1 回のコールバックで最大 4 フレームまで追いつく）。`frameRate` 変数はフレーム時間の指数移動平均の逆数。
+- `step()`: 1 フレーム分（draw + イベント処理）を実行する。`SketchSettings.manual_step: true` のときはループを自動開始せず、`SketchManager.step(n)` で進める（視覚テスト用）。
+- `frameCount` は setup 中 0、最初の draw() で 1（Processing と同じ）。
+- イベント: DOM イベントを Processing の `MouseEvent`/`KeyEvent`（action・修飾キー・ボタン・回数つき）にしてキューに積み、**draw の後・フレームの終わりの前**に `PApplet.__handle_event__()` で処理する（Processing の dequeueEvents と同じ位置なので、ハンドラ内の描画は draw の行列のまま同じフレームに乗る）。規則は本物で確認したもの（ケース events_mouse/events_key/events_escape）:
+  - マウス: ボタンを押したままの移動は DRAG（ボタンは左 → 中 → 右の順）、押してから動かずに離すと RELEASE の後に CLICK。`mouseButton` はホイールや移動も含むすべてのイベントで更新され、離した後も残る。`pmouseX/Y` はハンドラ内では直前のイベントの位置、draw() 内では前回の draw() 時の位置（最初のマウスイベントでは両方とも現在位置）。座標は整数。ホイールの `getCount()` はノッチ数（Chromium の 100px = 1、端数は蓄積）。
+  - キー: `key` は文字コード（矢印などは CODED、Enter は 10、Ctrl+英字は制御文字 1〜26 = Windows の AWT）、`keyCode` は Java の VK コード（記号キーは DOM の値から変換）。文字の出るキーは PRESS の後に TYPE を積み、keyTyped() 中の `keyCode` は 0。`keyPressed` は押されているキーが 1 つでも残っていれば true。Esc は keyPressed() で `key` を変えない限り `exit()`。
+  - コンパイラは `mousePressed()` と `mousePressed(MouseEvent)` のようなオーバーロードを別名の関数にし、`$Sketch` の `_mousePressed` にはイベントを受け取る方を割り当てる（Processing の既定の実装が引数なし版を呼ぶのと同じ結果）。
+  - `focused`・focusGained/focusLost は window の focus/blur、`cursor()`/`noCursor()` は canvas の CSS カーソル。
 - 出力: 生成コードの print/println は `lang` の出力先（`Runner.write_output`）に文字列で届き、改行ごとに log listener へ 1 行ずつ渡す（改行の無い残りは `SketchManager.flushOutput()`）。
 - 例外: setup/draw から抜けた例外は `lang.toJava()` で Java の例外に読み替えて "java.lang.NullPointerException: ..." の形で error listener へ送り、Processing と同じくスケッチを止める。
 

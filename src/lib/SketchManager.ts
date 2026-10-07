@@ -114,6 +114,8 @@ export class SketchManager{
     target_element.addEventListener("pointermove",e=>{if(this.runner.on_pointermove)this.runner.on_pointermove(e);});
     target_element.addEventListener("pointerdown",e=>{if(this.runner.on_pointerdown)this.runner.on_pointerdown(e);});
     target_element.addEventListener("pointerup",e=>{if(this.runner.on_pointerup)this.runner.on_pointerup(e)});
+    target_element.addEventListener("pointerenter",e=>{if(this.runner.on_pointerenter)this.runner.on_pointerenter(e)});
+    target_element.addEventListener("pointerleave",e=>{if(this.runner.on_pointerleave)this.runner.on_pointerleave(e)});
     window.addEventListener("keydown",e=>{if(this.runner.on_keydown)this.runner.on_keydown(e)});
     window.addEventListener("keyup",e=>{if(this.runner.on_keyup)this.runner.on_keyup(e);});
     target_element.addEventListener("wheel",e=>{if(this.runner.on_wheel)this.runner.on_wheel(e);},{passive:true});

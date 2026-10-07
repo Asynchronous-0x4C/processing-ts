@@ -1,8 +1,9 @@
 // Runs sketches with processing-ts inside headless Chromium (Playwright) served by a Vite dev server.
 import path from "node:path";
-import { chromium, type Browser } from "playwright-core";
+import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer, type ViteDevServer } from "vite";
 import type { SketchSource } from "./sketch.ts";
+import { playInput, type InputAction } from "./input.ts";
 
 export type BrowserRunResult = {
   ok: boolean;
@@ -75,8 +76,11 @@ export class BrowserRunner {
     }
   }
 
-  /** Run one sketch in a fresh page. `frames` = number of draw() calls before capture. */
-  async run(sketch: SketchSource, frames: number, timeoutMs = 30_000): Promise<BrowserRunResult> {
+  /**
+   * Run one sketch in a fresh page. `frames` = number of draw() calls before capture; `input` is
+   * replayed with real mouse/keyboard input between frames (input.ts).
+   */
+  async run(sketch: SketchSource, frames: number, timeoutMs = 30_000, input?: InputAction[]): Promise<BrowserRunResult> {
     const page = await this.browser!.newPage({ viewport: { width: 1280, height: 1024 }, deviceScaleFactor: 1 });
     const consoleLines: string[] = [];
     page.on("console", (m) => consoleLines.push(`[${m.type()}] ${m.text()}`));
@@ -89,8 +93,10 @@ export class BrowserRunner {
       await page.goto(`${this.baseUrl}/tools/vt/harness/index.html`, { waitUntil: "load" });
       await page.waitForFunction(() => (window as any).__vt__ !== undefined, null, { timeout: timeoutMs });
       const dataBase = `/@fs/${path.resolve(sketch.dir, "data").replace(/\\/g, "/").replace(/^\//, "")}/`;
+      const opts = { main: sketch.main, files: sketch.files, dataBase, frames };
+      const work = input?.length ? this.runWithInput(page, opts, input) : page.evaluate((o) => (window as any).__vt__.run(o), opts);
       const result = (await Promise.race([
-        page.evaluate((o) => (window as any).__vt__.run(o), { main: sketch.main, files: sketch.files, dataBase, frames }),
+        work,
         new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs)),
       ])) as Omit<BrowserRunResult, "console">;
       return { ...result, console: consoleLines };
@@ -99,5 +105,17 @@ export class BrowserRunner {
     } finally {
       await page.close();
     }
+  }
+
+  private async runWithInput(page: Page, opts: { frames: number }, input: InputAction[]) {
+    const failed = await page.evaluate((o) => (window as any).__vt__.start(o), opts);
+    if (failed) return failed;
+    const rect = await page.evaluate(() => (window as any).__vt__.canvasRect());
+    for (let i = 0; i < opts.frames; i++) {
+      await playInput(page, input, i, rect);
+      const r = await page.evaluate(() => (window as any).__vt__.step());
+      if (r) return r;
+    }
+    return page.evaluate(() => (window as any).__vt__.finish());
   }
 }

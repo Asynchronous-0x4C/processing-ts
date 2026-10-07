@@ -8,6 +8,14 @@ describe("key events", () => {
     expect(javaKey("Delete", 46)).toEqual({ key: 127, keyCode: 127 });
     expect(javaKey("ArrowUp", 38)).toEqual({ key: CODED, keyCode: 38 });
     expect(javaKey("Shift", 16)).toEqual({ key: CODED, keyCode: 16 });
+    expect(javaKey(",", 188)).toEqual({ key: 44, keyCode: 44 });
+    expect(javaKey("Insert", 45)).toEqual({ key: CODED, keyCode: 155 });
+  });
+
+  it("types control characters for Control+letter (Windows)", () => {
+    expect(javaKey("a", 65, true)).toEqual({ key: 1, keyCode: 65 });
+    expect(javaKey("Z", 90, true)).toEqual({ key: 26, keyCode: 90 });
+    expect(javaKey("1", 49, true)).toEqual({ key: 49, keyCode: 49 });
   });
 
   it("calls keyTyped only for keys that type a character (as AWT's KEY_TYPED)", () => {

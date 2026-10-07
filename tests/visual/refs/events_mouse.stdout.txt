@@ -1,0 +1,26 @@
+draw 1 0 0 0 0 false 0
+moved 10 20 10 20
+draw 2 10 20 10 20 false 0
+moved 30 40 10 20
+moved 35 45 30 40
+draw 3 35 45 10 20 false 0
+pressed 35 45 37 true
+draw 4 35 45 35 45 true 37
+dragged 60 70 35 45 37
+draw 5 60 70 35 45 true 37
+released 60 70 37 1 37 false
+draw 6 60 70 60 70 false 37
+moved 100 100 60 70
+pressed 100 100 39 true
+released 100 100 39 1 39 false
+clicked 100 100 39 1 39
+draw 7 100 100 60 70 false 39
+wheel 1 100 100
+draw 8 100 100 100 100 false 0
+wheel -2 100 100
+draw 9 100 100 100 100 false 0
+moved 150 120 100 100
+pressed 150 120 37 true
+released 150 120 37 1 37 false
+clicked 150 120 37 1 37
+draw 10 150 120 100 100 false 37

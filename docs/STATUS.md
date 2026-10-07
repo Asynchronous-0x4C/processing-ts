@@ -17,7 +17,7 @@
 | 画像 / pixels | `pixels` は ARGB の Int32Array。メインキャンバスと PImage の loadPixels/updatePixels/get/set/copy/mask/resize。filter/blend/save は未実装。loadImage のデコードは非同期（R9） |
 | ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **156 本（61%）** がエラーなく完走（JAVA2D 89% / P2D 18% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本、2026-10-06 の PVector の作り直しと配列関数の前は 145 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 47 ケース: 45 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
+| 視覚テスト | 50 ケース: 48 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
@@ -38,9 +38,8 @@
 |---|---|---|---|
 | R6 | テキストの寸法の残りの差: `textWidth()` は Java2D（ヒンティングされた送り幅）とブラウザで約 0.3% 違う。`textAscent()`/`textDescent()` は「作成時のサイズでの d の高さ / p の深さ（整数ピクセル）× textSize」で、既定フォント（サイズ 12 で作成）は一致するが、Java2D は TrueType のヒンティングをかけるので他のサイズ・フォントでは 1px ずれることがある（Processing Sans Pro を 40 で作ると本物は 29、こちらは 28）。また本物の `createFont("Processing Sans Pro", …)` は同梱フォントを見つけられず Dialog（Arial 相当）になるが、こちらは同梱フォントを使う | `PGraphicsJava2D.fontMetrics` | text_metrics |
 | R9 | `loadImage()` は PImage を同期で返すが中身は非同期にデコードされる（直後の `img.width` が 0） | `PApplet.loadImage`, `PImage.load_from_blob` | — |
-| R13 | ループが `setTimeout`。非フォーカス時は 1fps に落とす | `DefaultRunner.frame()` | — |
-| R16 | キーイベントの細部が本物と未照合（keyReleased 時の `key`/`keyCode` の更新、Ctrl+文字の `key`、複数キー同時押しの `keyPressed`）。`key`/`keyCode` の変換（文字コード、CODED、ENTER=10、DELETE=127）と、keyTyped を文字の出るキーだけで呼ぶこと（AWT の KEY_TYPED と同じ）は済み | `DefaultRunner`, `event/KeyEvent.ts` | key-event.test.ts |
-| R17 | 未実装の主な API: filter、blend()、PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、save/saveFrame、cursor()、delay、thread など | — | p3d_box, pshader_filter |
+| R16 | イベントは vt の入力スクリプトで本物と照合済み（ケース events_mouse/events_key/events_escape）だが、Processing 側は AWT イベントを直接 dispatch しているので、OS が AWT イベントを作る部分（Ctrl+英字の文字、Delete/Esc の KEY_TYPED、ダブルクリックの判定時間など）は Windows の既定値を仮定している。mouseEntered/mouseExited・ウィンドウ外へのドラッグ・キーを押したままフォーカスを失った場合は未照合 | `DefaultRunner`, `event/KeyEvent.ts` | events_*, key-event.test.ts |
+| R17 | 未実装の主な API: filter、blend()、PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、save/saveFrame、delay、thread など | — | p3d_box, pshader_filter |
 | R18 | Processing の PApplet は `pixelDensity` をフィールドとメソッドの両方に持つが、JS では同名にできないのでメソッドだけ（スケッチから `pixelDensity` をフィールドとして読むと関数になる）。`pixelWidth`/`pixelHeight` はフィールド | `PApplet.ts` | — |
 
 ## 既知の問題（コンパイラ `src/compiler/` と言語ランタイム）

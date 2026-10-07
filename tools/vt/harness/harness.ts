@@ -17,59 +17,119 @@ function format(arg: unknown): string {
   return String(arg);
 }
 
-async function run(opts: RunOptions) {
-  const logs: string[] = [];
-  const errors: string[] = [];
-  const frameMs: number[] = [];
-  let phase: Phase = "transpile";
-  let transpileMs = 0;
-  let setupMs = 0;
-  let code: string | undefined;
-  let timings: Record<string, number> | undefined;
+type Result = {
+  ok: boolean; phase: Phase; png?: string; width: number; height: number; logs: string[]; errors: string[];
+  transpileMs: number; timings?: Record<string, number>; setupMs: number; frameMs: number[]; code?: string;
+};
 
-  const canvas = document.createElement("canvas");
-  document.body.appendChild(canvas);
-  const manager = new SketchManager({ frameRate: 60, thread: "main", keep_aspect_ratio: false, manual_step: true });
-  manager.mountPApplet(canvas);
-  manager.addEventListener("log", (args) => logs.push(format(args)));
-  manager.addEventListener("error", (e) => errors.push(`[${phase}] ${format(e)}`));
-  manager.base_uri = new URL(opts.dataBase, location.href).href;
+/** A sketch being run frame by frame (start → step… → finish), so tools/vt can send input between frames. */
+class Session {
+  logs: string[] = [];
+  errors: string[] = [];
+  frameMs: number[] = [];
+  phase: Phase = "transpile";
+  transpileMs = 0;
+  setupMs = 0;
+  code: string | undefined;
+  timings: Record<string, number> | undefined;
+  readonly canvas = document.createElement("canvas");
+  readonly manager = new SketchManager({ frameRate: 60, thread: "main", keep_aspect_ratio: false, manual_step: true });
 
-  try {
-    const t0 = performance.now();
-    const transpiled = manager.transpileSketch({ main: opts.main, content: opts.files });
-    transpileMs = performance.now() - t0;
-    code = transpiled.result;
-    timings = transpiled.timings;
-    if (transpiled.error?.error) {
-      return { ok: false, phase, width: 0, height: 0, logs, errors, transpileMs, timings, setupMs, frameMs, code };
-    }
-    phase = "setup";
-    const t1 = performance.now();
-    await manager.runTranspiledSketch(transpiled);
-    setupMs = performance.now() - t1;
-    phase = "draw";
-    for (let i = 0; i < opts.frames; i++) {
-      const t = performance.now();
-      await manager.step(1);
-      frameMs.push(performance.now() - t);
-    }
-    manager.flushOutput();
-    phase = "capture";
-    const png = canvas.toDataURL("image/png");
-    phase = "done";
-    return { ok: errors.length === 0, phase, png, width: canvas.width, height: canvas.height, logs, errors, transpileMs, timings, setupMs, frameMs, code };
-  } catch (e) {
-    manager.flushOutput();
-    errors.push(`[${phase}] ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
-    let png: string | undefined;
-    try {
-      png = canvas.toDataURL("image/png");
-    } catch {
-      // canvas unusable
-    }
-    return { ok: false, phase, png, width: canvas.width, height: canvas.height, logs, errors, transpileMs, timings, setupMs, frameMs, code };
+  constructor(dataBase: string) {
+    document.body.appendChild(this.canvas);
+    this.manager.mountPApplet(this.canvas);
+    this.manager.addEventListener("log", (args) => this.logs.push(format(args)));
+    this.manager.addEventListener("error", (e) => this.errors.push(`[${this.phase}] ${format(e)}`));
+    this.manager.base_uri = new URL(dataBase, location.href).href;
   }
+
+  /** Transpile and run setup(). False when the sketch did not compile. */
+  async start(opts: RunOptions): Promise<boolean> {
+    const t0 = performance.now();
+    const transpiled = this.manager.transpileSketch({ main: opts.main, content: opts.files });
+    this.transpileMs = performance.now() - t0;
+    this.code = transpiled.result;
+    this.timings = transpiled.timings;
+    if (transpiled.error?.error) return false;
+    this.phase = "setup";
+    const t1 = performance.now();
+    await this.manager.runTranspiledSketch(transpiled);
+    this.setupMs = performance.now() - t1;
+    this.phase = "draw";
+    return true;
+  }
+
+  async step() {
+    const t = performance.now();
+    await this.manager.step(1);
+    this.frameMs.push(performance.now() - t);
+  }
+
+  result(ok: boolean): Result {
+    this.manager.flushOutput();
+    let png: string | undefined;
+    if (ok) {
+      this.phase = "capture";
+      png = this.canvas.toDataURL("image/png");
+      this.phase = "done";
+    } else {
+      try {
+        png = this.canvas.toDataURL("image/png");
+      } catch {
+        // canvas unusable
+      }
+    }
+    const { phase, logs, errors, transpileMs, timings, setupMs, frameMs, code, canvas } = this;
+    return { ok: ok && errors.length === 0, phase, png, width: png ? canvas.width : 0, height: png ? canvas.height : 0, logs, errors, transpileMs, timings, setupMs, frameMs, code };
+  }
+
+  fail(e: unknown): Result {
+    this.errors.push(`[${this.phase}] ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
+    return this.result(false);
+  }
+}
+
+let session: Session | null = null;
+
+/** Run a sketch: setup, then `frames` draw() calls, then capture the canvas. */
+async function run(opts: RunOptions): Promise<Result> {
+  const s = new Session(opts.dataBase);
+  try {
+    if (!(await s.start(opts))) return s.result(false);
+    for (let i = 0; i < opts.frames; i++) await s.step();
+    return s.result(true);
+  } catch (e) {
+    return s.fail(e);
+  }
+}
+
+/** Step-by-step variant of run(): start(), then step() per frame, then finish(). */
+async function start(opts: RunOptions): Promise<Result | null> {
+  session = new Session(opts.dataBase);
+  try {
+    return (await session.start(opts)) ? null : session.result(false);
+  } catch (e) {
+    return session.fail(e);
+  }
+}
+
+async function step(): Promise<Result | null> {
+  try {
+    await session!.step();
+    return null;
+  } catch (e) {
+    return session!.fail(e);
+  }
+}
+
+function finish(): Result {
+  return session!.result(true);
+}
+
+/** Where the sketch canvas is on the page (for mouse input). */
+function canvasRect() {
+  const r = session!.canvas.getBoundingClientRect();
+  return { x: r.left, y: r.top, width: r.width, height: r.height };
 }
 
 /**
@@ -92,4 +152,5 @@ function transpile(opts: { main: string; files: { name: string; content: string 
   return runs;
 }
 
-(window as unknown as { __vt__: { run: typeof run; transpile: typeof transpile } }).__vt__ = { run, transpile };
+const api = { run, transpile, start, step, finish, canvasRect };
+(window as unknown as { __vt__: typeof api }).__vt__ = api;

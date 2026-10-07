@@ -10,6 +10,7 @@ import { corpusReport, findExamples, runCorpus } from "./corpus.ts";
 import { compare, composite, pngFromDataUrl, readPng, writePng } from "./image.ts";
 import { findProcessing, renderReference } from "./processing.ts";
 import { readSketch, type SketchSource } from "./sketch.ts";
+import type { InputAction } from "./input.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const CASES_DIR = path.join(ROOT, "tests/visual/cases");
@@ -29,6 +30,8 @@ type CaseConfig = {
   /** Compare println() output with the reference (default true). */
   stdout?: boolean;
   mode?: "static" | "active";
+  /** Mouse/key actions replayed between frames in both runs (tools/vt/input.ts). */
+  input?: InputAction[];
   tags?: string[];
   note?: string;
 };
@@ -122,7 +125,7 @@ function listCases(names: string[]): { name: string; dir: string; config: CaseCo
 }
 
 /** Hash of everything that influences the reference output. */
-function sourceHash(sketch: SketchSource, frames: number): string {
+function sourceHash(sketch: SketchSource, frames: number, input?: InputAction[]): string {
   const h = crypto.createHash("sha1");
   // Normalize line endings: core.autocrlf may check sources out as CRLF.
   for (const f of sketch.files) h.update(f.name).update("\0").update(f.content.replace(/\r\n/g, "\n")).update("\0");
@@ -133,6 +136,7 @@ function sourceHash(sketch: SketchSource, frames: number): string {
       if (fs.statSync(p).isFile()) h.update(f).update(fs.readFileSync(p));
     }
   }
+  if (input?.length) h.update(JSON.stringify(input));
   return h.update(`frames=${frames}`).digest("hex");
 }
 
@@ -159,14 +163,14 @@ async function generateRefs(cases: ReturnType<typeof listCases>, onlyMissing: bo
   for (const c of cases) {
     const sketch = readSketch(c.dir);
     const frames = c.config.frames ?? DEFAULTS.frames;
-    const hash = sourceHash(sketch, frames);
+    const hash = sourceHash(sketch, frames, c.config.input);
     const paths = refPaths(c.name);
     if (onlyMissing && fs.existsSync(paths.meta)) {
       const meta = JSON.parse(fs.readFileSync(paths.meta, "utf8"));
       if (meta.sourceHash === hash && fs.existsSync(paths.png)) continue;
     }
     process.stdout.write(`ref    ${c.name.padEnd(28)} `);
-    const r = await renderReference(sketch, { processing, frames, outPng: paths.png, mode: c.config.mode });
+    const r = await renderReference(sketch, { processing, frames, outPng: paths.png, mode: c.config.mode, input: c.config.input });
     if (!r.ok) {
       failures++;
       console.log(`ERROR  ${r.error}\n${r.messages.map((m) => "         " + m).join("\n")}`);
@@ -234,7 +238,7 @@ function evaluate(
     refSize = `${ref.width}x${ref.height}`;
     if (fs.existsSync(paths.meta)) {
       const meta = JSON.parse(fs.readFileSync(paths.meta, "utf8"));
-      if (meta.sourceHash !== sourceHash(readSketch(c.dir), cfg.frames)) reasons.push("reference is stale (sources changed): run `npm run test:visual:ref -- " + c.name + "`");
+      if (meta.sourceHash !== sourceHash(readSketch(c.dir), cfg.frames, cfg.input)) reasons.push("reference is stale (sources changed): run `npm run test:visual:ref -- " + c.name + "`");
     }
     if (actual) {
       const r = compare(ref, actual, cfg.threshold, (files.diff = path.join(outDir, "diff.png")));
@@ -316,7 +320,7 @@ async function cmdRun() {
     for (const c of cases) {
       const sketch = readSketch(c.dir);
       const frames = flags.frames ? Number(flags.frames) : c.config.frames ?? DEFAULTS.frames;
-      const run = await runner.run(sketch, frames);
+      const run = await runner.run(sketch, frames, undefined, c.config.input);
       const r = evaluate(c, run, path.join(OUT_DIR, c.name));
       results.push(r);
       if (!flags.json) {

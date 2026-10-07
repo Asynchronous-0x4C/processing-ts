@@ -1,6 +1,12 @@
 import { PApplet } from "./PApplet";
 import { PImage } from "./PImage";
 
+/** CSS cursors for java.awt.Cursor's types (Processing's ARROW = 0, CROSS = 1, TEXT = 2, WAIT = 3, HAND = 12, MOVE = 13). */
+const CURSORS:Record<number,string>={
+  0:"default",1:"crosshair",2:"text",3:"wait",4:"sw-resize",5:"se-resize",6:"nw-resize",7:"ne-resize",
+  8:"n-resize",9:"s-resize",10:"w-resize",11:"e-resize",12:"pointer",13:"move",
+};
+
 export class PSurface{
   readonly MIN_WINDOW_WIDTH=128;
   readonly MIN_WINDOW_HEIGHT=128;
@@ -13,34 +19,20 @@ export class PSurface{
     this.applet=applet;
   }
     
-  setCursor(...args:any[]){
-    if(args.length==1&&args[0].constructor.name=="Number"){
-      const kind=args[0] as number;
-      let name="auto";
-      switch(kind){
-        case -1:break;
-        case 0:name="default";break;
-        case 1:name="crosshair";break;
-        case 2:name="text";break;
-        case 3:name="wait";break;
-        case 4:name="sw-resize";break;
-        case 5:name="se-resize";break;
-        case 6:name="nw-resize";break;
-        case 7:name="ne-resize";break;
-        case 8:name="n-resize";break;
-        case 9:name="s-resize";break;
-        case 10:name="w-resize";break;
-        case 11:name="e-resize";break;
-        case 12:name="grab";break;
-        case 13:name="move";break;
-      }
-      this.current_cursor=name;
-      this.setCursorStyle(name);
-    }else if(args.length==3&&args[0].constructor.name=="PImage"&&args[1].constructor.name=="Number"&&args[2].constructor.name=="Number"){
-      const {image,hotspotX,hotspotY}={image:args[0] as PImage,hotspotX:args[1] as number,hotspotY:args[2] as number};
-      this.setCursorStyle({image:image,x:hotspotX,y:hotspotY});
-      console.log(image);
+  /** setCursor(kind) with Processing's cursor constants (ARROW, CROSS, HAND, MOVE, TEXT, WAIT), or setCursor(image, hotspotX, hotspotY). */
+  setCursor(kind:number|PImage,hotspotX=0,hotspotY=0){
+    if(kind instanceof PImage){
+      const src=kind.__canvas__;
+      if(!src||typeof document==="undefined")return;
+      const c=document.createElement("canvas");
+      c.width=kind.width;
+      c.height=kind.height;
+      c.getContext("2d")!.drawImage(src as CanvasImageSource,0,0,kind.width,kind.height);
+      this.current_cursor=`url(${c.toDataURL()}) ${hotspotX} ${hotspotY}, auto`;
+    }else{
+      this.current_cursor=CURSORS[kind]??"default";
     }
+    this.setCursorStyle(this.current_cursor);
   }
 
   showCursor(){
@@ -51,11 +43,9 @@ export class PSurface{
     this.setCursorStyle("none");
   }
 
-  setCursorStyle(arg: string | { image: PImage; x: number; y: number; }): void {
-    if(typeof arg==="string"){
-      const canvas=this.applet.g.canvas;
-      if(canvas&&"style" in canvas)canvas.style.cursor=arg;
-    }
+  setCursorStyle(css:string): void {
+    const canvas=this.applet.g.canvas;
+    if(canvas&&"style" in canvas)canvas.style.cursor=css;
   }
 
   setTitle(title:string){

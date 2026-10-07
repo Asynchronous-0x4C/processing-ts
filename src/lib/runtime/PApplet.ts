@@ -69,7 +69,8 @@ export class PApplet extends PConstants{
   mouseX:number=0;
   mouseY:number=0;
   mousePressed:boolean=false;
-  mouseButton:number=0; // 0: left, 1: middle, 2: right
+  /** LEFT (37), CENTER (3), RIGHT (39), or 0 after a move or the wheel. */
+  mouseButton:number=0;
   /** The last key as a char code (Processing's char key; CODED for arrows etc.). */
   key:number=0;
   keyCode:number=0;
@@ -177,21 +178,128 @@ export class PApplet extends PConstants{
     this.g.updatePixels(x,y,w,h);
   }
 
-  _keyPressed(e:KeyEvent){}
+  // --- events (the runner queues them and calls __handle_event__ after draw(), as Processing does) ---
 
-  _keyTyped(e:KeyEvent){}
+  _keyPressed(_e:KeyEvent){}
 
-  _keyReleased(e:KeyEvent){}
+  _keyTyped(_e:KeyEvent){}
 
-  _mousePressed(e:MouseEvent){}
+  _keyReleased(_e:KeyEvent){}
 
-  _mouseReleased(e:MouseEvent){}
+  _mousePressed(_e:MouseEvent){}
 
-  _mouseMoved(e:MouseEvent){}
+  _mouseReleased(_e:MouseEvent){}
 
-  _mouseWheel(e:MouseEvent){}
+  _mouseClicked(_e:MouseEvent){}
+
+  _mouseMoved(_e:MouseEvent){}
+
+  _mouseDragged(_e:MouseEvent){}
+
+  _mouseWheel(_e:MouseEvent){}
+
+  mouseEntered(_e?:MouseEvent){}
+
+  mouseExited(_e?:MouseEvent){}
 
   _windowResized(){}
+
+  focusGained(){}
+
+  focusLost(){}
+
+  /** Whether the sketch has the keyboard focus. */
+  focused=false;
+  /** Mouse position after the last event (pmouseX/Y inside handlers) and at the last draw() (pmouseX/Y in draw()). */
+  private __emouse__={x:0,y:0};
+  private __dmouse__={x:0,y:0};
+  private __first_mouse__=true;
+  /** keyCodes held down: keyPressed stays true until all are released. */
+  private __pressed_keys__=new Set<number>();
+
+  /** Before draw(): pmouseX/Y is where the mouse was at the previous draw(). */
+  __before_draw__(){
+    this.pmouseX=this.__dmouse__.x;
+    this.pmouseY=this.__dmouse__.y;
+  }
+
+  __after_draw__(){
+    this.__dmouse__={x:this.mouseX,y:this.mouseY};
+  }
+
+  __handle_event__(e:MouseEvent|KeyEvent){
+    if(e instanceof MouseEvent)this.__handle_mouse_event__(e);
+    else this.__handle_key_event__(e);
+  }
+
+  private __handle_mouse_event__(e:MouseEvent){
+    const action=e.getAction();
+    if(action===MouseEvent.ENTER||action===MouseEvent.EXIT){
+      if(action===MouseEvent.ENTER)this.mouseEntered(e);
+      else this.mouseExited(e);
+      return;
+    }
+    this.mouseX=e.getX();
+    this.mouseY=e.getY();
+    if(this.__first_mouse__){
+      this.__emouse__={x:this.mouseX,y:this.mouseY};
+      this.__dmouse__={x:this.mouseX,y:this.mouseY};
+      this.__first_mouse__=false;
+    }
+    this.pmouseX=this.__emouse__.x;
+    this.pmouseY=this.__emouse__.y;
+    // Every mouse event sets mouseButton (0 for moves and the wheel); it is kept after the release.
+    this.mouseButton=e.getButton();
+    switch(action){
+      case MouseEvent.PRESS:this.mousePressed=true;this._mousePressed(e);break;
+      case MouseEvent.RELEASE:this.mousePressed=false;this._mouseReleased(e);break;
+      case MouseEvent.CLICK:this._mouseClicked(e);break;
+      case MouseEvent.DRAG:this._mouseDragged(e);break;
+      case MouseEvent.MOVE:this._mouseMoved(e);break;
+      case MouseEvent.WHEEL:this._mouseWheel(e);break;
+    }
+    this.__emouse__={x:this.mouseX,y:this.mouseY};
+  }
+
+  private __handle_key_event__(e:KeyEvent){
+    this.key=e.getKey();
+    // keyCode is 0 in keyTyped(), as in Processing.
+    this.keyCode=e.getKeyCode();
+    switch(e.getAction()){
+      case KeyEvent.PRESS:
+        this.__pressed_keys__.add(e.getKeyCode());
+        this.keyPressed=true;
+        this._keyPressed(e);
+        // Esc quits the sketch unless keyPressed() changed key.
+        if(this.key===27)this.exit();
+        break;
+      case KeyEvent.TYPE:
+        this._keyTyped(e);
+        break;
+      case KeyEvent.RELEASE:
+        this.__pressed_keys__.delete(e.getKeyCode());
+        this.keyPressed=this.__pressed_keys__.size>0;
+        this._keyReleased(e);
+        break;
+    }
+  }
+
+  __focus__(focused:boolean){
+    if(this.focused===focused)return;
+    this.focused=focused;
+    if(focused)this.focusGained();
+    else this.focusLost();
+  }
+
+  cursor(kind?:number|PImage,x?:number,y?:number){
+    if(kind instanceof PImage)this.surface.setCursor(kind,x??0,y??0);
+    else if(kind!==undefined)this.surface.setCursor(kind);
+    else this.surface.showCursor();
+  }
+
+  noCursor(){
+    this.surface.hideCursor();
+  }
 
   join(list:string[],separator:string){
     return list.join(separator);

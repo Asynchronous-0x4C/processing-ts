@@ -263,12 +263,12 @@ export class PConstants{
 
   // cursor types
 
-  readonly ARROW = "default";
-  readonly CROSS = "crosshair";
-  readonly HAND  = "grab";
-  readonly MOVE  = "move";
-  readonly TEXT  = "text";
-  readonly WAIT  = "progress";
+  readonly ARROW = 0;
+  readonly CROSS = 1;
+  readonly HAND  = 12;
+  readonly MOVE  = 13;
+  readonly TEXT  = 2;
+  readonly WAIT  = 3;
 
 
   // hints - hint values are positive for the alternate version,

@@ -60,6 +60,21 @@ describe("compileSketch", () => {
     expect(seg.slice(1)).toEqual([1, 3, 4]);
   });
 
+  it("installs one event handler per name, preferring the overload that takes the event", () => {
+    const r = compileSketch(sketch(`
+void draw() {}
+void mousePressed() { println("p"); }
+void mousePressed(MouseEvent e) { println("e"); mousePressed(); }
+void keyPressed() {}`));
+    expect(r.diagnostics).toEqual([]);
+    const handlers = r.code!.split("\n").filter((l) => /^\s*_\w+\(\.\.\.a\)/.test(l)).map((l) => l.trim());
+    expect(handlers).toEqual([
+      "_mousePressed(...a) { return mousePressed$MouseEvent(...a); }",
+      "_keyPressed(...a) { return keyPressed(...a); }",
+    ]);
+    expect(r.code).toContain("function mousePressed$() {");
+  });
+
   it("reports whether the sketch draws or measures text (the runtime loads the default font first)", () => {
     const uses = (src: string) => compileSketch(sketch(src)).usesText;
     expect(uses("void setup() { size(320, 240); rect(0, 0, 10, 10); textSize(20); }")).toBe(false);

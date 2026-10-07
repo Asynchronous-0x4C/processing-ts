@@ -146,8 +146,9 @@ createFont/loadFont(.vlw)/textFont/textSize/textAlign（縦方向も）/textLead
 - [x] **P2-7 乱数とノイズ**（S, R14）`java.util.Random` 互換、randomGaussian、Processing の noise と noiseDetail/noiseSeed。完了条件: random_seed が PASS（stdout の値まで一致）。
   → 一部済み（P1-9）: random/randomSeed/randomGaussian は java.util.Random（`src/runtime/lang/util.ts`）で Processing と同じ値（random_seed の円 40 個が一致）。
   → 結果（2026-10-07）: noise/noiseSeed/noiseDetail を `src/lib/runtime/util/noise.ts` に実装（ユーザー決定: LGPL のコードは見ずに、アルゴリズムの説明と本物の出力との照合だけで MIT のコードとして書き直す）。4096 個の nextFloat の表、半度刻みの余弦表による補間、オクターブと falloff、負の入力は絶対値、`noiseDetail` の 0 以下は無視、random() とは別の生成器。すべて float の演算。新ケース `noise_values`（1D/2D/3D・負数・大きな値・noiseDetail・再シード）の println が完全一致し、random_seed も PASS。
-- [ ] **P2-8 ループとイベント**（M, R12, R13, R16）
+- [x] **P2-8 ループとイベント**（M, R12, R13, R16）
   → 一部済み（2026-10-06）: `frameCount` は描いたフレームだけを数え、最初の draw() で 1（R12。ケース `frame_count`）。`redraw()` を追加（noLoop 中に次のフレームを 1 回描く）。keyTyped は文字の出るキーだけで呼ぶ（R16 の一部）。requestAnimationFrame ベースで frameRate を守る、frameCount の意味、redraw()、mouseDragged/mouseClicked/keyTyped の発火条件、key/keyCode/CODED、mouseWheel の MouseEvent、focused、cursor/noCursor。イベントの再現テストは vt ハーネスに「入力スクリプト」（フレーム番号ごとのマウス/キー操作）を追加して行う。
+  → 結果（2026-10-07）: vt に入力スクリプト（`vt.json` の `input`、`tools/vt/input.ts`）を追加: Processing 側は AWT イベント（Windows が作る順の pressed/typed/released・clicked・dragged・wheel）をキャンバスに dispatch して PSurfaceAWT の変換を通し、processing-ts 側は Playwright の実入力で再生する。本物で確かめた規則で `PApplet.__handle_event__()` を作り直した（ARCHITECTURE.md「実行ループ」）: mouseDragged/mouseClicked、`pmouseX` のハンドラ内と draw 内の違い、`mouseButton` の更新規則、ホイールのノッチ数、keyTyped 中の `keyCode` 0、複数キーの `keyPressed`、Ctrl+英字、Esc での終了。ハンドラは draw の後・フレームの終わりの前に処理する。コンパイラが `keyPressed()` と `keyPressed(KeyEvent)` の両方を定義したスケッチで同名の関数を 2 つ出していたのを修正。ループは requestAnimationFrame（R13。60/30/10/120 fps で指定どおり）、非フォーカス時に 1fps に落とすのをやめた。`focused`・focusGained/focusLost・`cursor()`/`noCursor()`（画像カーソルも）・MouseEvent/KeyEvent の getAction/修飾キー/isAutoRepeat を追加。新ケース events_mouse・events_key・events_escape（println が全行一致）。
 - [ ] **P2-9 VFS と fetch 事前読み込み（PWA 対応）**（M）`data/` の解決、マニフェスト/リテラル抽出による事前読み込み、画像の事前デコード、IndexedDB への保存、selectInput/selectOutput、未読み込みパスのエラーメッセージ。同期 XHR を削除。
   完了条件: Service Worker でキャッシュしたページをオフラインにしても data/ を使うケースが動く（vt ハーネスに `--offline` モードを追加して確認）。
 - [ ] **P2-10 PixiJS の削除と予算確認**（S）完了条件: `npm run size` でランタイム（2D、パーサなし）が 50 KiB gz 以下。2d タグのケースがすべて PASS。コーパスの 2D 決定的スケッチの視覚一致率 90% 以上。
@@ -199,6 +200,6 @@ CodeMirror 6 + Lezer Processing 文法のデモエディタ（ハイライト、
 | 済 (P0-6) | `npm test`（Vitest） | コンパイラの単体テスト |
 | 済 (P1-4) | `npm run test:check` | 型検査の受理/拒否・エラー行・メッセージを本物の Processing（`cli --build`）と比較（意味エラーの変種を含む） |
 | 済 (P1-5) | `npm run test:lang` | 描画しない stdout 適合テストを Node で高速実行（`--corpus` で全スケッチの変換確認） |
-| P2-8 | vt の入力スクリプト | フレームごとのマウス/キー操作を Processing 側（`java.awt.Robot` ではなくイベント関数の直接呼び出しを注入）と processing-ts 側の両方で再生して比較 |
+| 済 (P2-8) | vt の入力スクリプト | フレームごとのマウス/キー操作を Processing 側（`java.awt.Robot` ではなくイベント関数の直接呼び出しを注入）と processing-ts 側の両方で再生して比較 |
 | P2-9 | vt `--offline` | Service Worker + オフラインでの data/ 読み込み確認 |
 | P3 | `tests/perf/` + vt `bench` | フレーム時間の計測（SwiftShader / GPU） |

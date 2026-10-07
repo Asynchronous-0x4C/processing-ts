@@ -1,0 +1,54 @@
+draw 1 0 0 false
+pressed(e) 97 65
+pressed 97 65 true false
+typed 97 0
+released 97 65 false
+draw 2 97 65 false
+pressed(e) 10 10
+pressed 10 10 true false
+typed 10 0
+released 10 10 false
+draw 3 10 10 false
+pressed(e) 65535 37
+pressed 65535 37 true true
+draw 4 65535 37 true
+released 65535 37 false
+draw 5 65535 37 false
+pressed(e) 65535 17
+pressed 65535 17 true true
+pressed(e) 1 65
+pressed 1 65 true false
+typed 1 0
+released 1 65 true
+released 65535 17 false
+draw 6 65535 17 false
+pressed(e) 32 32
+pressed 32 32 true false
+typed 32 0
+released 32 32 false
+draw 7 32 32 false
+pressed(e) 8 8
+pressed 8 8 true false
+typed 8 0
+released 8 8 false
+draw 8 8 8 false
+pressed(e) 120 88
+pressed 120 88 true false
+typed 120 0
+pressed(e) 121 89
+pressed 121 89 true false
+typed 121 0
+draw 9 121 0 true
+released 120 88 true
+draw 10 120 88 true
+released 121 89 false
+draw 11 121 89 false
+pressed(e) 127 127
+pressed 127 127 true false
+typed 127 0
+released 127 127 false
+pressed(e) 9 9
+pressed 9 9 true false
+typed 9 0
+released 9 9 false
+draw 12 9 9 false

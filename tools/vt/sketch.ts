@@ -1,6 +1,7 @@
 // Reading sketch folders and preparing them for the reference (Java Processing) run.
 import fs from "node:fs";
 import path from "node:path";
+import { javaInputMethod, type InputAction } from "./input.ts";
 
 export type SketchSource = {
   /** Folder that contains the .pde files (and optionally data/). */
@@ -111,7 +112,8 @@ export const DONE_MARKER = "__VT_DONE__";
  * - forces pixelDensity(1) (Processing 4.5 defaults to 2 on HiDPI screens),
  * - saves the frame after `frames` draw() calls and exits,
  * - with `outStdout`, sends System.out to that file in UTF-8 (the console uses the system code page,
- *   which loses or garbles non-ASCII text on Windows).
+ *   which loses or garbles non-ASCII text on Windows),
+ * - with `input` (active mode), dispatches the input script's AWT events after each frame (input.ts).
  * Only appends code / inserts on the size() line (or the first line), so compiler line numbers stay valid.
  */
 export function injectForReference(
@@ -120,6 +122,7 @@ export function injectForReference(
   frames: number,
   outPng: string,
   outStdout?: string,
+  input?: InputAction[],
 ): string {
   let code = main;
   const redirect = outStdout
@@ -164,9 +167,9 @@ public void handleDraw() {
     save("${out}");
     System.out.println("${DONE_MARKER}");
     exit();
-  }
+  }${input?.length ? " else {\n    __vtInput(frameCount - 1);\n  }" : ""}
 }
-`;
+${input?.length ? javaInputMethod(input) : ""}`;
   } else {
     code += `
 
