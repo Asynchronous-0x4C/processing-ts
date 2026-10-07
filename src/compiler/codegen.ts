@@ -113,6 +113,21 @@ const RUNTIME_HANDLER_NAMES: Record<string, string> = {
   keyTyped: "_keyTyped", windowResized: "_windowResized",
 };
 
+/** Color functions whose int and float overloads differ (fill(int) may be an ARGB color, fill(float) is gray). */
+const COLOR_FUNCTIONS = new Set(["color", "fill", "stroke", "background", "tint"]);
+
+/**
+ * The runtime's name of a library method: the float overloads of the color functions with one or two
+ * arguments are `fillF` etc., since the runtime cannot tell 300.0 from 300.
+ */
+function runtimeName(m: MethodSymbol): string {
+  if (COLOR_FUNCTIONS.has(m.name) && TEXT_OWNERS.has(m.owner.fullName) && (m.params.length === 1 || m.params.length === 2)) {
+    const p = m.params[0];
+    if (p.tag === "prim" && p.name === "float") return m.name + "F";
+  }
+  return m.name;
+}
+
 interface FnCtx {
   /** Number of `$t` temporaries used (declared with `var` at the end of the function). */
   temps: number;
@@ -1213,9 +1228,9 @@ export class Gen {
       if (isStatic) {
         // PApplet's static helpers are instance methods of the current runtime.
         const owner = m.owner.fullName === PAPPLET ? "$p" : this.libClassRef(m.owner);
-        return this.floatResult(m, { c: `${owner}.${m.name}(${args})`, p: P.Call });
+        return this.floatResult(m, { c: `${owner}.${runtimeName(m)}(${args})`, p: P.Call });
       }
-      return this.awaitIfNeeded(m, this.floatResult(m, { c: `${par(recv!, P.Call)}.${m.name}(${args})`, p: P.Call }));
+      return this.awaitIfNeeded(m, this.floatResult(m, { c: `${par(recv!, P.Call)}.${runtimeName(m)}(${args})`, p: P.Call }));
     }
     const name = this.methodName(m);
     const args = this.args(e.args, m, e.varargsCall ?? false);

@@ -190,7 +190,7 @@ ANTLR4 の Processing 文法（`antlr/Processing.g4`、生成物 `antlr/parser/`
 - `PGraphicsJava2D` は即時描画（キャンバスが内容を保持するので background を呼ばなければ残る）。行列は `setTransform`（密度を掛ける）、blendMode は `globalCompositeOperation`、tint は乗算したコピーをキャッシュ。メイン画面の background は alpha を無視する。
 - **ストローク正規化**: Java2D の既定（STROKE_NORMALIZE）を再現し、線の端点をデバイス座標で `floor(x)+0.5` に寄せる（制御点は隣の端点と一緒に動かし、楕円は 3 次ベジェに分割）。塗りは正規化しない。本物で確認した規則（`normalizedStrokePath`）。
 - `createGraphics()` は密度 1 の `PGraphicsJava2D`（透明で始まる）。
-- 色は ARGB の int。色の int は Processing と同じ ARGB（`#RRGGBB` は `0xFFRRGGBB`）。fill(x) などの 1 引数は、アルファのビットが無く範囲内なら灰色、それ以外は ARGB。メインの画面は灰色（204）で始まる。
+- 色は ARGB の int。1〜2 引数の color/fill/stroke/background/tint は、引数が float の呼び出しをコンパイラが `colorF`/`fillF`/… に振り分ける（float は常に灰色、int は ARGB か灰色かを判定。JS の数値では 300.0 と 300 を区別できないため）。色の int は Processing と同じ ARGB（`#RRGGBB` は `0xFFRRGGBB`）。fill(x) などの 1 引数は、アルファのビットが無く範囲内なら灰色、それ以外は ARGB。メインの画面は灰色（204）で始まる。
 - P2D/P3D、シェーダー、ライト、カメラは未実装（`size(w,h,P3D)` の第 3 引数は無視）。
 
 ### ファイル（`SketchFiles`）

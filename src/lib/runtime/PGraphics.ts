@@ -127,17 +127,17 @@ export abstract class PGraphics extends PImage{
    * Color of fill()/stroke()/background()/color() arguments as an ARGB int. One value is a gray level,
    * or an ARGB color when it is an int with alpha bits or beyond the gray range (fill(#FF0000)).
    */
-  colorCalc(args:ArrayLike<number>):number{
+  colorCalc(args:ArrayLike<number>,float=false):number{
     const s=this.style;
     const clamp=(v:number)=>(v<0?0:v>1?1:v);
     let r:number,g:number,b:number,a:number;
     const n=args.length;
     if(n<=2){
       const x=args[0];
-      if(Number.isInteger(x)&&((x&0xff000000)!==0||x>s.colorModeX||x<0)){
-        // an ARGB int; the second argument overrides its alpha
+      if(!float&&Number.isInteger(x)&&((x&0xff000000)!==0||x>s.colorModeX)){
+        // an ARGB int; the second argument scales its alpha
         if(n===1)return x|0;
-        const alpha=Math.trunc(clamp(args[1]/s.colorModeA)*255);
+        const alpha=Math.trunc((x>>>24)*clamp(args[1]/s.colorModeA));
         return ((alpha<<24)|(x&0xffffff))|0;
       }
       r=g=b=clamp(x/s.colorModeX);
@@ -156,6 +156,30 @@ export abstract class PGraphics extends PImage{
 
   color(...args:number[]):number{
     return this.colorCalc(args);
+  }
+
+  // The float overloads of color(gray[, alpha]) etc. (the compiler calls them for float arguments).
+  colorF(...args:number[]):number{
+    return this.colorCalc(args,true);
+  }
+
+  fillF(...args:number[]){
+    this.style.fill=true;
+    this.style.fillColor=this.colorCalc(args,true);
+  }
+
+  strokeF(...args:number[]){
+    this.style.stroke=true;
+    this.style.strokeColor=this.colorCalc(args,true);
+  }
+
+  tintF(...args:number[]){
+    this.style.tint=true;
+    this.style.tintColor=this.colorCalc(args,true);
+  }
+
+  backgroundF(...args:number[]){
+    this.backgroundImpl(this.colorCalc(args,true));
   }
 
   red(c:number){
@@ -194,10 +218,9 @@ export abstract class PGraphics extends PImage{
     amt=amt<0?0:amt>1?1:amt;
     const l=(a:number,b:number)=>Math.round(a+(b-a)*amt);
     if(this.style.colorMode===HSB){
+      // the hue is interpolated directly, not the short way around (as Processing)
       const h1=rgbToHsb(c1),h2=rgbToHsb(c2);
-      let dh=h2[0]-h1[0];
-      if(dh>0.5)dh-=1;else if(dh<-0.5)dh+=1;
-      const h=(h1[0]+dh*amt+1)%1;
+      const h=h1[0]+(h2[0]-h1[0])*amt;
       const [r,g,b]=hsbToRgb(h,h1[1]+(h2[1]-h1[1])*amt,h1[2]+(h2[2]-h1[2])*amt);
       return ((l(c1>>>24,c2>>>24)<<24)|(Math.trunc(r*255)<<16)|(Math.trunc(g*255)<<8)|Math.trunc(b*255))|0;
     }

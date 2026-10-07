@@ -27,6 +27,7 @@ export interface PAppletSettings{
 /** PGraphics methods that PApplet forwards to `g` (as Processing's PApplet does). */
 const DELEGATED=[
   "background","clear","colorMode","fill","noFill","stroke","noStroke","tint","noTint",
+  "backgroundF","fillF","strokeF","tintF",
   "strokeWeight","strokeCap","strokeJoin","rectMode","ellipseMode","imageMode","shapeMode","blendMode",
   "red","green","blue","alpha","hue","saturation","brightness","lerpColor",
   "pushStyle","popStyle","pushMatrix","popMatrix","push","pop",
@@ -152,6 +153,11 @@ export class PApplet extends PConstants{
   /** Processing's color int (ARGB), in the current colorMode. */
   color(...args:number[]):number{
     return this.g.color(...args);
+  }
+
+  /** color(float gray[, alpha]) (the compiler calls it for float arguments). */
+  colorF(...args:number[]):number{
+    return this.g.colorF(...args);
   }
 
   createFont(name:string,size:number,smooth=true,_charset?:unknown){

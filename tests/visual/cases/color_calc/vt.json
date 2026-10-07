@@ -1,0 +1,6 @@
+{
+  "tags": [
+    "color"
+  ],
+  "note": "color() rounding and ranges in RGB/HSB modes, getters, lerpColor (println), fills and background alpha (drawn)."
+}
