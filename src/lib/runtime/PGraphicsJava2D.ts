@@ -1,12 +1,27 @@
 import { PGraphics, enumPath, type Path, CAP } from "./PGraphics";
 import { PImage, createNativeCanvas, type Native2D, type NativeCanvas } from "./PImage";
-import { DEFAULT_FONT_FAMILY, PFont, defaultFontReady, ensureDefaultFont } from "./PFont";
+import { DEFAULT_FONT_FAMILY, PFont, defaultFontReady, ensureDefaultFont, type VlwGlyph } from "./PFont";
 
 /** The font text uses before textFont(): Processing creates the default font at size 12. */
 const DEFAULT_PFONT=new PFont(DEFAULT_FONT_FAMILY,12);
 import type { PApplet } from "./PApplet";
 
 const BEVEL=32,ROUND_JOIN=2;
+
+/** A .vlw glyph's alpha bitmap colored with `color` (ARGB), cached for the last color. */
+function tintedGlyph(g:VlwGlyph,color:number):HTMLCanvasElement|OffscreenCanvas{
+  if(g.tinted&&g.tinted.color===color)return g.tinted.canvas;
+  const canvas=g.tinted?.canvas??createNativeCanvas(g.width,g.height);
+  const ctx=canvas.getContext("2d") as Native2D;
+  const img=ctx.createImageData(g.width,g.height);
+  const r=(color>>16)&0xff,gr=(color>>8)&0xff,b=color&0xff,a=color>>>24;
+  for(let i=0;i<g.alpha.length;i++){
+    img.data[i*4]=r;img.data[i*4+1]=gr;img.data[i*4+2]=b;img.data[i*4+3]=Math.round(g.alpha[i]*a/255);
+  }
+  ctx.putImageData(img,0,0);
+  g.tinted={color,canvas};
+  return canvas;
+}
 
 const stencils=new Map<string,Float32Array>();
 
@@ -387,6 +402,8 @@ export class PGraphicsJava2D extends PGraphics{
       if((s.tintColor&0xffffff)!==0xffffff)src=this.tinted(img,src);
     }
     const d=img.pixelDensity;
+    // Java2D's drawImage takes int corners: Processing truncates them (measured: no partial pixels).
+    x1=Math.trunc(x1);y1=Math.trunc(y1);x2=Math.trunc(x2);y2=Math.trunc(y2);
     ctx.save();
     ctx.globalAlpha=alpha;
     // Negative sizes flip the image, as in Java2D.
@@ -413,6 +430,11 @@ export class PGraphicsJava2D extends PGraphics{
   protected drawTextLine(line:string,x:number,y:number){
     const ctx=this.ctx;
     if(!ctx||!line)return;
+    const vf=this.style.textFont;
+    if(vf?.__vlw__){
+      this.drawVlwLine(vf,line,x,y);
+      return;
+    }
     ctx.font=this.font();
     ctx.textAlign="left";
     ctx.textBaseline="alphabetic";
@@ -428,7 +450,32 @@ export class PGraphicsJava2D extends PGraphics{
   }
 
   protected textWidthImpl(line:string){
+    const vf=this.style.textFont;
+    if(vf?.__vlw__){
+      let w=0;
+      for(let i=0;i<line.length;i++)w=Math.fround(w+Math.fround(vf.__vlw_width__(line.charCodeAt(i))*this.style.textSize));
+      return w;
+    }
     return this.measure(line)?.width??line.length*this.style.textSize*0.5;
+  }
+
+  /** Text in a .vlw font: each glyph's bitmap in the fill color, scaled from the font's size to the text size. */
+  private drawVlwLine(font:PFont,line:string,x:number,y:number){
+    const ctx=this.ctx!;
+    const size=this.style.textSize,fs=font.size,color=this.style.fillColor;
+    const f=Math.fround;
+    for(let i=0;i<line.length;i++){
+      const c=line.charCodeAt(i);
+      const g=font.__vlw__!.glyphs.get(c);
+      if(g&&c!==32&&g.width>0&&g.height>0){
+        // drawn as an image: the corners are truncated to ints (see drawImage())
+        const x1=f(x+f(f(g.leftExtent/fs)*size)),y1=f(y-f(f(g.topExtent/fs)*size));
+        const x2=f(x1+f(f(g.width/fs)*size)),y2=f(y1+f(f(g.height/fs)*size));
+        const ix=Math.trunc(x1),iy=Math.trunc(y1);
+        ctx.drawImage(tintedGlyph(g,color) as CanvasImageSource,ix,iy,Math.trunc(x2)-ix,Math.trunc(y2)-iy);
+      }
+      x=f(x+f(font.__vlw_width__(c)*size));
+    }
   }
 
   /**

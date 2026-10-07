@@ -1,0 +1,7 @@
+{
+  "tags": [
+    "text"
+  ],
+  "maxDiffRatio": 0.02,
+  "note": "loadFont(.vlw): glyph bitmaps, scaling, metrics, alignment and boxed text."
+}

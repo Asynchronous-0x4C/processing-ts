@@ -737,13 +737,21 @@ export abstract class PGraphics extends PImage{
     const w=x2-x1;
     const lines:string[]=[];
     for(const para of text.split("\n")){
+      // A line breaks before the word that would make it reach the box's width (as Processing); a word
+      // that is too long for a line by itself is broken between characters.
       let line="";
       for(const word of para.split(" ")){
         const t=line?line+" "+word:word;
-        if(line&&this.textWidthImpl(t)>w){
+        if(line&&this.textWidthImpl(t)>=w){
           lines.push(line);
           line=word;
         }else line=t;
+        while(line.length>1&&this.textWidthImpl(line)>=w){
+          let n=1;
+          while(n<line.length-1&&this.textWidthImpl(line.slice(0,n+1))<w)n++;
+          lines.push(line.slice(0,n));
+          line=line.slice(n);
+        }
       }
       lines.push(line);
     }

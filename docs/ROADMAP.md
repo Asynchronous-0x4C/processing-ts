@@ -148,8 +148,10 @@
   - blendColor: アルファは min(da+sa, 255)、各チャンネルはモードの値を sa+(sa>>7) で混ぜる。MULTIPLY・SCREEN・OVERLAY・HARD_LIGHT・EXCLUSION・DODGE・BURN の丸めの +1 や、BURN/SOFT_LIGHT が src の青成分だけを使う癖まで再現（SOFT_LIGHT だけは近似、STATUS R19）。
   - PImage の pixels を正にした（CPU/キャンバスの遅延同期）: 普通の PImage は pixels が画像そのもので、キャンバス（premultiplied）経由で半透明の画素が崩れない。get(x, y) は pixels から（RGB は `|0xFF000000`）、set(x, y, img)/copy() は画素の置き換え、blend() は pixels 上で計算。PGraphics は描画面なので loadPixels で毎回読み直す。
   - 新ケース image_filter・image_blend（println の全画素が一致、画像の差分 0.07% / 0.00%）。
-- [ ] **P2-6 テキスト**（M, R6）
+- [x] **P2-6 テキスト**（M, R6）
   → 一部済み（2026-10-06）: 既定フォントは、text 系（text/textWidth/textAscent/textDescent）を呼ぶスケッチでは setup() の前に読み込みを待つ（コンパイラの `CompileResult.usesText` → `runner.init`）。ライブラリのビルドではフォントを `dist/fonts/` にライセンス文ごとコピーする（P2-10）。本物と照合して直したもの（ケース `text_metrics`・`lang_nf_sign`）: `textAscent`/`textDescent` は作成時のサイズでの d/p のピクセル高さ × textSize（既定は 9/12・2/12）、それに伴い既定の行送り、`text(float)` は `nfs(x, 0, 3)`、`text(char)` は文字、`nf`/`nfs`/`nfp`/`nfc` の 0 に丸まる負数の符号（`-0.000`）と `nfs(-0.0)`、1 引数の `nf(float)`。残り: loadFont(.vlw)、矩形内の折り返しの照合、textWidth の差（R6）、WOFF2 化。
+  → 結果（2026-10-07）: loadFont(.vlw) を実装（`PFont.fromVLW`: グリフのビットマップを fill 色で塗って textSize に拡大縮小して描く。本物もフォントが入っていないときはこの描き方）。空白の幅は "i" と同じ、フォントに無い文字の幅は 0、幅は (送り幅/サイズ)×textSize の float の和（本物で確認）。矩形内の折り返しは「行の幅が箱の幅に達したら」（`>=`）で、1 語が長すぎるときは文字単位で折る。あわせて image()（とビットマップ文字）は本物と同じく四隅を int に切り捨てて描く（小数座標でもにじまない）。新ケース `font_vlw`（.vlw は同梱の Processing Sans Pro から本物の Processing で作成。画像の差分 0.00%）。
+  - 残し: textWidth の Java2D のヒンティングによる差（9px など小さいサイズで最大 0.3%、STATUS R6）。WOFF2 化は変換ツールが無いことと、サーバの圧縮で効果が近いことから見送り（任意）。
 createFont/loadFont(.vlw)/textFont/textSize/textAlign（縦方向も）/textLeading/textWidth/textAscent/textDescent/矩形内の折り返し、既定フォントは同梱の `src/lib/runtime/fonts/ProcessingSansPro-Regular.ttf`（288 KB の TTF）。text() が使われたときだけ FontFace で遅延読み込みし、ライブラリのビルドではライセンス文と一緒に dist へ出力する（`package.json` の `files` と THIRD_PARTY_NOTICES.md も確認）。WOFF2 化やサブセット化は OFL 上の Modified Version になるが、名前（Processing Sans Pro）に予約名 "Source" を含まないので可。その場合も OFL とコピーライト表記を残す。
 - [x] **P2-7 乱数とノイズ**（S, R14）`java.util.Random` 互換、randomGaussian、Processing の noise と noiseDetail/noiseSeed。完了条件: random_seed が PASS（stdout の値まで一致）。
   → 一部済み（P1-9）: random/randomSeed/randomGaussian は java.util.Random（`src/runtime/lang/util.ts`）で Processing と同じ値（random_seed の円 40 個が一致）。

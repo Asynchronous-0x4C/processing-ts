@@ -164,7 +164,14 @@ export class PApplet extends PConstants{
     return new PFont(name,size,smooth);
   }
 
+  /**
+   * loadFont(name): a .vlw font from the sketch's files (its glyph bitmaps). When the file is missing, a
+   * font of the name's family is used instead (Processing returns null).
+   */
   loadFont(name:string){
+    const bytes=/\.vlw$/i.test(name)?this.__files__.bytes(name):null;
+    if(bytes)return PFont.fromVLW(bytes);
+    if(/\.vlw$/i.test(name))exceptions.printError(missingFileMessage(name));
     return new PFont(name.replace(/^.*[\/\\]/,"").replace(/-\d+\.vlw$/i,""),Number(/-(\d+)\.vlw$/i.exec(name)?.[1]??12));
   }
 

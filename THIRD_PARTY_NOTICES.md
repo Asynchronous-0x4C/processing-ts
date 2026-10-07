@@ -10,6 +10,8 @@ It includes the following third-party components, which keep their own licenses.
 - Copyright 2010, 2012, 2014 Adobe Systems Incorporated, with Reserved Font Name "Source". "Processing Sans" is Source Sans renamed by the Processing project.
 - The font remains under the OFL; it is distributed together with (not relicensed as part of) this MIT-licensed software. Converted or subsetted versions are Modified Versions under the OFL: they must keep the OFL and the copyright notice and must not use the Reserved Font Name "Source".
 
+- Test data: `tests/visual/cases/font_vlw/data/ProcessingSansPro-20.vlw` holds glyph bitmaps rendered from this font by Processing ("Create Font" format, ASCII only). It is a Modified Version under the OFL and keeps the OFL: [`tests/visual/cases/font_vlw/ProcessingSansPro-LICENSE.txt`](tests/visual/cases/font_vlw/ProcessingSansPro-LICENSE.txt). It is not part of the distributed library.
+
 ## Lezer Java grammar
 
 - Files: `src/compiler/grammar/processing.grammar` (forked from @lezer/java 1.1.4) and the generated `src/compiler/grammar/parser.ts`
