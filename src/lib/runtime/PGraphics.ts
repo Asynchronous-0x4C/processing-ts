@@ -447,10 +447,8 @@ export abstract class PGraphics extends PImage{
       start+=TWO_PI;
       stop+=TWO_PI;
     }
-    if(stop-start>TWO_PI){
-      start=0;
-      stop=TWO_PI;
-    }
+    // More than a turn draws one turn from the start angle (a PIE's radius stays at the start).
+    if(stop-start>TWO_PI)stop=start+TWO_PI;
     const rx=(x2-x1)/2,ry=(y2-y1)/2,cx=x1+rx,cy=y1+ry;
     const P=enumPath;
     const open:Path=[P.ELLIPSE,cx,cy,rx,ry,start,stop];

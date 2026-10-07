@@ -35,6 +35,7 @@ npm run test:visual:ref             # 参照画像を Processing で作り直す
 npm run test:visual:ref -- --missing  # 参照が無い / ソースが変わったケースだけ作り直す
 npm run vt -- shot public/samples/Transform/arm --frames 30 --ref   # 任意のスケッチを撮影（--ref で Processing と比較）
 npm run vt -- list                  # ケース一覧（参照の有無・期待結果・既知の問題）
+node tools/vt/zoom.ts <case> <x> <y> <w> <h> [倍率]   # 参照と processing-ts の同じ領域を拡大して並べる（tests/visual/out/<case>/zoom.png）
 ```
 
 `run` のその他のオプション: `--offline`（後述）、`--update`（先に参照を再生成）、`--frames n`（フレーム数を上書き）、`--headed`（ブラウザを表示）、`--gpu`（SwiftShader ではなく GPU を使う）、`--json`（結果を JSON で標準出力）、`--out <dir>`。

@@ -8,6 +8,79 @@ import type { PApplet } from "./PApplet";
 
 const BEVEL=32,ROUND_JOIN=2;
 
+const stencils=new Map<string,Float32Array>();
+
+/**
+ * The polygon Java2D fills for a round point of the given device diameter: the round caps are cubic
+ * curves (one per quarter circle, starting at angle 0), flattened at equal steps of the curve
+ * parameter into 2 segments per quarter below 2 pixels, 4 up to 9, 8 up to 32 and 16 beyond
+ * (measured against Processing 4.5.2 for diameters 0.5 to 80: every pixel within 1).
+ */
+function roundPointPolygon(size:number):[number,number][]{
+  const r=size/2;
+  const per=size<1.9?2:size<9.5?4:size<36?8:16;
+  const k=4/3*Math.tan(Math.PI/8);
+  const pts:[number,number][]=[];
+  for(let q=0;q<4;q++){
+    const a0=q*Math.PI/2,a1=a0+Math.PI/2;
+    const c0=Math.cos(a0),s0=Math.sin(a0),c1=Math.cos(a1),s1=Math.sin(a1);
+    const p0x=r*c0,p0y=r*s0,p3x=r*c1,p3y=r*s1;
+    const p1x=p0x-k*r*s0,p1y=p0y+k*r*c0,p2x=p3x+k*r*s1,p2y=p3y-k*r*c1;
+    for(let j=0;j<per;j++){
+      const t=j/per,u=1-t;
+      const b0=u*u*u,b1=3*u*u*t,b2=3*u*t*t,b3=t*t*t;
+      pts.push([b0*p0x+b1*p1x+b2*p2x+b3*p3x,b0*p0y+b1*p1y+b2*p2y+b3*p3y]);
+    }
+  }
+  return pts;
+}
+
+/**
+ * What a point of the given device diameter covers, centered on a pixel, as runs (dx, dy, length,
+ * coverage): coverage as Java2D's Marlin rasterizer computes it (8 sample rows per pixel, the exact
+ * horizontal extent in each row), neighbouring pixels of equal coverage merged.
+ */
+function pointStencil(size:number,round:boolean):Float32Array{
+  const key=`${round?"r":"s"}${size}`;
+  let st=stencils.get(key);
+  if(st)return st;
+  const r=size/2;
+  const poly:[number,number][]=round?roundPointPolygon(size):[[-r,-r],[r,-r],[r,r],[-r,r]];
+  const out:number[]=[];
+  const reach=Math.ceil(r+0.5);
+  const row=new Float64Array(2*reach+1);
+  for(let py=-reach;py<=reach;py++){
+    row.fill(0);
+    for(let k=0;k<8;k++){
+      // the polygon's horizontal extent at this sample row (pixel centers are at integer coordinates)
+      const y=py-0.5+(k+0.5)/8;
+      let xl=Infinity,xr=-Infinity;
+      for(let i=0;i<poly.length;i++){
+        const [x0,y0]=poly[i],[x1,y1]=poly[(i+1)%poly.length];
+        if((y0<=y&&y<y1)||(y1<=y&&y<y0)){
+          const xi=x0+(y-y0)*(x1-x0)/(y1-y0);
+          xl=Math.min(xl,xi);xr=Math.max(xr,xi);
+        }
+      }
+      if(xl>=xr)continue;
+      for(let px=-reach;px<=reach;px++){
+        const o=Math.min(xr,px+0.5)-Math.max(xl,px-0.5);
+        if(o>0)row[px+reach]+=o/8;
+      }
+    }
+    for(let px=-reach;px<=reach;){
+      const c=Math.min(1,Math.round(row[px+reach]*255)/255);
+      let n=1;
+      while(px+n<=reach&&Math.min(1,Math.round(row[px+n+reach]*255)/255)===c)n++;
+      if(c>0)out.push(px,py,n,c);
+      px+=n;
+    }
+  }
+  st=Float32Array.from(out);
+  stencils.set(key,st);
+  return st;
+}
+
 /** Processing blend modes → canvas composite operations. */
 const COMPOSITE:Record<number,GlobalCompositeOperation>={
   0:"copy", // REPLACE
@@ -132,7 +205,8 @@ export class PGraphicsJava2D extends PGraphics{
     const dev=(x:number,y:number):[number,number]=>[a*x+c*y+e,b*x+dd*y+f];
     const end=(x:number,y:number):[number,number,number,number]=>{
       const [X,Y]=dev(x,y);
-      const nx=Math.floor(X)+0.5,ny=Math.floor(Y)+0.5;
+      // (tiny float errors, as cos(3π/2) != 0, must not move an end to the previous pixel)
+      const nx=Math.floor(X+1e-9)+0.5,ny=Math.floor(Y+1e-9)+0.5;
       return [nx,ny,nx-X,ny-Y];
     };
     const moveTo=(x:number,y:number)=>{
@@ -218,15 +292,44 @@ export class PGraphicsJava2D extends PGraphics{
     if(!ctx)return;
     const s=this.style;
     const w=s.strokeWeight;
+    // SQUARE (butt) caps on a zero-length line draw nothing, as in Java2D.
+    if(s.strokeCap!==CAP.ROUND&&s.strokeCap!==CAP.PROJECT)return;
     ctx.fillStyle=this.css(s.strokeColor);
+    // A point is a zero-length stroke, so its center snaps to the pixel center like line ends do.
+    const m=this.matrix,d=this.pixelDensity;
+    const a=m.m00*d,b=m.m10*d,c=m.m01*d,dd=m.m11*d,e=m.m02*d,f=m.m12*d;
+    const det=a*dd-b*c;
+    if(!det||!Number.isFinite(det))return;
+    const X=Math.floor(a*x+c*y+e+1e-9),Y=Math.floor(b*x+dd*y+f+1e-9);
+    // Without rotation or shear: the coverage Java2D computes (see pointStencil()).
+    const size=w*Math.abs(a);
+    if(b===0&&c===0&&Math.abs(a)===Math.abs(dd)&&size<=256){
+      const stencil=pointStencil(size,s.strokeCap===CAP.ROUND);
+      // device pixels → user space (the transform is a scale and a translation)
+      const ia=1/a,id=1/dd;
+      const alpha=ctx.globalAlpha;
+      for(let i=0;i<stencil.length;i+=4){
+        ctx.globalAlpha=alpha*stencil[i+3];
+        ctx.fillRect((X+stencil[i]-e)*ia,(Y+stencil[i+1]-f)*id,stencil[i+2]*ia,id);
+      }
+      ctx.globalAlpha=alpha;
+      return;
+    }
+    const NX=X+0.5-e,NY=Y+0.5-f;
+    x=(dd*NX-c*NY)/det;
+    y=(-b*NX+a*NY)/det;
     if(s.strokeCap===CAP.ROUND){
       const p=new Path2D();
-      p.ellipse(x,y,w/2,w/2,0,0,Math.PI*2);
+      const scale=Math.sqrt(Math.abs(det));
+      roundPointPolygon(w*scale).forEach(([px,py],k)=>{
+        if(k===0)p.moveTo(x+px/scale,y+py/scale);
+        else p.lineTo(x+px/scale,y+py/scale);
+      });
+      p.closePath();
       ctx.fill(p);
-    }else if(s.strokeCap===CAP.PROJECT){
+    }else{
       ctx.fillRect(x-w/2,y-w/2,w,w);
     }
-    // SQUARE (butt) caps on a zero-length line draw nothing, as in Java2D.
   }
 
   protected backgroundImpl(argb:number,clear=false){

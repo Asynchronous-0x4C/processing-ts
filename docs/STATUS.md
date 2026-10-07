@@ -17,7 +17,7 @@
 | 画像 / pixels | `pixels` は ARGB の Int32Array（普通の PImage では pixels が正で、半透明の画素も書いた値のまま）。loadPixels/updatePixels/get/set/copy/mask/resize/save（png/jpg/tif/tga）、filter（全種類。BLUR の半径の上限など本物の癖も再現）、blend/blendColor（SOFT_LIGHT 以外は本物と全件一致）。loadImage は setup() 前に事前デコードした画像を同期で返す |
 | ファイル IO | `SketchFiles`: スケッチが読むファイル（コンパイラが見つけた定数の名前とホストの一覧）を setup() の前に fetch。`data/` → スケッチフォルダの順。Service Worker でオフラインでも動く（`vt run --offline`）。保存はメモリ + ホストへの通知 |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **156 本（61%）** がエラーなく完走（JAVA2D 89% / P2D 18% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本、2026-10-06 の PVector の作り直しと配列関数の前は 145 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 55 ケース: 53 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
+| 視覚テスト | 56 ケース: 54 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
@@ -41,6 +41,7 @@
 | R17 | 未実装の主な API: PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、delay、thread など | — | p3d_box, pshader_filter |
 | R18 | Processing の PApplet は `pixelDensity` をフィールドとメソッドの両方に持つが、JS では同名にできないのでメソッドだけ（スケッチから `pixelDensity` をフィールドとして読むと関数になる）。`pixelWidth`/`pixelHeight` はフィールド | `PApplet.ts` | — |
 | R19 | `blendColor`/`blend()` の SOFT_LIGHT は近似（本物の整数演算を特定できず、約 80% の画素で一致・差は最大 2）。他のモードは本物と全件一致（src の青成分を使う BURN/SOFT_LIGHT の癖も再現）。大きさの違う `blend()`/`copy()` の拡大縮小はキャンバスの補間で、本物（blit_resize）とは画素がずれる | `util/imageOps.ts`, `PImage.blend` | image_blend |
+| R20 | 図形の縁のアンチエイリアス: 本物（Java2D の Marlin）は 1 ピクセルを 8 行に分けて行ごとに横の被覆を正確に測るが、ブラウザのキャンバスは実装依存（テストの Chromium は GPU の 4 倍 MSAA で被覆が 1/4 刻み）。point() だけは Marlin と同じ被覆を自前で計算して描く（全太さで誤差 1 以内）。線・塗りの縁は 1/4 刻みのまま。`willReadFrequently`（CPU 描画）にすると縁は近づくが描画が約 3 倍遅くなるので採らない | `PGraphicsJava2D` | shapes_detail |
 
 ## 既知の問題（コンパイラ `src/compiler/` と言語ランタイム）
 

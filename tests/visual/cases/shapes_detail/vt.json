@@ -1,0 +1,6 @@
+{
+  "tags": [
+    "2d"
+  ],
+  "note": "point() weights and caps, rounded rect(), arc() modes and angles, beginContour(), curveTightness()."
+}
