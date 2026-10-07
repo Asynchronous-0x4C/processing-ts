@@ -2,6 +2,7 @@ import { PConstants } from "./PConstants";
 import type { PApplet } from "./PApplet";
 import { extensionOf } from "./io/SketchFiles";
 import { encodeTGA, encodeTIFF } from "./io/imageEncode";
+import { blendColor, filterPixels } from "./util/imageOps";
 
 export type NativeCanvas=HTMLCanvasElement|OffscreenCanvas;
 export type Native2D=CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D;
@@ -48,8 +49,10 @@ export function argbToRgba(src:Int32Array|ArrayLike<number>,dst:Uint8ClampedArra
 }
 
 /**
- * Processing's PImage. `pixels` is an Int32Array of ARGB colors (pixelWidth × pixelHeight), valid after
- * loadPixels(); updatePixels() writes it back to the image's canvas, which is what drawing uses.
+ * Processing's PImage. `pixels` is an Int32Array of ARGB colors (pixelWidth × pixelHeight). For a plain
+ * image it is the image itself, kept exactly as written (a canvas stores premultiplied colors and would
+ * lose translucent pixels); updatePixels() copies it to the image's canvas, which is what drawing uses.
+ * Drawing surfaces (PGraphics, __live__()) draw into the canvas, so loadPixels() reads it back.
  */
 export class PImage extends PConstants{
   width:number=0;
@@ -65,6 +68,18 @@ export class PImage extends PConstants{
   /** The image's canvas (null while a loaded image is still decoding). */
   __canvas__:NativeCanvas|null=null;
   __ctx__:Native2D|null=null;
+  /** pixels[] holds the image: set by loadPixels()/updatePixels(), cleared when only the canvas changed. */
+  __fresh__=false;
+
+  /** Drawing surfaces (PGraphics) change their canvas directly, so pixels[] is always re-read from it. */
+  __live__():boolean{
+    return false;
+  }
+
+  /** pixels[] can be used as the image without reading the canvas. */
+  __pixels_valid__():boolean{
+    return this.__fresh__&&!this.__live__()&&this.pixels.length===this.pixelWidth*this.pixelHeight;
+  }
 
   constructor(parent:PApplet|null,settings?:{pixels?:ArrayLike<number>,width:number,height:number,format?:number}){
     super();
@@ -87,6 +102,8 @@ export class PImage extends PConstants{
     this.pixels=new Int32Array(this.pixelWidth*this.pixelHeight);
     this.__canvas__=createNativeCanvas(this.pixelWidth,this.pixelHeight);
     this.__ctx__=this.__canvas__.getContext("2d",{willReadFrequently:true}) as Native2D;
+    // A new image: transparent black, in both.
+    this.__fresh__=true;
   }
 
   /**
@@ -96,6 +113,7 @@ export class PImage extends PConstants{
   __from_bitmap__(bmp:ImageBitmap,ext:string){
     this.init(bmp.width,bmp.height,2,1);
     this.__ctx__!.drawImage(bmp,0,0);
+    this.__fresh__=false;
     this.loadPixels();
     let format=1;
     if(ext!=="jpg"&&ext!=="jpeg"){
@@ -142,6 +160,7 @@ export class PImage extends PConstants{
     this.init(bmp.width,bmp.height,blob.type==="image/jpeg"?1:2);
     this.__ctx__!.drawImage(bmp,0,0);
     bmp.close();
+    this.__fresh__=false;
     this.loadPixels();
   }
 
@@ -159,10 +178,11 @@ export class PImage extends PConstants{
   }
 
   loadPixels(){
-    if(!this.__ctx__)return;
+    if(!this.__ctx__||this.__pixels_valid__())return;
     if(this.pixels.length!==this.pixelWidth*this.pixelHeight)this.pixels=new Int32Array(this.pixelWidth*this.pixelHeight);
     const data=this.__ctx__.getImageData(0,0,this.pixelWidth,this.pixelHeight).data;
     rgbaToArgb(data,this.pixels,this.format===1);
+    this.__fresh__=true;
   }
 
   /** updatePixels() or updatePixels(x, y, w, h) */
@@ -171,6 +191,7 @@ export class PImage extends PConstants{
     const img=this.__ctx__.createImageData(this.pixelWidth,this.pixelHeight);
     argbToRgba(this.pixels,img.data,this.format===1);
     this.__ctx__.putImageData(img,0,0,x,y,w,h);
+    this.__fresh__=true;
   }
 
   /** get() (a copy), get(x, y) (an ARGB color, 0 outside), get(x, y, w, h) (a copy of the region) */
@@ -179,22 +200,76 @@ export class PImage extends PConstants{
     if(w===undefined||h===undefined){
       x=Math.trunc(x);y=Math.trunc(y!);
       if(x<0||y<0||x>=this.width||y>=this.height||!this.__ctx__)return 0;
+      if(this.__pixels_valid__()){
+        const c=this.pixels[y*this.pixelDensity*this.pixelWidth+x*this.pixelDensity];
+        return this.format===1?(c|0xff000000):this.format===4?((c<<24)|0xffffff):c;
+      }
       const d=this.__ctx__.getImageData(x*this.pixelDensity,y*this.pixelDensity,1,1).data;
       return this.format===1?(0xff000000|(d[0]<<16)|(d[1]<<8)|d[2])|0:((d[3]<<24)|(d[0]<<16)|(d[1]<<8)|d[2]);
     }
     const out=new PImage(this.parent);
     out.init(Math.max(0,w),Math.max(0,h),this.format,1);
-    if(this.__canvas__&&w>0&&h>0)out.__ctx__!.drawImage(this.__canvas__,x*this.pixelDensity,y!*this.pixelDensity,w*this.pixelDensity,h*this.pixelDensity,0,0,w,h);
-    out.loadPixels();
+    if(w>0&&h>0){
+      out.pixels.set(this.__region__(x,y!,w,h,w,h));
+      out.updatePixels();
+    }
     return out;
   }
 
-  /** set(x, y, color) or set(x, y, image) */
+  /**
+   * The pixels of the region (sx, sy, sw, sh) at tw × th pixels: exact when the sizes match, else scaled
+   * through a canvas. Pixels outside the image are 0.
+   */
+  __region__(sx:number,sy:number,sw:number,sh:number,tw:number,th:number):Int32Array{
+    const out=new Int32Array(tw*th);
+    const d=this.pixelDensity;
+    if(d===1&&sw===tw&&sh===th&&(this.__pixels_valid__()||this.__live__())){
+      this.loadPixels();
+      sx=Math.trunc(sx);sy=Math.trunc(sy);
+      for(let y=0;y<th;y++){
+        const yy=sy+y;
+        if(yy<0||yy>=this.pixelHeight)continue;
+        for(let x=0;x<tw;x++){
+          const xx=sx+x;
+          if(xx>=0&&xx<this.pixelWidth)out[y*tw+x]=this.pixels[yy*this.pixelWidth+xx];
+        }
+      }
+      return out;
+    }
+    const src=this.__native__();
+    if(!src)return out;
+    if(this.__pixels_valid__()===false&&!this.__live__())this.loadPixels();
+    const tmp=createNativeCanvas(tw,th);
+    const ctx=tmp.getContext("2d",{willReadFrequently:true}) as Native2D;
+    ctx.drawImage(src as CanvasImageSource,sx*d,sy*d,sw*d,sh*d,0,0,tw,th);
+    rgbaToArgb(ctx.getImageData(0,0,tw,th).data,out,this.format===1);
+    return out;
+  }
+
+  /** Combine tw × th source pixels into this image at (dx, dy) (pixel units) with blendColor(mode). */
+  private __apply__(dx:number,dy:number,tw:number,th:number,src:Int32Array,mode:number){
+    if(!this.__ctx__)return;
+    this.loadPixels();
+    dx=Math.trunc(dx);dy=Math.trunc(dy);
+    for(let y=0;y<th;y++){
+      const yy=dy+y;
+      if(yy<0||yy>=this.pixelHeight)continue;
+      for(let x=0;x<tw;x++){
+        const xx=dx+x;
+        if(xx<0||xx>=this.pixelWidth)continue;
+        const i=yy*this.pixelWidth+xx;
+        this.pixels[i]=mode===0?src[y*tw+x]:blendColor(this.pixels[i],src[y*tw+x],mode);
+      }
+    }
+    this.updatePixels();
+  }
+
+  /** set(x, y, color) or set(x, y, image) (the image's pixels replace these, without blending) */
   set(x:number,y:number,c:number|PImage){
     if(!this.__ctx__)return;
     if(c instanceof PImage){
-      const src=c.__native__();
-      if(src)this.__ctx__.drawImage(src,Math.trunc(x)*this.pixelDensity,Math.trunc(y)*this.pixelDensity);
+      const w=c.pixelWidth,h=c.pixelHeight;
+      if(w>0&&h>0)this.__apply__(Math.trunc(x)*this.pixelDensity,Math.trunc(y)*this.pixelDensity,w,h,c.__region__(0,0,c.width,c.height,w,h),0);
       return;
     }
     x=Math.trunc(x);y=Math.trunc(y);
@@ -209,10 +284,7 @@ export class PImage extends PConstants{
   copy(...a:any[]):PImage|void{
     if(a.length===0)return this.get() as PImage;
     if(a.length===8)a.unshift(this);
-    const [src,sx,sy,sw,sh,dx,dy,dw,dh]=a as [PImage,number,number,number,number,number,number,number,number];
-    const n=src.__native__();
-    if(!n||!this.__ctx__)return;
-    this.__ctx__.drawImage(n,sx*src.pixelDensity,sy*src.pixelDensity,sw*src.pixelDensity,sh*src.pixelDensity,dx*this.pixelDensity,dy*this.pixelDensity,dw*this.pixelDensity,dh*this.pixelDensity);
+    this.blend(...a,0);
   }
 
   /** resize(w, h); 0 for one side keeps the aspect ratio. */
@@ -221,9 +293,11 @@ export class PImage extends PConstants{
     if(w<=0&&h<=0)return;
     if(w<=0)w=this.width*h/this.height;
     if(h<=0)h=this.height*w/this.width;
+    if(this.__pixels_valid__())this.updatePixels();
     const old=this.__canvas__;
     this.init(Math.round(w),Math.round(h),this.format,1);
     this.__ctx__!.drawImage(old,0,0,this.pixelWidth,this.pixelHeight);
+    this.__fresh__=false;
     this.loadPixels();
   }
 
@@ -238,6 +312,33 @@ export class PImage extends PConstants{
     for(let i=0;i<this.pixels.length;i++)this.pixels[i]=((alpha[i]&0xff)<<24)|(this.pixels[i]&0xffffff);
     if(this.format===1)this.format=2;
     this.updatePixels();
+  }
+
+  /** filter(kind[, param]): THRESHOLD, GRAY, OPAQUE, INVERT, POSTERIZE, BLUR, ERODE or DILATE (util/imageOps.ts). */
+  filter(kind:number,param?:number){
+    if(!this.__ctx__)return;
+    this.loadPixels();
+    this.format=filterPixels(this.pixels,this.pixelWidth,this.pixelHeight,this.format,kind,param);
+    this.updatePixels();
+  }
+
+  /**
+   * blend(sx, sy, sw, sh, dx, dy, dw, dh, mode) or blend(src, sx, sy, sw, sh, dx, dy, dw, dh, mode): blendColor()
+   * of each pixel of the source region over this image's region (the source is scaled when the sizes differ).
+   */
+  blend(...a:any[]){
+    if(a.length===9)a.unshift(this);
+    const [src,sx,sy,sw,sh,dx,dy,dw,dh,mode]=a as [PImage,number,number,number,number,number,number,number,number,number];
+    const d=this.pixelDensity;
+    const tw=Math.round(dw*d),th=Math.round(dh*d);
+    if(tw<=0||th<=0||sw<=0||sh<=0)return;
+    // Read the source before writing (it can be this image).
+    const from=src.__region__(sx,sy,sw,sh,tw,th);
+    this.__apply__(Math.round(dx*d),Math.round(dy*d),tw,th,from,mode);
+  }
+
+  static blendColor(c1:number,c2:number,mode:number):number{
+    return blendColor(c1,c2,mode);
   }
 
   clone():PImage{

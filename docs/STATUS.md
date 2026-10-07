@@ -14,10 +14,10 @@
 | 変換速度 | ブラウザで 199 行のコールド変換 22ms、ウォーム 3ms。5k 行のウォーム 40ms（`npm run bench`） |
 | 2D 描画 | Canvas 2D の JAVA2D レンダラ。図形・各モード・strokeCap/Join・beginShape の全種別と contour・bezier/curve・変換（shear/applyMatrix）・colorMode（RGB/HSB）・blendMode・tint・createGraphics。Java2D のストローク正規化も再現。2d タグの視覚ケースはすべて PASS |
 | P2D / P3D / PShader | **未実装** |
-| 画像 / pixels | `pixels` は ARGB の Int32Array。メインキャンバスと PImage の loadPixels/updatePixels/get/set/copy/mask/resize/save（png/jpg/tif/tga）。loadImage は setup() 前に事前デコードした画像を同期で返す。filter/blend は未実装 |
+| 画像 / pixels | `pixels` は ARGB の Int32Array（普通の PImage では pixels が正で、半透明の画素も書いた値のまま）。loadPixels/updatePixels/get/set/copy/mask/resize/save（png/jpg/tif/tga）、filter（全種類。BLUR の半径の上限など本物の癖も再現）、blend/blendColor（SOFT_LIGHT 以外は本物と全件一致）。loadImage は setup() 前に事前デコードした画像を同期で返す |
 | ファイル IO | `SketchFiles`: スケッチが読むファイル（コンパイラが見つけた定数の名前とホストの一覧）を setup() の前に fetch。`data/` → スケッチフォルダの順。Service Worker でオフラインでも動く（`vt run --offline`）。保存はメモリ + ホストへの通知 |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **156 本（61%）** がエラーなく完走（JAVA2D 89% / P2D 18% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本、2026-10-06 の PVector の作り直しと配列関数の前は 145 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 53 ケース: 51 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
+| 視覚テスト | 55 ケース: 53 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
@@ -38,8 +38,9 @@
 |---|---|---|---|
 | R6 | テキストの寸法の残りの差: `textWidth()` は Java2D（ヒンティングされた送り幅）とブラウザで約 0.3% 違う。`textAscent()`/`textDescent()` は「作成時のサイズでの d の高さ / p の深さ（整数ピクセル）× textSize」で、既定フォント（サイズ 12 で作成）は一致するが、Java2D は TrueType のヒンティングをかけるので他のサイズ・フォントでは 1px ずれることがある（Processing Sans Pro を 40 で作ると本物は 29、こちらは 28）。また本物の `createFont("Processing Sans Pro", …)` は同梱フォントを見つけられず Dialog（Arial 相当）になるが、こちらは同梱フォントを使う | `PGraphicsJava2D.fontMetrics` | text_metrics |
 | R16 | イベントは vt の入力スクリプトで本物と照合済み（ケース events_mouse/events_key/events_escape）だが、Processing 側は AWT イベントを直接 dispatch しているので、OS が AWT イベントを作る部分（Ctrl+英字の文字、Delete/Esc の KEY_TYPED、ダブルクリックの判定時間など）は Windows の既定値を仮定している。mouseEntered/mouseExited・ウィンドウ外へのドラッグ・キーを押したままフォーカスを失った場合は未照合 | `DefaultRunner`, `event/KeyEvent.ts` | events_*, key-event.test.ts |
-| R17 | 未実装の主な API: filter、blend()、PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、delay、thread など | — | p3d_box, pshader_filter |
+| R17 | 未実装の主な API: PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、delay、thread など | — | p3d_box, pshader_filter |
 | R18 | Processing の PApplet は `pixelDensity` をフィールドとメソッドの両方に持つが、JS では同名にできないのでメソッドだけ（スケッチから `pixelDensity` をフィールドとして読むと関数になる）。`pixelWidth`/`pixelHeight` はフィールド | `PApplet.ts` | — |
+| R19 | `blendColor`/`blend()` の SOFT_LIGHT は近似（本物の整数演算を特定できず、約 80% の画素で一致・差は最大 2）。他のモードは本物と全件一致（src の青成分を使う BURN/SOFT_LIGHT の癖も再現）。大きさの違う `blend()`/`copy()` の拡大縮小はキャンバスの補間で、本物（blit_resize）とは画素がずれる | `util/imageOps.ts`, `PImage.blend` | image_blend |
 
 ## 既知の問題（コンパイラ `src/compiler/` と言語ランタイム）
 

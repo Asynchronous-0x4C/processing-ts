@@ -1,0 +1,6 @@
+{
+  "tags": [
+    "image"
+  ],
+  "note": "filter(): all kinds on PImage (pixels compared through println) and on the main canvas."
+}

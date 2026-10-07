@@ -90,6 +90,11 @@ export abstract class PGraphics extends PImage{
   endDraw(){}
 
   /** Per frame (main surface): Processing resets the matrix before each draw(). */
+  /** Drawing goes straight to the canvas: pixels[] is re-read by loadPixels(). */
+  __live__():boolean{
+    return true;
+  }
+
   __begin__(){
     this.resetMatrix();
   }

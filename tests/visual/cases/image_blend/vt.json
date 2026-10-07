@@ -1,0 +1,7 @@
+{
+  "tags": [
+    "image"
+  ],
+  "maxDiffRatio": 0.02,
+  "note": "blendColor() for every mode (println), PImage.blend()/copy()/set() and blend() on the main canvas. SOFT_LIGHT is only drawn (approximated, R19)."
+}

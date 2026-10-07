@@ -13,6 +13,7 @@ import * as arrayFunctions from "./util/arrayFunctions";
 import type { JavaArray } from "./util/arrayFunctions";
 import { Random } from "../../runtime/lang/util.ts";
 import { Noise } from "./util/noise";
+import { blendColor } from "./util/imageOps";
 import { exceptions } from "../../runtime/lang/index.ts";
 
 export interface PAppletSettings{
@@ -34,7 +35,7 @@ const DELEGATED=[
   "bezier","curve","curveTightness","bezierDetail","curveDetail","bezierPoint","bezierTangent","curvePoint","curveTangent",
   "beginShape","vertex","bezierVertex","quadraticVertex","curveVertex","beginContour","endContour","endShape",
   "image","textSize","textLeading","textAlign","textMode","textWidth","textAscent","textDescent","text",
-  "get","set","copy",
+  "get","set","copy","filter","blend",
 ] as const;
 
 export interface PApplet extends Pick<PGraphics,typeof DELEGATED[number]>{}
@@ -646,6 +647,11 @@ export class PApplet extends PConstants{
   saveFrame(filename?:string){
     const name=(filename??"screen-####.tif").replace(/#+/,(m)=>String(this.frameCount).padStart(m.length,"0"));
     this.g.save(name);
+  }
+
+  /** blendColor(c1, c2, mode) (static in Processing). */
+  blendColor(c1:number,c2:number,mode:number):number{
+    return blendColor(c1,c2,mode);
   }
 
   createImage(width:number,height:number,format:number):PImage{
