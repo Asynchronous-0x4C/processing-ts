@@ -14,10 +14,10 @@
 | 変換速度 | ブラウザで 199 行のコールド変換 22ms、ウォーム 3ms。5k 行のウォーム 40ms（`npm run bench`） |
 | 2D 描画 | Canvas 2D の JAVA2D レンダラ。図形・各モード・strokeCap/Join・beginShape の全種別と contour・bezier/curve・変換（shear/applyMatrix）・colorMode（RGB/HSB）・blendMode・tint・createGraphics。Java2D のストローク正規化も再現。2d タグの視覚ケースはすべて PASS |
 | P2D / P3D / PShader | **未実装** |
-| 画像 / pixels | `pixels` は ARGB の Int32Array。メインキャンバスと PImage の loadPixels/updatePixels/get/set/copy/mask/resize。filter/blend/save は未実装。loadImage のデコードは非同期（R9） |
-| ファイル IO | **同期 XHR**（Service Worker やオフラインと相性が悪い）。`data/` フォルダを自動で探さない |
+| 画像 / pixels | `pixels` は ARGB の Int32Array。メインキャンバスと PImage の loadPixels/updatePixels/get/set/copy/mask/resize/save（png/jpg/tif/tga）。loadImage は setup() 前に事前デコードした画像を同期で返す。filter/blend は未実装 |
+| ファイル IO | `SketchFiles`: スケッチが読むファイル（コンパイラが見つけた定数の名前とホストの一覧）を setup() の前に fetch。`data/` → スケッチフォルダの順。Service Worker でオフラインでも動く（`vt run --offline`）。保存はメモリ + ホストへの通知 |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **156 本（61%）** がエラーなく完走（JAVA2D 89% / P2D 18% / P3D 7%。P1-9 の前は 95 本、P2-1 の前は 124 本、2026-10-06 の PVector の作り直しと配列関数の前は 145 本）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗はランタイムの未実装 API。内訳と多いエラーは [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 50 ケース: 48 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
+| 視覚テスト | 53 ケース: 51 PASS / 2 XFAIL（[TESTING.md](TESTING.md)）。XFAIL は p3d_box・pshader_filter（P3） |
 | 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
 
 ## 実装済み API（ランタイム）
@@ -37,9 +37,8 @@
 | # | 問題 | 場所 | 検出テスト |
 |---|---|---|---|
 | R6 | テキストの寸法の残りの差: `textWidth()` は Java2D（ヒンティングされた送り幅）とブラウザで約 0.3% 違う。`textAscent()`/`textDescent()` は「作成時のサイズでの d の高さ / p の深さ（整数ピクセル）× textSize」で、既定フォント（サイズ 12 で作成）は一致するが、Java2D は TrueType のヒンティングをかけるので他のサイズ・フォントでは 1px ずれることがある（Processing Sans Pro を 40 で作ると本物は 29、こちらは 28）。また本物の `createFont("Processing Sans Pro", …)` は同梱フォントを見つけられず Dialog（Arial 相当）になるが、こちらは同梱フォントを使う | `PGraphicsJava2D.fontMetrics` | text_metrics |
-| R9 | `loadImage()` は PImage を同期で返すが中身は非同期にデコードされる（直後の `img.width` が 0） | `PApplet.loadImage`, `PImage.load_from_blob` | — |
 | R16 | イベントは vt の入力スクリプトで本物と照合済み（ケース events_mouse/events_key/events_escape）だが、Processing 側は AWT イベントを直接 dispatch しているので、OS が AWT イベントを作る部分（Ctrl+英字の文字、Delete/Esc の KEY_TYPED、ダブルクリックの判定時間など）は Windows の既定値を仮定している。mouseEntered/mouseExited・ウィンドウ外へのドラッグ・キーを押したままフォーカスを失った場合は未照合 | `DefaultRunner`, `event/KeyEvent.ts` | events_*, key-event.test.ts |
-| R17 | 未実装の主な API: filter、blend()、PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、save/saveFrame、delay、thread など | — | p3d_box, pshader_filter |
+| R17 | 未実装の主な API: filter、blend()、PShape/loadShape、P2D/P3D 全般、PShader、IntList 等のリスト/辞書、Table、XML、delay、thread など | — | p3d_box, pshader_filter |
 | R18 | Processing の PApplet は `pixelDensity` をフィールドとメソッドの両方に持つが、JS では同名にできないのでメソッドだけ（スケッチから `pixelDensity` をフィールドとして読むと関数になる）。`pixelWidth`/`pixelHeight` はフィールド | `PApplet.ts` | — |
 
 ## 既知の問題（コンパイラ `src/compiler/` と言語ランタイム）
@@ -63,11 +62,13 @@
 
 ## 既知の問題（IO / PWA）
 
-- `loadStrings/loadImage/loadJSON*` は **同期 XHR**（`XHRIO.ts:6`, `IOBase.ts:26`）。メインスレッドの同期 XHR は非推奨で、Service Worker 経由のキャッシュ/オフライン配信と相性が悪い。
-- `data/` フォルダを自動で探さない（`loadImage("a.png")` は `base + "a.png"` を取りに行く）。同梱サンプル `background_image` はパスを書き換えて回避している。
-- `sketch.properties` の `resources =` に列挙したファイルだけを fetch で事前読み込みするが、パスの一致判定が厳密（`./data/a.png` と `a.png` が一致しない）。
-- `SketchManager.loadSketch()` に `SketchFile` オブジェクトを渡すと、URL 組み立てで `"[object Object]" + name` になり壊れる。
-- `save*()` は localStorage（容量 5MB 程度、バイナリを文字列化）。
+ファイルは `SketchFiles`（`src/lib/runtime/io/`）: setup() の前に fetch（同期 XHR は廃止）し、画像はデコードまで済ませる。`data/` → スケッチフォルダの順に探し、見つからなければ Processing と同じメッセージを標準エラーに出して null（ケース files_load・files_save・files_offline。files_offline は Service Worker のキャッシュからオフラインで読む）。
+
+- 実行時に組み立てた名前（`loadImage("frame" + i + ".png")`）は、ホストがファイルの一覧（`SketchData.files`、sketch.properties の `resources`、`SketchManager.addFile()`）を渡したときだけ読める。一覧に無く、定数でもない名前は見つからない扱い（Processing なら読める）。
+- 保存（saveStrings・saveBytes・save・saveFrame・saveJSON*）はメモリ上のファイルとして同じ実行中に読み戻せ、ホストの "save" リスナーに渡る。ページを再読み込みすると消える（IndexedDB などへの永続化はしていない）。saveStrings の改行は `\n`（Windows の Processing は `\r\n`）。
+- TIFF と TGA は自前のエンコーダで無圧縮（Processing の TGA は RLE）。ブラウザは TIFF/TGA を読めないので、スケッチ自身が保存したもの以外の .tif/.tga は loadImage できない。
+- JPEG のデコーダはブラウザのもの（Java の ImageIO と画素値が ±1 程度ずれることがある）。PNG の gAMA/ICC は無視する（`colorSpaceConversion: "none"`）。
+- selectInput/selectOutput/selectFolder、createReader/createWriter/createInput/createOutput は未実装（java.io の互換層とコールバックの名前呼び出しが必要。P5）。
 
 ## 既知の問題（ビルド / リポジトリ）
 

@@ -1,0 +1,19 @@
+40 30 1 FF3C2878 FF3C2878
+40 30 1
+32 32 2 80FF0000
+16 16 1 FF0AC81E
+0 FF0032C8
+1 FF64328C
+2 FFC83250
+4
+[first]
+[second]
+[]
+[fourth é 日本]
+2 [﻿bom line] 9 [last]
+in the sketch folder
+first
+second
+6 0 127 -128 -1 -56
+x 3
+true true true

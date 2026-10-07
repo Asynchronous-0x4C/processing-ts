@@ -1,11 +1,16 @@
 import { compileSketch, formatDiagnostic, type SourceMapV3 } from "../compiler/index.ts";
 import { DefaultRunner, Runner } from "./runtime/runner/DefaultRunner";
+import type { SavedFile } from "./runtime/io/SketchFiles";
 
 /**
  * @property manual_step When true, the frame loop is not started automatically; advance frames with `SketchManager.step()`.
  */
 export type SketchSettings={frameRate?:number,thread?:"main",keep_aspect_ratio?:boolean,manual_step?:boolean};
-export type SketchData={main:string,content:{name:string,content:string}[]};
+/**
+ * @property files Other files of the sketch folder, relative to it ("data/a.png"): fetched before setup()
+ *   so that names built at run time (loadImage("frame" + i + ".png")) are found too.
+ */
+export type SketchData={main:string,content:{name:string,content:string}[],files?:string[]};
 export type SketchFile={base_uri:string,main_sketch:string,sketches:string[],resources?:string[]}
 
 /** Compile errors of a sketch, formatted like "Tab.pde:3:10: error: Missing ';'". */
@@ -23,7 +28,11 @@ export class CompileErrors{
 }
 
 /** A compiled sketch: `result` is the JavaScript run by the runner (see src/compiler/codegen.ts). */
-export type CompiledSketch={result:string;error:CompileErrors|null;map?:SourceMapV3|null;timings?:{compile:number};usesText?:boolean};
+/**
+ * @property files File names the sketch reads (constant strings found by the compiler).
+ * @property listed SketchData.files.
+ */
+export type CompiledSketch={result:string;error:CompileErrors|null;map?:SourceMapV3|null;timings?:{compile:number};usesText?:boolean;files?:string[];listed?:string[]};
 
 /**
  * Manage transpile and execution of sketch.
@@ -38,8 +47,12 @@ export class SketchManager{
 
   target_element:HTMLCanvasElement|null=null;
 
-  sketch_resources_promise:Promise<{path:string, content:ArrayBuffer}[]> | null = null;
+  /** URL of the sketch folder: loadImage("a.png") reads <base_uri>data/a.png (or <base_uri>a.png). */
   base_uri:string="";
+  /** Files added by the host (addFile()), relative to the sketch folder. */
+  provided_files=new Map<string,Uint8Array|string>();
+  /** sketch.properties `resources` / loadSketchString() resources. */
+  private listed_files:string[]=[];
 
   constructor(settings?:SketchSettings){
     if(settings){
@@ -72,37 +85,33 @@ export class SketchManager{
    * @returns Sketch data which required to transpile.
    */
   async loadSketch(sketch_path:string|SketchFile):Promise<SketchData> {
-    this.base_uri=new URL(typeof sketch_path==="string"?sketch_path:sketch_path.base_uri,document.baseURI).href;
-    const sketch_property=typeof sketch_path==="string"?await (await fetch(new URL(sketch_path+"sketch.properties",document.baseURI))).text():"";
+    const folder=typeof sketch_path==="string"?sketch_path:sketch_path.base_uri;
+    this.base_uri=new URL(folder.endsWith("/")?folder:folder+"/",document.baseURI).href;
+    const sketch_property=typeof sketch_path==="string"?await (await fetch(new URL("sketch.properties",this.base_uri))).text():"";
     const main_sketch=typeof sketch_path==="string"?sketch_property.match(/\n*(?<!#\s*)main\s*=\s*(.+\.pde)/)![1]:sketch_path.main_sketch;
     let m;
     const sketch_names=typeof sketch_path==="string"?(m=sketch_property.match(/\n*(?<!#\s*)sketches\s*=((\s*\w+.pde)+)/))!=null?m[1].split(/[\s,]+/).map(s=>s.trim()):[main_sketch]:sketch_path.sketches;
-    const sketch_resources=typeof sketch_path==="string"?(m=sketch_property.match(/\n*(?<!#\s*)resources\s*=[\s,]*(([\w\.]+[,\s]+)*)/))!=null?m[1].split(/[\s,]+/).map(s=>s.trim()):[]:sketch_path.resources??[];
+    // resources = data/a.png, data/b.txt (paths relative to the sketch folder)
+    const sketch_resources=typeof sketch_path==="string"?(m=sketch_property.match(/^[ \t]*resources[ \t]*=(.*)$/m))!=null?m[1].split(/[\s,]+/).map(s=>s.trim()):[]:sketch_path.resources??[];
     
-    this.sketch_resources_promise = Promise.all(sketch_resources.map(async(resource) => {
-      return {path:resource,content:await fetch(new URL(sketch_path + resource, document.baseURI)).then(res => res.arrayBuffer())};
-    }));
+    this.listed_files=sketch_resources.filter(r=>r!=="");
 
     const sketch_content=await Promise.all(sketch_names.map(async(name)=>{
-        return {name:name,content:await fetch(new URL(sketch_path + name, document.baseURI)).then(res=>res.text())};
+        return {name:name,content:await fetch(new URL(name, this.base_uri)).then(res=>res.text())};
     }));
-    return {main:main_sketch,content:sketch_content};
+    return {main:main_sketch,content:sketch_content,files:this.listed_files};
   }
 
   /**
    * Load sketch from string.
    * @param sketch Sketch source string
    * @param name Sketch name
-   * @param resources Static resource path which your sketch use
+   * @param resources Files of the sketch folder the sketch uses (relative to `base_uri`)
    * @returns Sketch data which required to transpile
    */
   loadSketchString(sketch:string,name:string,resources?:string[]):SketchData{
-    this.sketch_resources_promise = Promise.all((resources??[]).map(async(resource) => {
-      return {path:resource,content:await fetch(new URL(resource, document.baseURI)).then(res => res.arrayBuffer())};
-    }));
-
     const sketch_content=[{name:name,content:sketch}];
-    return {main:name,content:sketch_content};
+    return {main:name,content:sketch_content,files:resources??[]};
   }
 
   /**
@@ -137,7 +146,7 @@ export class SketchManager{
     if(error.error){
       this.runner.error_listeners.forEach(l=>l(error.getErrorMessage()));
     }
-    return {result:r.code??"",error,map:r.map,timings:{compile:performance.now()-t0},usesText:r.usesText};
+    return {result:r.code??"",error,map:r.map,timings:{compile:performance.now()-t0},usesText:r.usesText,files:r.files,listed:sketch_data.files};
   }
 
   /**
@@ -147,7 +156,7 @@ export class SketchManager{
   async runTranspiledSketch(sketch:CompiledSketch){
     this.stopSketch();
     if(sketch.error!=null&&sketch.error.error)return;
-    await this.runner.init(sketch.result,sketch.map,{usesText:sketch.usesText});
+    await this.runner.init(sketch.result,sketch.map,{usesText:sketch.usesText,files:sketch.files,listed:sketch.listed});
     if(this.settings.keep_aspect_ratio){
       this.setAspectRatio();
     }
@@ -237,7 +246,21 @@ export class SketchManager{
     return this.runner.getDependentClasses();
   }
 
-  addEventListener(type:"log"|"error",listener:(args:any[])=>void){
+  /**
+   * Add a file of the sketch folder in memory (e.g. an uploaded image as "data/a.png"); the sketch reads
+   * it before anything fetched from `base_uri`.
+   */
+  addFile(path:string,content:ArrayBuffer|Uint8Array|string){
+    this.provided_files.set(path,content instanceof ArrayBuffer?new Uint8Array(content):content);
+  }
+
+  /**
+   * "log": println output (one call per line). "error": compile errors and uncaught exceptions.
+   * "save": a file written by the sketch (saveStrings(), save(), saveFrame()...): {path, data, mime}.
+   */
+  addEventListener(type:"log"|"error",listener:(args:any[])=>void):void;
+  addEventListener(type:"save",listener:(file:SavedFile)=>void):void;
+  addEventListener(type:"log"|"error"|"save",listener:(arg:any)=>void){
     this.runner.addEventListener(type,listener);
   }
 }

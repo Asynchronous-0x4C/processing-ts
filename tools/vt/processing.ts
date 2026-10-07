@@ -58,8 +58,12 @@ export async function renderReference(
     const content = f.name === sketch.main ? injectForReference(f.content, mode, opts.frames, tmpPng, tmpStdout, opts.input) : f.content;
     fs.writeFileSync(path.join(sketchDir, f.name), content);
   }
-  const dataDir = path.join(sketch.dir, "data");
-  if (fs.existsSync(dataDir)) fs.cpSync(dataDir, path.join(sketchDir, "data"), { recursive: true });
+  // Everything else in the sketch folder (data/, files next to the .pde) is copied as is.
+  for (const e of fs.readdirSync(sketch.dir, { withFileTypes: true })) {
+    if (e.isFile() && e.name.endsWith(".pde")) continue;
+    if (e.name === "sketch.properties" || e.name === "vt.json") continue;
+    fs.cpSync(path.join(sketch.dir, e.name), path.join(sketchDir, e.name), { recursive: true });
+  }
 
   const args = ["cli", `--sketch=${sketchDir}`, `--output=${path.join(work, "build")}`, "--force", "--run"];
   const { output, timedOut } = await runWithTimeout(opts.processing, args, opts.timeoutMs ?? 90_000);

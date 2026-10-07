@@ -1,0 +1,7 @@
+{
+  "tags": [
+    "io",
+    "image"
+  ],
+  "note": "saveStrings/saveBytes/save/saveFrame write relative to the sketch folder and can be read back."
+}

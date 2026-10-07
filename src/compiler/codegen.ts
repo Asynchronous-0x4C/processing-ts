@@ -34,6 +34,8 @@ export interface GenerateResult {
   map: SourceMapV3;
   /** The sketch calls a text drawing/measuring method of PApplet or PGraphics (the runtime loads the default font before setup()). */
   usesText: boolean;
+  /** File names given as constant strings to loadImage()/loadStrings()/... (the runtime fetches them before setup()). */
+  files: string[];
 }
 
 // JS operator precedence (higher binds tighter).
@@ -95,6 +97,11 @@ const PAPPLET = "processing.core.PApplet";
 /** Library methods whose result depends on the default font being loaded (GenerateResult.usesText). */
 const TEXT_METHODS = new Set(["text", "textWidth", "textAscent", "textDescent"]);
 const TEXT_OWNERS = new Set([PAPPLET, "processing.core.PGraphics"]);
+/** PApplet methods whose String arguments name files to read (GenerateResult.files). */
+const FILE_METHODS = new Set([
+  "loadImage", "requestImage", "loadStrings", "loadBytes", "loadJSONObject", "loadJSONArray", "loadTable", "loadXML",
+  "loadFont", "loadShape", "loadShader", "createInput", "createReader",
+]);
 
 /**
  * Methods the current runtime (src/lib/runtime) calls under other names: event handlers share their
@@ -130,6 +137,8 @@ export class Gen {
   cls!: ClassSymbol;
   /** See GenerateResult.usesText. */
   private usesText = false;
+  /** See GenerateResult.files. */
+  private readonly files = new Set<string>();
   private fn: FnCtx = { temps: 0, async: false };
   /** Library classes and interfaces referenced, by binary name → local alias. */
   private readonly libAliases = new Map<string, string>();
@@ -342,7 +351,7 @@ export class Gen {
     const code = body.join("\n") + "\n";
     const map = new SourceMapBuilder();
     for (const [gl, gc, s, l, c] of this.rawMappings) map.add(gl - savedLines + offset, gc, s, l, c);
-    return { code, map: map.toJSON(this.source.tabs.map((t) => t.name), this.source.tabs.map((t) => t.text)), usesText: this.usesText };
+    return { code, map: map.toJSON(this.source.tabs.map((t) => t.name), this.source.tabs.map((t) => t.text)), usesText: this.usesText, files: [...this.files] };
   }
 
   /** [generated line, column, tab, line, column] (0-based), lines relative to the user block. */
@@ -1191,6 +1200,9 @@ export class Gen {
     const isStatic = (m.flags & Flags.Static) !== 0;
     if (!m.owner.isSource) {
       if (TEXT_METHODS.has(m.name) && TEXT_OWNERS.has(m.owner.fullName)) this.usesText = true;
+      if (FILE_METHODS.has(m.name) && TEXT_OWNERS.has(m.owner.fullName)) {
+        for (const a of e.args) if (typeof a.constant === "string") this.files.add(a.constant);
+      }
       // Library method: intrinsics first.
       let recv: Emit | null = null;
       if (e.target && !isStatic) recv = e.target.kind === "Super" ? { c: "super", p: P.Primary } : this.expr(e.target);

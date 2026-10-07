@@ -1,5 +1,7 @@
 import { PConstants } from "./PConstants";
 import type { PApplet } from "./PApplet";
+import { extensionOf } from "./io/SketchFiles";
+import { encodeTGA, encodeTIFF } from "./io/imageEncode";
 
 export type NativeCanvas=HTMLCanvasElement|OffscreenCanvas;
 export type Native2D=CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D;
@@ -87,6 +89,53 @@ export class PImage extends PConstants{
     this.__ctx__=this.__canvas__.getContext("2d",{willReadFrequently:true}) as Native2D;
   }
 
+  /**
+   * Set this image from a decoded file (loadImage()). JPEG images are RGB; the others are ARGB when a
+   * pixel is translucent, else RGB (as Processing's checkAlpha()).
+   */
+  __from_bitmap__(bmp:ImageBitmap,ext:string){
+    this.init(bmp.width,bmp.height,2,1);
+    this.__ctx__!.drawImage(bmp,0,0);
+    this.loadPixels();
+    let format=1;
+    if(ext!=="jpg"&&ext!=="jpeg"){
+      for(let i=0;i<this.pixels.length;i++)if((this.pixels[i]>>>24)!==0xff){format=2;break;}
+    }
+    this.format=format;
+  }
+
+  /**
+   * save(filename): the image as .png, .jpg, .tif or .tga (by the extension; without one, .tif is added),
+   * relative to the sketch folder. The file goes to the sketch's file store and the host's "save" listeners.
+   */
+  save(filename:string):boolean{
+    const files=this.parent?.__files__;
+    if(!files||!this.__canvas__)return false;
+    let name=filename;
+    let ext=extensionOf(name);
+    if(ext===""){
+      name+=".tif";
+      ext="tif";
+    }
+    this.loadPixels();
+    files.saveImagePixels(name,{width:this.pixelWidth,height:this.pixelHeight,format:this.format,pixels:this.pixels.slice()});
+    if(ext==="tif"||ext==="tiff"){
+      files.save(name,encodeTIFF(this.pixels,this.pixelWidth,this.pixelHeight,this.format===2),"image/tiff");
+      return true;
+    }
+    if(ext==="tga"){
+      files.save(name,encodeTGA(this.pixels,this.pixelWidth,this.pixelHeight,this.format===2),"image/x-tga");
+      return true;
+    }
+    const type=ext==="jpg"||ext==="jpeg"?"image/jpeg":"image/png";
+    const canvas=this.__canvas__;
+    const blob:Promise<Blob|null>="convertToBlob" in canvas?canvas.convertToBlob({type,quality:0.9}):new Promise((r)=>canvas.toBlob(r,type,0.9));
+    void blob.then(async(b)=>{
+      if(b)files.save(name,new Uint8Array(await b.arrayBuffer()),type);
+    });
+    return true;
+  }
+
   /** Decode an image file; width/height stay 0 until it is ready (as with requestImage()). */
   async load_from_blob(blob:Blob){
     const bmp=await createImageBitmap(blob);
@@ -156,8 +205,9 @@ export class PImage extends PConstants{
     if(this.pixels.length)this.pixels[y*this.pixelDensity*this.pixelWidth+x*this.pixelDensity]=c;
   }
 
-  /** copy(sx, sy, sw, sh, dx, dy, dw, dh) or copy(src, sx, sy, sw, sh, dx, dy, dw, dh) */
-  copy(...a:any[]){
+  /** copy() (a new image), copy(sx, sy, sw, sh, dx, dy, dw, dh) or copy(src, sx, sy, sw, sh, dx, dy, dw, dh) */
+  copy(...a:any[]):PImage|void{
+    if(a.length===0)return this.get() as PImage;
     if(a.length===8)a.unshift(this);
     const [src,sx,sy,sw,sh,dx,dy,dw,dh]=a as [PImage,number,number,number,number,number,number,number,number];
     const n=src.__native__();

@@ -114,6 +114,9 @@ function addTab(name = `Untitled_${tabs.length + 1}`, code: string="") {
 
 async function loadTabs(path:string){
   const props=await fetch(new URL(path+"sketch.properties",document.baseURI)).then(r=>r.text());
+  // The sample's folder: loadImage("a.png") reads <folder>/data/a.png, as in Processing.
+  manager.base_uri=new URL(path,document.baseURI).href;
+  manager.provided_files.clear();
   const main_file=props.match(/\n*(?<!#\s*)main\s*=\s*(.+\.pde)/)![1].replace(".pde","").trim();
   let m;
   const files=(m=props.match(/\n*(?<!#\s*)sketches\s*=((\s*\w+.pde)+)/))!=null?m[1].split(/[\s,]+/).map(s=>s.trim()).filter(s=>s!==""):[main_file+".pde"];
@@ -188,14 +191,16 @@ function handleFileSelect(event: Event) {
       const reader = new FileReader();
       reader.onload = e => resolve({ name: file.name, content: e.target!.result! });
       reader.onerror = e => reject(e);
-      reader.readAsText(file);
+      // .pde files become tabs; the others are the sketch's data files.
+      if (file.name.endsWith('.pde')) reader.readAsText(file);
+      else reader.readAsArrayBuffer(file);
     });
   });
 
   Promise.all(filePromises).then(results => {
     uploadedFiles = results;
     fileList.textContent = `${results.length}個のファイルを選択中: ${results.map(f => f.name).join(', ')}`;
-    results.forEach(file => {
+    results.filter(file => file.name.endsWith('.pde')).forEach(file => {
       const option = document.createElement('option');
       option.value = file.name;
       option.textContent = file.name;
@@ -430,6 +435,10 @@ uploadButton.addEventListener('pointerdown', () => {
   if (uploadedFiles.length > 0) {
     clearTab();
     let main_file:{name:string;content:string|ArrayBuffer;};
+    manager.base_uri = '';
+    manager.provided_files.clear();
+    for (const f of uploadedFiles) if (!f.name.endsWith('.pde')) manager.addFile(`data/${f.name}`, f.content as ArrayBuffer);
+    uploadedFiles = uploadedFiles.filter(f => f.name.endsWith('.pde'));
     uploadedFiles = uploadedFiles.filter(f => { if (f.name === mainSketchSelect.value) { main_file = f; return false; } return true; });
     uploadedFiles.unshift(main_file!);
     uploadedFiles.forEach(file => {
@@ -450,6 +459,7 @@ document.addEventListener('pointerdown', (event) => {
 
 manager.addEventListener("log",(args:any[])=>{logToConsole("log",args)});
 manager.addEventListener("error",(args:any[])=>{logToConsole("error",args)});
+manager.addEventListener("save",(file)=>{logToConsole("log",[`saved ${file.path} (${file.data.length} bytes)`])});
 
 makeDraggable(canvasWindow, windowTitleBar);
 makeResizable(canvasWindow, windowResizeHandle);

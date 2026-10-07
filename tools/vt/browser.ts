@@ -1,4 +1,5 @@
 // Runs sketches with processing-ts inside headless Chromium (Playwright) served by a Vite dev server.
+import fs from "node:fs";
 import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer, type ViteDevServer } from "vite";
@@ -78,10 +79,13 @@ export class BrowserRunner {
 
   /**
    * Run one sketch in a fresh page. `frames` = number of draw() calls before capture; `input` is
-   * replayed with real mouse/keyboard input between frames (input.ts).
+   * replayed with real mouse/keyboard input between frames (input.ts). With `offline`, the page runs the
+   * sketch once online under a caching Service Worker (harness/sw.js), goes offline, reloads and runs it
+   * again: the result is the offline run's (the sketch's files must come from the cache).
    */
-  async run(sketch: SketchSource, frames: number, timeoutMs = 30_000, input?: InputAction[]): Promise<BrowserRunResult> {
-    const page = await this.browser!.newPage({ viewport: { width: 1280, height: 1024 }, deviceScaleFactor: 1 });
+  async run(sketch: SketchSource, frames: number, timeoutMs = 30_000, input?: InputAction[], offline = false): Promise<BrowserRunResult> {
+    const context = await this.browser!.newContext({ viewport: { width: 1280, height: 1024 }, deviceScaleFactor: 1 });
+    const page = await context.newPage();
     const consoleLines: string[] = [];
     page.on("console", (m) => consoleLines.push(`[${m.type()}] ${m.text()}`));
     page.on("pageerror", (e) => consoleLines.push(`[pageerror] ${e.message}`));
@@ -89,21 +93,45 @@ export class BrowserRunner {
       ok: false, phase: "harness", width: 0, height: 0, logs: [], errors: [], console: consoleLines,
       transpileMs: 0, setupMs: 0, frameMs: [],
     };
+    const harness = `${this.baseUrl}/tools/vt/harness/index.html`;
+    const ready = () => page.waitForFunction(() => (window as any).__vt__ !== undefined, null, { timeout: timeoutMs });
     try {
-      await page.goto(`${this.baseUrl}/tools/vt/harness/index.html`, { waitUntil: "load" });
-      await page.waitForFunction(() => (window as any).__vt__ !== undefined, null, { timeout: timeoutMs });
-      const dataBase = `/@fs/${path.resolve(sketch.dir, "data").replace(/\\/g, "/").replace(/^\//, "")}/`;
-      const opts = { main: sketch.main, files: sketch.files, dataBase, frames };
-      const work = input?.length ? this.runWithInput(page, opts, input) : page.evaluate((o) => (window as any).__vt__.run(o), opts);
-      const result = (await Promise.race([
-        work,
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs)),
-      ])) as Omit<BrowserRunResult, "console">;
+      await page.goto(harness, { waitUntil: "load" });
+      await ready();
+      // The sketch folder as the base URL, and its data/ files listed (as a host would).
+      const sketchBase = `/@fs/${path.resolve(sketch.dir).replace(/\\/g, "/").replace(/^\//, "")}/`;
+      const dataDir = path.join(sketch.dir, "data");
+      const dataFiles = fs.existsSync(dataDir)
+        ? fs.readdirSync(dataDir, { recursive: true }).map(String).filter((f) => fs.statSync(path.join(dataDir, f)).isFile()).map((f) => "data/" + f.replace(/\\/g, "/"))
+        : [];
+      const opts = { main: sketch.main, files: sketch.files, sketchBase, dataFiles, frames };
+      const once = () => {
+        const work = input?.length ? this.runWithInput(page, opts, input) : page.evaluate((o) => (window as any).__vt__.run(o), opts);
+        return Promise.race([
+          work,
+          new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs)),
+        ]) as Promise<Omit<BrowserRunResult, "console">>;
+      };
+      if (offline) {
+        await page.evaluate(async () => {
+          await navigator.serviceWorker.register("./sw.js");
+          await navigator.serviceWorker.ready;
+        });
+        // Reload under the worker so that the page's own modules are cached too, then fill the cache.
+        await page.reload({ waitUntil: "load" });
+        await ready();
+        if (!(await page.evaluate(() => navigator.serviceWorker.controller !== null))) throw new Error("the Service Worker does not control the page");
+        await once();
+        await context.setOffline(true);
+        await page.reload({ waitUntil: "load" });
+        await ready();
+      }
+      const result = await once();
       return { ...result, console: consoleLines };
     } catch (e) {
       return { ...empty, errors: [String((e as Error).message ?? e)] };
     } finally {
-      await page.close();
+      await context.close();
     }
   }
 

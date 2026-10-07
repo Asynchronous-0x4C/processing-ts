@@ -6,9 +6,8 @@ import { PSurface } from "./PSurface";
 import { JSONObject } from "./data/JSONObject";
 import { KeyEvent } from "./event/KeyEvent";
 import { MouseEvent } from "./event/MouseEvent";
-import { IOBase } from "./util/sketchio/IOBase";
 import { JSONArray } from "./data/JSONArray";
-import { XHRIO } from "./util/sketchio/XHRIO";
+import { SketchFiles, extensionOf, missingFileMessage } from "./io/SketchFiles";
 import { PFont } from "./PFont";
 import * as arrayFunctions from "./util/arrayFunctions";
 import type { JavaArray } from "./util/arrayFunctions";
@@ -19,7 +18,9 @@ import { exceptions } from "../../runtime/lang/index.ts";
 export interface PAppletSettings{
   canvas: HTMLCanvasElement,
   base_path: string,
-  max_size:{ width: number; height: number; }
+  max_size:{ width: number; height: number; },
+  /** The sketch's files, preloaded by the runner (a store for base_path when absent). */
+  files?: SketchFiles,
 }
 
 /** PGraphics methods that PApplet forwards to `g` (as Processing's PApplet does). */
@@ -44,7 +45,8 @@ export class PApplet extends PConstants{
   /** The sketch window's renderer (allocated by __init_surface__() after settings()). */
   g:PGraphicsJava2D;
   surface:PSurface=new PSurface(this);
-  __io__:IOBase|null=null;
+  /** The sketch folder's files (loadImage(), loadStrings(), save()...). */
+  __files__:SketchFiles;
   __fullscreen__:boolean=false;
   __log_listener__:(args:any[])=>void=()=>{};
   __date__=new Date();
@@ -83,15 +85,9 @@ export class PApplet extends PConstants{
 
   constructor(settings?:PAppletSettings){
     super();
-    if(settings){
-      this.max_size=settings.max_size;
-      this.__io__=new XHRIO(settings.base_path);
-    }
+    if(settings)this.max_size=settings.max_size;
+    this.__files__=settings?.files??new SketchFiles(settings?.base_path??"");
     this.g=new PGraphicsJava2D(this,settings?.canvas??null,true);
-  }
-
-  __set_preload__(buffer:{path:string, content:ArrayBuffer}[]){
-    if(this.__io__)this.__io__.preload=buffer;
   }
 
   async settings(){}
@@ -566,28 +562,90 @@ export class PApplet extends PConstants{
     this.__log_listener__(args)
   }
 
-  loadStrings(path:string){
-    //TODO:fetch or get from cache
-    const result=this.__io__!.load_as_string(path);
-    if(result!=null){
-      return result.split("\n");
+  // --- files (io/SketchFiles.ts: preloaded before setup(), so these are synchronous as in Processing) ---
+
+  /** Bytes of a file, or null after printing Processing's message. */
+  private __read__(name:string):Uint8Array|null{
+    const b=this.__files__.bytes(name);
+    if(b===null)exceptions.printError(missingFileMessage(name));
+    return b;
+  }
+
+  private __read_text__(name:string):string|null{
+    const t=this.__files__.text(name);
+    if(t===null)exceptions.printError(missingFileMessage(name));
+    return t;
+  }
+
+  /** The lines of a text file (UTF-8; \n, \r\n or \r end a line, as BufferedReader.readLine()), or null. */
+  loadStrings(name:string):string[]|null{
+    const text=this.__read_text__(name);
+    if(text===null)return null;
+    if(text==="")return [];
+    const lines=text.split(/\r\n|\r|\n/);
+    if(/[\r\n]$/.test(text))lines.pop();
+    return lines;
+  }
+
+  /** byte[] of a file, or null. */
+  loadBytes(name:string):Int8Array|null{
+    const b=this.__read__(name);
+    return b===null?null:new Int8Array(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength));
+  }
+
+  /** Lines joined with \n (each line ends with one), relative to the sketch folder. */
+  saveStrings(name:string,lines:string[]){
+    this.__files__.save(name,lines.map((l)=>l+"\n").join(""));
+  }
+
+  saveBytes(name:string,data:Int8Array|ArrayLike<number>){
+    this.__files__.save(name,Uint8Array.from(data as ArrayLike<number>,(v)=>v&0xff));
+  }
+
+  /** loadImage(name[, extension]): the decoded image, or null (preloaded: see SketchFiles). */
+  loadImage(name:string,extension?:string):PImage|null{
+    const saved=this.__files__.savedImage(name);
+    if(saved){
+      // Processing reads its own .tga files upside down.
+      if(extensionOf(name)!=="tga")return new PImage(this,saved);
+      const {width,height,format,pixels}=saved;
+      const flipped=new Int32Array(pixels.length);
+      for(let y=0;y<height;y++)flipped.set(pixels.subarray((height-1-y)*width,(height-y)*width),y*width);
+      return new PImage(this,{width,height,format,pixels:flipped});
     }
-    console.warn(`loadStrings: ${path} not found`);
-    return null;
-  }
-
-  saveStrings(path:string,data:string[]){
-    this.__io__?.save_string(path,data.join("\n"));
-  }
-
-  loadImage(path:string){
+    const bmp=this.__files__.image(name);
+    if(!bmp){
+      exceptions.printError(missingFileMessage(name));
+      return null;
+    }
     const img=new PImage(this);
-    const result=this.__io__!.load_as_blob(path,`image/${path.split(".").pop()?.toLowerCase()??"png"}`);
-    if(result!=null){
-      img.load_from_blob(result);
-      return img;
-    }
-    return null;
+    img.__from_bitmap__(bmp,(extension??extensionOf(name)).toLowerCase());
+    return img;
+  }
+
+  /** requestImage(name[, extension]): returns at once; width/height are 0 while loading, -1 on failure. */
+  requestImage(name:string,extension?:string):PImage{
+    const img=new PImage(this);
+    void this.__files__.load(name).then((key)=>{
+      const bmp=key===null?null:this.__files__.imageByKey(key);
+      if(bmp)img.__from_bitmap__(bmp,(extension??extensionOf(name)).toLowerCase());
+      else{
+        img.width=img.height=-1;
+        exceptions.printError(missingFileMessage(name));
+      }
+    });
+    return img;
+  }
+
+  /** save(filename): the window as an image file (see PImage.save()). */
+  save(filename:string){
+    this.g.save(filename);
+  }
+
+  /** saveFrame([filename]): the window, with the run of '#' replaced by frameCount (default screen-####.tif). */
+  saveFrame(filename?:string){
+    const name=(filename??"screen-####.tif").replace(/#+/,(m)=>String(this.frameCount).padStart(m.length,"0"));
+    this.g.save(name);
   }
 
   createImage(width:number,height:number,format:number):PImage{
@@ -601,28 +659,22 @@ export class PApplet extends PConstants{
     return pg;
   }
 
-  loadJSONObject(path:string){
-    const result=this.__io__!.load_as_string(path);
-    if(result!=null){
-      return JSONObject.parse(result);
-    }
-    return null;
+  loadJSONObject(name:string):JSONObject|null{
+    const text=this.__read_text__(name);
+    return text===null?null:JSONObject.parse(text);
   }
 
-  saveJSONObject(data:JSONObject,path:string){
-    this.__io__?.save_string(path,data.toString());
+  saveJSONObject(json:JSONObject,name:string,_options?:string){
+    this.__files__.save(name,json.toString());
   }
 
-  loadJSONArray(path:string){
-    const result=this.__io__!.load_as_string(path);
-    if(result!=null){
-      return JSONArray.parse(result);
-    }
-    return null;
+  loadJSONArray(name:string):JSONArray|null{
+    const text=this.__read_text__(name);
+    return text===null?null:JSONArray.parse(text);
   }
 
-  saveJSONArray(data:JSONArray,path:string){
-    this.__io__?.save_string(path,data.toString());
+  saveJSONArray(json:JSONArray,name:string,_options?:string){
+    this.__files__.save(name,json.toString());
   }
 
   // --- array functions and splitTokens (util/arrayFunctions.ts) --------------------------------------

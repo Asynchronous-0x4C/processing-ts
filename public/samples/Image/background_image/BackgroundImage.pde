@@ -14,7 +14,7 @@ void setup() {
   // The background image must be the same size as the parameters
   // into the size() method. In this program, the size of the image
   // is 640 x 360 pixels.
-  bg = loadImage("./samples/Image/background_image/data/waterfall.jpg");
+  bg = loadImage("waterfall.jpg");
 }
 
 void draw() {

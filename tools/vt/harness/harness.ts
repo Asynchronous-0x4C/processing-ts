@@ -4,8 +4,10 @@ import { SketchManager } from "../../../src/lib/index.ts";
 type RunOptions = {
   main: string;
   files: { name: string; content: string }[];
-  /** URL of the sketch's data/ folder (loadImage("a.png") resolves to dataBase + "a.png"). */
-  dataBase: string;
+  /** URL of the sketch folder (loadImage("a.png") reads sketchBase + "data/a.png"). */
+  sketchBase: string;
+  /** The files of data/, relative to the sketch folder ("data/a.png"). */
+  dataFiles: string[];
   frames: number;
 };
 
@@ -35,18 +37,18 @@ class Session {
   readonly canvas = document.createElement("canvas");
   readonly manager = new SketchManager({ frameRate: 60, thread: "main", keep_aspect_ratio: false, manual_step: true });
 
-  constructor(dataBase: string) {
+  constructor(sketchBase: string) {
     document.body.appendChild(this.canvas);
     this.manager.mountPApplet(this.canvas);
     this.manager.addEventListener("log", (args) => this.logs.push(format(args)));
     this.manager.addEventListener("error", (e) => this.errors.push(`[${this.phase}] ${format(e)}`));
-    this.manager.base_uri = new URL(dataBase, location.href).href;
+    this.manager.base_uri = new URL(sketchBase, location.href).href;
   }
 
   /** Transpile and run setup(). False when the sketch did not compile. */
   async start(opts: RunOptions): Promise<boolean> {
     const t0 = performance.now();
-    const transpiled = this.manager.transpileSketch({ main: opts.main, content: opts.files });
+    const transpiled = this.manager.transpileSketch({ main: opts.main, content: opts.files, files: opts.dataFiles });
     this.transpileMs = performance.now() - t0;
     this.code = transpiled.result;
     this.timings = transpiled.timings;
@@ -93,7 +95,7 @@ let session: Session | null = null;
 
 /** Run a sketch: setup, then `frames` draw() calls, then capture the canvas. */
 async function run(opts: RunOptions): Promise<Result> {
-  const s = new Session(opts.dataBase);
+  const s = new Session(opts.sketchBase);
   try {
     if (!(await s.start(opts))) return s.result(false);
     for (let i = 0; i < opts.frames; i++) await s.step();
@@ -105,7 +107,7 @@ async function run(opts: RunOptions): Promise<Result> {
 
 /** Step-by-step variant of run(): start(), then step() per frame, then finish(). */
 async function start(opts: RunOptions): Promise<Result | null> {
-  session = new Session(opts.dataBase);
+  session = new Session(opts.sketchBase);
   try {
     return (await session.start(opts)) ? null : session.result(false);
   } catch (e) {

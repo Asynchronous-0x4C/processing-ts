@@ -53,6 +53,11 @@ export function setErrorPrinter(f: (s: string) => void) {
   printErr = f;
 }
 
+/** Write a line to the host's stderr (System.err). */
+export function printError(s: string) {
+  printErr(s);
+}
+
 const define = (base: typeof Throwable, javaName: string): typeof Throwable => {
   const c = class extends base {};
   c.$javaName = javaName;

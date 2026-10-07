@@ -46,8 +46,8 @@ PApplet → g: PGraphicsJava2D（PGraphics の Canvas 2D 実装。キャンバ�
 | `src/lib/runtime/PFont.ts` | CSS のフォントファミリ。同梱の Processing Sans Pro を FontFace で遅延読み込み |
 | `src/lib/runtime/PConstants.ts` | Processing の定数（値は本家と同じ） |
 | `src/lib/runtime/runner/DefaultRunner.ts` | フレームループとイベントキュー（`Runner` 抽象クラスもここ） |
-| `src/lib/runtime/util/` | ArrayList（Array 継承）、HashMap（Map ラッパ）、PVector、関数型インタフェース、IO |
-| `src/lib/runtime/util/sketchio/` | 同期 XHR + localStorage + 事前読み込みバッファによるファイル IO |
+| `src/lib/runtime/util/` | ArrayList（Array 継承）、HashMap（Map ラッパ）、PVector、関数型インタフェース、noise、配列関数 |
+| `src/lib/runtime/io/` | スケッチのファイル（`SketchFiles`: 事前 fetch・画像の事前デコード・保存）と TIFF/TGA のエンコーダ |
 | `src/main.ts`, `src/highlight.ts`, `src/style.css`, `index.html` | デモ用ライブエディタ（textarea + 正規表現ハイライタ） |
 | `public/samples/` | デモのサンプル（Processing 公式 examples の一部。`src/scripts/samples.json` は dev サーバ起動時に自動生成） |
 | `tools/vt/` | 視覚/出力回帰テスト CLI（[TESTING.md](TESTING.md)） |
@@ -193,12 +193,12 @@ ANTLR4 の Processing 文法（`antlr/Processing.g4`、生成物 `antlr/parser/`
 - 色は ARGB の int。色の int は Processing と同じ ARGB（`#RRGGBB` は `0xFFRRGGBB`）。fill(x) などの 1 引数は、アルファのビットが無く範囲内なら灰色、それ以外は ARGB。メインの画面は灰色（204）で始まる。
 - P2D/P3D、シェーダー、ライト、カメラは未実装（`size(w,h,P3D)` の第 3 引数は無視）。
 
-### ファイル IO（`IOBase` / `XHRIO`）
+### ファイル（`SketchFiles`）
 
-- `loadStrings/loadImage/loadJSON*` は **同期 XHR**（`base_path + path`）。localStorage → 事前読み込みバッファ → XHR の順に探す。
-- `data/` フォルダは自動では探さない（サンプルはパスを書き換えて回避している）。
-- `loadImage()` は同期で `PImage` を返すが、デコード（`createImageBitmap`）は非同期なので、直後の `img.width` は 0。
-- `save*()` は localStorage に保存。
+- Processing のファイル関数は同期なので、使うファイルを **setup() の前にまとめて fetch** する（`DefaultRunner.init`）: コンパイラが見つけた定数のファイル名（`CompileResult.files`。loadImage/loadStrings/loadBytes/loadJSON*/loadTable/loadXML/loadFont/loadShape/loadShader/createInput/createReader の String 引数）、ホストの一覧（`SketchData.files`・sketch.properties の `resources`）、ホストがメモリで渡したファイル（`SketchManager.addFile()`）。画像は `createImageBitmap`（色変換と premultiply なし）でデコードまで済ませ、loadImage はそこから同期で PImage を作る（JPEG は RGB、他は半透明の画素があれば ARGB）。
+- 名前の解決は Processing と同じ: URL はそのまま、それ以外は `<base_uri>data/<name>` → `<base_uri><name>`。見つからなければ `The file "x" is missing or inaccessible, …` を標準エラー（`lang.printError`）に出して null。開発サーバの index.html へのフォールバック（text/html）は見つからない扱い。
+- すべて fetch なので Service Worker でキャッシュでき、オフラインでも動く（`vt run --offline`）。
+- 保存（saveStrings/saveBytes/saveJSON*/save/saveFrame）はスケッチフォルダ相対の名前でメモリに置き（同じ実行中に読み戻せる。画像は保存時の画素を控える）、`SketchManager.addEventListener("save", ...)` に `{path, data, mime}` を渡す。PNG/JPEG はキャンバスでエンコード（非同期）、TIFF/TGA は `io/imageEncode.ts`。requestImage は実行時に fetch する（読み込み中は width 0、失敗で -1）。
 
 ## ビルドと配布
 

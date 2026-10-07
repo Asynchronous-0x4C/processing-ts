@@ -1,0 +1,7 @@
+{
+  "tags": [
+    "io"
+  ],
+  "offline": true,
+  "note": "Offline run: the sketch files come from the Service Worker cache (P2-9)."
+}

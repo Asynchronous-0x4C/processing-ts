@@ -11,6 +11,7 @@ import { HashMap } from "../util/HashMap";
 import { PImage } from "../PImage";
 import { PGraphics } from "../PGraphics";
 import { PFont, loadDefaultFont } from "../PFont";
+import { SketchFiles, type SavedFile } from "../io/SketchFiles";
 import { PMatrix2D } from "../PMatrix2D";
 import { JSONObject } from "../data/JSONObject";
 import { JSONArray } from "../data/JSONArray";
@@ -32,8 +33,8 @@ const PROCESSING_CLASSES:Record<string,unknown>={
   "processing.event.Event":Event,
 };
 
-/** What the compiler found out about the sketch (CompileResult). */
-export type RunOptions={usesText?:boolean};
+/** What the compiler found out about the sketch (CompileResult), and the files the host listed. */
+export type RunOptions={usesText?:boolean;files?:string[];listed?:string[]};
 
 export abstract class Runner{
   pre_count:number=-1;
@@ -41,6 +42,7 @@ export abstract class Runner{
   scaling:{x:number,y:number}={x:1,y:1};
   log_listeners:((...args:any[])=>void)[]=[];
   error_listeners:((...args:any[])=>void)[]=[];
+  save_listeners:((file:SavedFile)=>void)[]=[];
 
   arg_classes:{name:string,type:any}[]=[{name:"PApplet",type:PApplet},{name:"PVector",type:PVector},{name:"ArrayList",type:ArrayList},{name:"HashMap",type:HashMap},{name:"Cursor",type:Cursor},{name:"Runnable",type:Runnable},{name:"Consumer",type:Consumer},{name:"Supplier",type:Supplier},{name:"Function",type:Function},{name:"FunctionalInterface",type:FunctionalInterface},];
 
@@ -146,7 +148,7 @@ export abstract class Runner{
     return this.arg_classes.map(a=>a.type);
   }
 
-  abstract addEventListener(type:"log"|"error",listener:(args:any[])=>void):void;
+  abstract addEventListener(type:"log"|"error"|"save",listener:(arg:any)=>void):void;
 }
 
 /** Processing's LEFT, CENTER and RIGHT (mouseButton). */
@@ -198,7 +200,14 @@ export class DefaultRunner extends Runner{
     this.flushOutput();
     lang.setOutput((text)=>this.write_output(text));
     const rt={lang,PApplet,classes:this.runtime_classes()};
-    const renderer={canvas:this.manager.target_element!,base_path:this.manager.base_uri,max_size:this.get_maximum_size()};
+    // The sketch's files: what the host added, then what the sketch names and the host listed, fetched
+    // (and images decoded) now so that loadImage() etc. can return at once, as in Processing.
+    const files=new SketchFiles(this.manager.base_uri);
+    for(const [path,content] of this.manager.provided_files)files.add(path,content);
+    files.onSave=(f)=>this.save_listeners.forEach(l=>l(f));
+    const fonts=options.usesText?loadDefaultFont():null;
+    await files.preload(options.files??[],options.listed??[]);
+    const renderer={canvas:this.manager.target_element!,base_path:this.manager.base_uri,max_size:this.get_maximum_size(),files};
     try{
       this.applet=new globalThis.Function("$rt","__renderer__",sketch)(rt,renderer) as PApplet;
     }catch(e){
@@ -207,9 +216,8 @@ export class DefaultRunner extends Runner{
     }
     this.applet.__log_listener__=(args:any[])=>{this.log_listeners.forEach(l=>l(args))};
     if(typeof document!=="undefined")this.applet.focused=document.hasFocus();
-    if(this.manager.sketch_resources_promise!=null)this.applet.__set_preload__((await this.manager.sketch_resources_promise).map((r:{path:string,content:ArrayBuffer})=>({path:r.path,content:new Uint8Array(r.content).buffer})));
     // Text in setup() and the first frames must already use the default font, as in Processing.
-    if(options.usesText)await loadDefaultFont();
+    if(fonts)await fonts;
     this.initiated=true;
     try{
       await this.applet.settings();
@@ -441,8 +449,11 @@ export class DefaultRunner extends Runner{
   /** The drawing resolution is fixed by pixelDensity(). */
   update_resolution(_r: number): void {}
 
-  addEventListener(type:"log"|"error",listener:(args:any[])=>void){
+  addEventListener(type:"log"|"error"|"save",listener:(arg:any)=>void){
     switch(type){
+      case "save":
+        this.save_listeners.push(listener);
+        break;
       case "log":
         this.log_listeners.push(listener);
         break;

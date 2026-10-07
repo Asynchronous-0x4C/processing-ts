@@ -37,7 +37,7 @@ npm run vt -- shot public/samples/Transform/arm --frames 30 --ref   # 任意の�
 npm run vt -- list                  # ケース一覧（参照の有無・期待結果・既知の問題）
 ```
 
-`run` のその他のオプション: `--update`（先に参照を再生成）、`--frames n`（フレーム数を上書き）、`--headed`（ブラウザを表示）、`--gpu`（SwiftShader ではなく GPU を使う）、`--json`（結果を JSON で標準出力）、`--out <dir>`。
+`run` のその他のオプション: `--offline`（後述）、`--update`（先に参照を再生成）、`--frames n`（フレーム数を上書き）、`--headed`（ブラウザを表示）、`--gpu`（SwiftShader ではなく GPU を使う）、`--json`（結果を JSON で標準出力）、`--out <dir>`。
 
 所要時間の目安（このリポジトリの開発機）: `run` 全 20 ケースで約 10 秒、`ref` 全ケースで約 50 秒（JAVA2D 約 2 秒/件、P2D/P3D 約 5 秒/件）。
 
@@ -70,7 +70,7 @@ npm run vt -- list                  # ケース一覧（参照の有無・期待
 tests/visual/cases/<name>/
   <name>.pde        メインタブ（フォルダ名と同名。Processing の規約）
   Other.pde         追加タブ（任意。メインの後にアルファベット順で連結）
-  data/             loadImage("x.png") などが読むファイル（任意）
+  data/             loadImage("x.png") などが読むファイル（任意。.pde 以外のファイルは参照生成時にそのままコピーされる）
   vt.json           設定（任意）
 tests/visual/refs/<name>.png / .stdout.txt / .meta.json   ← `ref` が生成。コミットする
 ```
@@ -85,6 +85,7 @@ tests/visual/refs/<name>.png / .stdout.txt / .meta.json   ← `ref` が生成。
   "expect": "fail",       // 既知の未対応。直ったら削除
   "knownIssue": "…",      // 失敗の理由（expect とセットで書き、直ったら一緒に消す）
   "stdout": true,         // println 出力を比較するか（既定 true）
+  "offline": true,        // processing-ts をオフラインで実行（後述。任意）
   "mode": "static",       // Processing のモード判定を上書き（通常は自動判定）
   "input": [             // マウス/キー操作（任意。下の「入力スクリプト」）
     { "frame": 2, "type": "click", "x": 100, "y": 50, "button": "left" }
@@ -121,7 +122,7 @@ tests/visual/refs/<name>.png / .stdout.txt / .meta.json   ← `ref` が生成。
 2. Playwright で Chromium を起動（既定は SwiftShader = ソフトウェア GL。マシン間で出力が揃う）。DPR 1。
 3. ケースごとに新しいページで `tools/vt/harness/index.html` を開き、`window.__vt__.run()` に .pde の内容を渡す。
    ハーネスは `SketchManager({ manual_step: true })` で setup → `step()` を `frames` 回 → `canvas.toDataURL()`。
-   `data/` は `/@fs/<絶対パス>/data/` として配信し、`loadImage("a.png")` が `data/a.png` を読むようにしている。
+   スケッチフォルダを `/@fs/<絶対パス>/` として `base_uri` にし、`data/` のファイル一覧を `SketchData.files` で渡す（ホストと同じ使い方）。
 4. `println` は `SketchManager.addEventListener("log")` で収集。
 
 ### 入力スクリプト: `tools/vt/input.ts`
@@ -137,6 +138,10 @@ tests/visual/refs/<name>.png / .stdout.txt / .meta.json   ← `ref` が生成。
 
 - Processing 側: `handleDraw()` の後で `surface.getNative()`（AWT のキャンバス）に `java.awt.event.MouseEvent`/`KeyEvent`/`MouseWheelEvent` を dispatch する。Windows が実際に作るのと同じ並び（pressed → typed → released、動かさずに離したときの clicked、押したままの移動は dragged）にしているので、PSurfaceAWT の AWT → Processing の変換はそのまま通る。OS が AWT イベントを作る部分（Ctrl+A の文字が 1 になるなど）は input.ts の仮定。
 - processing-ts 側: Playwright の `page.mouse`/`page.keyboard`（本物の DOM イベント）。ハーネスは `start()` → `step()` × frames → `finish()` に分かれている。
+
+### オフライン実行: `--offline` / `vt.json` の `"offline": true`
+
+ハーネスのページに Service Worker（`tools/vt/harness/sw.js`: ネットワーク優先、失敗したらキャッシュ）を登録して再読み込みし、一度オンラインで実行してキャッシュを満たしてから、オフラインにして再読み込み・再実行する。比べるのは 2 回目（オフライン）の結果。スケッチのファイル（`SketchFiles`）が fetch だけで読まれていることの確認（P2-9）。
 
 ### 比較: `tools/vt/image.ts`
 

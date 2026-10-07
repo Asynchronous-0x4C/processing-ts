@@ -32,6 +32,8 @@ type CaseConfig = {
   mode?: "static" | "active";
   /** Mouse/key actions replayed between frames in both runs (tools/vt/input.ts). */
   input?: InputAction[];
+  /** Run processing-ts offline after a first run cached the files in a Service Worker (as `run --offline`). */
+  offline?: boolean;
   tags?: string[];
   note?: string;
 };
@@ -63,12 +65,13 @@ const DEFAULTS = { frames: 1, threshold: 0.1, maxDiffRatio: 0.01 };
 function usage(): never {
   console.log(`processing-ts visual tests
 
-  node tools/vt/cli.ts run  [case...] [--tag t] [--update] [--out dir] [--headed] [--gpu] [--json]
+  node tools/vt/cli.ts run  [case...] [--tag t] [--update] [--out dir] [--headed] [--gpu] [--json] [--offline]
       Render cases in headless Chromium and compare with tests/visual/refs (made by real Processing).
       --update regenerates the references of the selected cases first (needs Processing).
+      --offline runs each case offline, its files served by a Service Worker's cache.
   node tools/vt/cli.ts ref  [case...] [--tag t] [--missing]
       (Re)generate reference images/stdout with Processing. --missing: only absent or stale refs.
-  node tools/vt/cli.ts shot <sketchDir> [--frames n] [--ref] [--out dir]
+  node tools/vt/cli.ts shot <sketchDir> [--frames n] [--ref] [--out dir] [--offline]
       Ad-hoc: render any sketch folder; with --ref also render it with Processing and diff.
   node tools/vt/cli.ts list [--tag t]
   node tools/vt/cli.ts corpus [--filter Basics/Shape] [--frames n] [--examples dir] [--timeout ms]
@@ -96,6 +99,7 @@ const { values: flags, positionals } = parseArgs({
     filter: { type: "string" },
     examples: { type: "string" },
     timeout: { type: "string" },
+    offline: { type: "boolean", default: false },
     help: { type: "boolean", short: "h", default: false },
   },
 });
@@ -129,12 +133,12 @@ function sourceHash(sketch: SketchSource, frames: number, input?: InputAction[])
   const h = crypto.createHash("sha1");
   // Normalize line endings: core.autocrlf may check sources out as CRLF.
   for (const f of sketch.files) h.update(f.name).update("\0").update(f.content.replace(/\r\n/g, "\n")).update("\0");
-  const data = path.join(sketch.dir, "data");
-  if (fs.existsSync(data)) {
-    for (const f of fs.readdirSync(data, { recursive: true }).map(String).sort()) {
-      const p = path.join(data, f);
-      if (fs.statSync(p).isFile()) h.update(f).update(fs.readFileSync(p));
-    }
+  // data/ and the other files of the folder (vt.json and the .pde tabs aside).
+  for (const f of fs.readdirSync(sketch.dir, { recursive: true }).map(String).sort()) {
+    const p = path.join(sketch.dir, f);
+    if (/\.pde$|^vt\.json$/.test(f) || !fs.statSync(p).isFile()) continue;
+    // Keep the hashes of existing references (made when only data/ was hashed, relative to it).
+    h.update(f.replace(/^data[\\/]/, "")).update(fs.readFileSync(p));
   }
   if (input?.length) h.update(JSON.stringify(input));
   return h.update(`frames=${frames}`).digest("hex");
@@ -320,7 +324,7 @@ async function cmdRun() {
     for (const c of cases) {
       const sketch = readSketch(c.dir);
       const frames = flags.frames ? Number(flags.frames) : c.config.frames ?? DEFAULTS.frames;
-      const run = await runner.run(sketch, frames, undefined, c.config.input);
+      const run = await runner.run(sketch, frames, undefined, c.config.input, flags.offline || c.config.offline);
       const r = evaluate(c, run, path.join(OUT_DIR, c.name));
       results.push(r);
       if (!flags.json) {
@@ -355,7 +359,7 @@ async function cmdShot() {
   await runner.start();
   let run: BrowserRunResult;
   try {
-    run = await runner.run(sketch, frames);
+    run = await runner.run(sketch, frames, undefined, undefined, flags.offline);
   } finally {
     await runner.stop();
   }

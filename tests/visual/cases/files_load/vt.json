@@ -1,0 +1,7 @@
+{
+  "tags": [
+    "io",
+    "image"
+  ],
+  "note": "loadImage/loadStrings/loadBytes/loadJSONObject: lookup order, decoded images, image format, line splitting, missing files."
+}
