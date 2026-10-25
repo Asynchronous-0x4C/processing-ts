@@ -75,6 +75,8 @@ export class PImage extends PConstants{
    * without updatePixels() still show, as in Processing (which builds its image from pixels when first drawn).
    */
   __unsynced__=false;
+  /** Bumped whenever the image changes (the OpenGL renderer uploads its texture again). */
+  __version__=0;
 
   /** Drawing surfaces (PGraphics) change their canvas directly, so pixels[] is always re-read from it. */
   __live__():boolean{
@@ -112,6 +114,7 @@ export class PImage extends PConstants{
     // A new image: transparent black, in both.
     this.__fresh__=true;
     this.__unsynced__=true;
+    this.__version__++;
   }
 
   /**
@@ -204,6 +207,7 @@ export class PImage extends PConstants{
     this.__ctx__.putImageData(img,0,0,x,y,w,h);
     this.__fresh__=true;
     this.__unsynced__=false;
+    this.__version__++;
   }
 
   /** get() (a copy), get(x, y) (an ARGB color, 0 outside), get(x, y, w, h) (a copy of the region) */
@@ -289,6 +293,7 @@ export class PImage extends PConstants{
     const img=this.__ctx__.createImageData(1,1);
     img.data[0]=(c>>16)&0xff;img.data[1]=(c>>8)&0xff;img.data[2]=c&0xff;img.data[3]=this.format===1?255:(c>>>24);
     this.__ctx__.putImageData(img,x*this.pixelDensity,y*this.pixelDensity);
+    this.__version__++;
     if(this.pixels.length)this.pixels[y*this.pixelDensity*this.pixelWidth+x*this.pixelDensity]=c;
   }
 

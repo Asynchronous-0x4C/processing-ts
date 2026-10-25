@@ -13,6 +13,10 @@ import { PGraphics } from "../PGraphics";
 import { PFont, loadDefaultFont } from "../PFont";
 import { SketchFiles, type SavedFile } from "../io/SketchFiles";
 import { PMatrix2D } from "../PMatrix2D";
+import { PMatrix3D } from "../PMatrix3D";
+import { PGraphicsJava2D } from "../PGraphicsJava2D";
+import { PGraphicsOpenGL, PGraphics2D, PGraphics3D } from "../opengl/PGraphicsOpenGL";
+import { PShader } from "../opengl/PShader";
 import { JSONObject } from "../data/JSONObject";
 import { JSONArray } from "../data/JSONArray";
 import { javaClasses, lang } from "../../../runtime/lang/index.ts";
@@ -26,12 +30,24 @@ const PROCESSING_CLASSES:Record<string,unknown>={
   "processing.core.PGraphics":PGraphics,
   "processing.core.PFont":PFont,
   "processing.core.PMatrix2D":PMatrix2D,
+  "processing.core.PMatrix3D":PMatrix3D,
+  "processing.awt.PGraphicsJava2D":PGraphicsJava2D,
+  "processing.opengl.PGraphicsOpenGL":PGraphicsOpenGL,
+  "processing.opengl.PGraphics2D":PGraphics2D,
+  "processing.opengl.PGraphics3D":PGraphics3D,
+  "processing.opengl.PShader":PShader,
   "processing.data.JSONObject":JSONObject,
   "processing.data.JSONArray":JSONArray,
   "processing.event.MouseEvent":MouseEvent,
   "processing.event.KeyEvent":KeyEvent,
   "processing.event.Event":Event,
 };
+
+// getClass().getName() of Processing's classes
+for(const [name,cls] of Object.entries(PROCESSING_CLASSES)){
+  const c=cls as {$javaName?:string};
+  if(!Object.prototype.hasOwnProperty.call(c,"$javaName"))Object.defineProperty(c,"$javaName",{value:name,writable:true,configurable:true});
+}
 
 /** What the compiler found out about the sketch (CompileResult), and the files the host listed. */
 export type RunOptions={usesText?:boolean;files?:string[];listed?:string[]};

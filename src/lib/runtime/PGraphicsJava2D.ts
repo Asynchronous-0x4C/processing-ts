@@ -1,27 +1,10 @@
 import { PGraphics, enumPath, type Path, CAP } from "./PGraphics";
 import { PImage, createNativeCanvas, type Native2D, type NativeCanvas } from "./PImage";
-import { DEFAULT_FONT_FAMILY, PFont, defaultFontReady, ensureDefaultFont, type VlwGlyph } from "./PFont";
-
-/** The font text uses before textFont(): Processing creates the default font at size 12. */
-const DEFAULT_PFONT=new PFont(DEFAULT_FONT_FAMILY,12);
+import { PFont } from "./PFont";
+import { cssFont, drawVlwLine, fontMetrics, textLineWidth } from "./text";
 import type { PApplet } from "./PApplet";
 
 const BEVEL=32,ROUND_JOIN=2;
-
-/** A .vlw glyph's alpha bitmap colored with `color` (ARGB), cached for the last color. */
-function tintedGlyph(g:VlwGlyph,color:number):HTMLCanvasElement|OffscreenCanvas{
-  if(g.tinted&&g.tinted.color===color)return g.tinted.canvas;
-  const canvas=g.tinted?.canvas??createNativeCanvas(g.width,g.height);
-  const ctx=canvas.getContext("2d") as Native2D;
-  const img=ctx.createImageData(g.width,g.height);
-  const r=(color>>16)&0xff,gr=(color>>8)&0xff,b=color&0xff,a=color>>>24;
-  for(let i=0;i<g.alpha.length;i++){
-    img.data[i*4]=r;img.data[i*4+1]=gr;img.data[i*4+2]=b;img.data[i*4+3]=Math.round(g.alpha[i]*a/255);
-  }
-  ctx.putImageData(img,0,0);
-  g.tinted={color,canvas};
-  return canvas;
-}
 
 const stencils=new Map<string,Float32Array>();
 
@@ -420,91 +403,31 @@ export class PGraphicsJava2D extends PGraphics{
     ctx.restore();
   }
 
-  private font():string{
-    ensureDefaultFont();
-    const f=this.style.textFont;
-    const family=f?f.cssFamily():`"${DEFAULT_FONT_FAMILY}", sans-serif`;
-    return `${this.style.textSize}px ${family}`;
-  }
-
   protected drawTextLine(line:string,x:number,y:number){
     const ctx=this.ctx;
     if(!ctx||!line)return;
     const vf=this.style.textFont;
     if(vf?.__vlw__){
-      this.drawVlwLine(vf,line,x,y);
+      drawVlwLine(ctx,vf,this.style.textSize,this.style.fillColor,line,x,y);
       return;
     }
-    ctx.font=this.font();
+    ctx.font=cssFont(this.style);
     ctx.textAlign="left";
     ctx.textBaseline="alphabetic";
     ctx.fillStyle=this.css(this.style.fillColor);
     ctx.fillText(line,x,y);
   }
 
-  private measure(text:string):TextMetrics|null{
-    const ctx=this.ctx??this.parent?.g?.ctx;
-    if(!ctx)return null;
-    ctx.font=this.font();
-    return ctx.measureText(text);
-  }
-
   protected textWidthImpl(line:string){
-    const vf=this.style.textFont;
-    if(vf?.__vlw__){
-      let w=0;
-      for(let i=0;i<line.length;i++)w=Math.fround(w+Math.fround(vf.__vlw_width__(line.charCodeAt(i))*this.style.textSize));
-      return w;
-    }
-    return this.measure(line)?.width??line.length*this.style.textSize*0.5;
-  }
-
-  /** Text in a .vlw font: each glyph's bitmap in the fill color, scaled from the font's size to the text size. */
-  private drawVlwLine(font:PFont,line:string,x:number,y:number){
-    const ctx=this.ctx!;
-    const size=this.style.textSize,fs=font.size,color=this.style.fillColor;
-    const f=Math.fround;
-    for(let i=0;i<line.length;i++){
-      const c=line.charCodeAt(i);
-      const g=font.__vlw__!.glyphs.get(c);
-      if(g&&c!==32&&g.width>0&&g.height>0){
-        // drawn as an image: the corners are truncated to ints (see drawImage())
-        const x1=f(x+f(f(g.leftExtent/fs)*size)),y1=f(y-f(f(g.topExtent/fs)*size));
-        const x2=f(x1+f(f(g.width/fs)*size)),y2=f(y1+f(f(g.height/fs)*size));
-        const ix=Math.trunc(x1),iy=Math.trunc(y1);
-        ctx.drawImage(tintedGlyph(g,color) as CanvasImageSource,ix,iy,Math.trunc(x2)-ix,Math.trunc(y2)-iy);
-      }
-      x=f(x+f(font.__vlw_width__(c)*size));
-    }
-  }
-
-  /**
-   * Ascent and descent per unit of text size, as Processing's PFont has them: the height of "d" above and
-   * the depth of "p" below the baseline in whole pixels at the size the font was created at (12 for the
-   * default font), divided by that size. textAscent() is this times the current text size (in float).
-   * Matches Processing for the bundled default font; Java2D hints other fonts, which can differ by a pixel.
-   */
-  private fontMetrics():{ascent:number;descent:number}{
-    const f=this.style.textFont??DEFAULT_PFONT;
-    if(f.__metrics__)return f.__metrics__;
-    const ctx=this.ctx??this.parent?.g?.ctx;
-    if(!ctx)return {ascent:0.75,descent:Math.fround(1/6)};
-    ensureDefaultFont();
-    ctx.font=`${f.size}px ${f.cssFamily()}`;
-    const ascent=Math.round(ctx.measureText("d").actualBoundingBoxAscent);
-    const descent=Math.round(ctx.measureText("p").actualBoundingBoxDescent);
-    const m={ascent:Math.fround(ascent/f.size),descent:Math.fround(descent/f.size)};
-    // Until the default font has loaded, the measurement is of the fallback: do not keep it.
-    if(!f.isDefaultFamily()||defaultFontReady())f.__metrics__=m;
-    return m;
+    return textLineWidth(this.style,line,this.ctx??undefined);
   }
 
   protected textAscentImpl(){
-    return Math.fround(this.fontMetrics().ascent*this.style.textSize);
+    return Math.fround(fontMetrics(this.style).ascent*this.style.textSize);
   }
 
   protected textDescentImpl(){
-    return Math.fround(this.fontMetrics().descent*this.style.textSize);
+    return Math.fround(fontMetrics(this.style).descent*this.style.textSize);
   }
 }
 

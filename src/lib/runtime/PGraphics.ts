@@ -1,4 +1,4 @@
-import { PImage } from "./PImage";
+import { PImage, type NativeCanvas } from "./PImage";
 import { PMatrix2D } from "./PMatrix2D";
 import { Matrix2D } from "./Matrix2D";
 import { PFont } from "./PFont";
@@ -46,6 +46,12 @@ export class PStyle{
   textAlign=LEFT;
   textAlignY=BASELINE;
   blendMode=BLEND;
+  // materials (P3D): the ambient color follows fill() until ambient() is called
+  setAmbient=false;
+  ambientColor=-1;
+  specularColor=0xff808080|0;
+  emissiveColor=0xff000000|0;
+  shininess=1;
 
   copy():PStyle{
     return Object.assign(new PStyle(),this);
@@ -64,16 +70,18 @@ export abstract class PGraphics extends PImage{
   declare parent:PApplet;
   style=new PStyle();
   matrix=new Matrix2D();
-  private styleStack:PStyle[]=[];
+  protected styleStack:PStyle[]=[];
   private matrixStack:Matrix2D[]=[];
   /** The sketch window (as opposed to createGraphics()). */
   primary=false;
+  /** The canvas this renderer draws into (the window's, or its own offscreen one). */
+  canvas:NativeCanvas|null=null;
 
   private shapeKind=-1;
   private shapeVertices:ShapeVertex[]=[];
   private contours:ShapeVertex[][]=[];
   private inContour=false;
-  private curveTightness_=0;
+  protected curveTightness_=0;
 
   constructor(parent:PApplet){
     super(parent);
@@ -105,6 +113,11 @@ export abstract class PGraphics extends PImage{
   }
 
   __stop__(){}
+
+  /** smooth(level)/noSmooth(): antialiasing (the renderers decide what they can change). */
+  smooth(_level?:number){}
+
+  noSmooth(){}
 
   /** Kept for the runner: the drawing resolution is fixed by pixelDensity(). */
   updateResolution(_r:number){}
@@ -342,7 +355,8 @@ export abstract class PGraphics extends PImage{
     this.popMatrix();
   }
 
-  translate(x:number,y:number){
+  translate(x:number,y:number,z?:number){
+    if(z!==undefined)return this.unavailable("translate",true);
     this.matrix.translate(x,y);
     this.applyMatrixToRenderer();
   }
@@ -528,7 +542,7 @@ export abstract class PGraphics extends PImage{
   }
 
   /** Bezier control points of the curve segment from p1 to p2. */
-  private curveToBezier(p0:number[],p1:number[],p2:number[],p3:number[]):number[]{
+  protected curveToBezier(p0:number[],p1:number[],p2:number[],p3:number[]):number[]{
     const k=(1-this.curveTightness_)/6;
     return [p1[0]+(p2[0]-p0[0])*k,p1[1]+(p2[1]-p0[1])*k,p2[0]-(p3[0]-p1[0])*k,p2[1]-(p3[1]-p1[1])*k];
   }
@@ -540,7 +554,9 @@ export abstract class PGraphics extends PImage{
     this.inContour=false;
   }
 
-  vertex(x:number,y:number){
+  vertex(x:number,y:number,z?:number,u?:number,_v?:number){
+    if(u!==undefined)return this.warnOnce("vertex(x, y, u, v) is not available with this renderer.");
+    if(z!==undefined)return this.warnOnce("vertex() with x, y, and z coordinates can only be used with a renderer that supports 3D, such as P3D. Use a version without a z-coordinate instead.");
     this.target().push({x,y,kind:"v"});
   }
 
@@ -629,7 +645,7 @@ export abstract class PGraphics extends PImage{
     return p;
   }
 
-  private drawPolygon(xy:number[]){
+  protected drawPolygon(xy:number[]){
     const P=enumPath;
     const p:Path=[P.MOVE,xy[0],xy[1]];
     for(let i=2;i<xy.length;i+=2)p.push(P.LINE,xy[i],xy[i+1]);
@@ -638,7 +654,7 @@ export abstract class PGraphics extends PImage{
   }
 
   /** rectMode/ellipseMode arguments → corners (x1, y1, x2, y2). */
-  private modeToCorners(mode:number,a:number,b:number,c:number,d:number):[number,number,number,number]{
+  protected modeToCorners(mode:number,a:number,b:number,c:number,d:number):[number,number,number,number]{
     switch(mode){
       case CORNERS:return [a,b,c,d];
       case RADIUS:return [a-c,b-d,a+c,b+d];
@@ -732,7 +748,7 @@ export abstract class PGraphics extends PImage{
     this.textLine(c,x,y);
   }
 
-  private textLine(line:string,x:number,y:number){
+  protected textLine(line:string,x:number,y:number){
     const a=this.style.textAlign;
     if(a===CENTER)x-=this.textWidthImpl(line)/2;
     else if(a===RIGHT)x-=this.textWidthImpl(line);
@@ -777,6 +793,76 @@ export abstract class PGraphics extends PImage{
       y+=lead;
     }
   }
+
+  // --- 3D (P3D only; JAVA2D and P2D print Processing's warning once per function) --------------------
+
+  private warned=new Set<string>();
+
+  protected warnOnce(message:string){
+    if(this.warned.has(message))return;
+    this.warned.add(message);
+    exceptions.printError(message);
+  }
+
+  /** "name() can only be used with a renderer that supports 3D, such as P3D." */
+  protected need3D(name:string){
+    this.warnOnce(`${name}() can only be used with a renderer that supports 3D, such as P3D.`);
+  }
+
+  protected unavailable(name:string,variation=false){
+    this.warnOnce(variation?`${name}(), or this particular variation of it, is not available with this renderer.`:`${name}() is not available with this renderer.`);
+  }
+
+  is2D(){return true;}
+  is3D(){return false;}
+
+  rotateX(_a:number){this.need3D("rotateX");}
+  rotateY(_a:number){this.need3D("rotateY");}
+  rotateZ(_a:number){this.need3D("rotateZ");}
+  box(_w:number,_h?:number,_d?:number){this.unavailable("box");}
+  sphere(_r:number){this.unavailable("sphere");}
+  sphereDetail(_u:number,_v?:number){}
+  lights(){this.unavailable("lights");}
+  noLights(){this.unavailable("noLights");}
+  ambientLight(..._a:number[]){this.unavailable("ambientLight");}
+  directionalLight(..._a:number[]){this.unavailable("directionalLight");}
+  pointLight(..._a:number[]){this.unavailable("pointLight");}
+  spotLight(..._a:number[]){this.unavailable("spotLight");}
+  lightFalloff(..._a:number[]){this.unavailable("lightFalloff");}
+  lightSpecular(..._a:number[]){this.unavailable("lightSpecular");}
+  camera(..._a:number[]){this.unavailable("camera",true);}
+  beginCamera(){this.unavailable("beginCamera");}
+  endCamera(){this.unavailable("endCamera");}
+  perspective(..._a:number[]){this.unavailable("perspective",true);}
+  ortho(..._a:number[]){this.unavailable("ortho",true);}
+  frustum(..._a:number[]){this.unavailable("frustum");}
+  printCamera(){this.unavailable("printCamera");}
+  printProjection(){this.unavailable("printProjection");}
+  screenZ(_x:number,_y:number,_z:number){
+    this.warnOnce("screenZ() with x, y, and z coordinates can only be used with a renderer that supports 3D, such as P3D. Use a version without a z-coordinate instead.");
+    return 0;
+  }
+  modelX(_x:number,_y:number,_z:number){this.unavailable("modelX",true);return 0;}
+  modelY(_x:number,_y:number,_z:number){this.unavailable("modelY",true);return 0;}
+  modelZ(_x:number,_y:number,_z:number){this.unavailable("modelZ",true);return 0;}
+  texture(_img:PImage){this.unavailable("texture");}
+  textureMode(m:number){this.textureMode_=m;}
+  textureWrap(w:number){this.textureWrap_=w;}
+  protected textureMode_=2; // IMAGE
+  protected textureWrap_=0; // CLAMP
+  normal(_x:number,_y:number,_z:number){}
+  ambient(...a:number[]){
+    this.style.setAmbient=true;
+    this.style.ambientColor=this.colorCalc(a);
+  }
+  specular(...a:number[]){this.style.specularColor=this.colorCalc(a);}
+  emissive(...a:number[]){this.style.emissiveColor=this.colorCalc(a);}
+  shininess(s:number){this.style.shininess=s;}
+  shader(_s:unknown,_kind?:number){this.unavailable("shader",true);}
+  resetShader(_kind?:number){this.unavailable("resetShader",true);}
+  /** hint(): the OpenGL renderers act on these; JAVA2D ignores them. */
+  hint(_which:number){}
+  flush(){}
 
   // --- renderer hooks -------------------------------------------------------------------------------
 

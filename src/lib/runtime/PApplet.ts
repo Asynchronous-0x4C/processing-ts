@@ -1,6 +1,10 @@
 import { PConstants } from "./PConstants";
 import { PGraphics } from "./PGraphics";
 import { PGraphicsJava2D } from "./PGraphicsJava2D";
+import { createNativeCanvas } from "./PImage";
+import { GLContext } from "./opengl/GLContext";
+import { PGraphicsOpenGL, PGraphics2D, PGraphics3D } from "./opengl/PGraphicsOpenGL";
+import { PShader } from "./opengl/PShader";
 import { PImage } from "./PImage";
 import { PSurface } from "./PSurface";
 import { JSONObject } from "./data/JSONObject";
@@ -46,6 +50,11 @@ const DELEGATED=[
   "beginShape","vertex","bezierVertex","quadraticVertex","curveVertex","beginContour","endContour","endShape",
   "image","textSize","textLeading","textAlign","textMode","textWidth","textAscent","textDescent","text","textChar",
   "get","set","copy","filter","blend",
+  "rotateX","rotateY","rotateZ","box","sphere","sphereDetail",
+  "lights","noLights","ambientLight","directionalLight","pointLight","spotLight","lightFalloff","lightSpecular",
+  "ambient","specular","emissive","shininess","normal","texture","textureMode","textureWrap",
+  "camera","beginCamera","endCamera","perspective","ortho","frustum","printCamera","printProjection",
+  "screenZ","modelX","modelY","modelZ","shader","resetShader","flush","hint",
 ] as const;
 
 export interface PApplet extends Pick<PGraphics,typeof DELEGATED[number]>{}
@@ -54,7 +63,10 @@ const SIZE_ERROR="size() cannot be used here, see https://processing.org/referen
 
 export class PApplet extends PConstants{
   /** The sketch window's renderer (allocated by __init_surface__() after settings()). */
-  g:PGraphicsJava2D;
+  g:PGraphics;
+  /** The WebGL2 context the OpenGL surfaces share (the window's when it is P2D/P3D). */
+  __gl__:GLContext|null=null;
+  private __canvas_element__:HTMLCanvasElement|null;
   surface:PSurface=new PSurface(this);
   /** The sketch folder's files (loadImage(), loadStrings(), save()...). */
   __files__:SketchFiles;
@@ -66,7 +78,7 @@ export class PApplet extends PConstants{
   /** redraw() was called: draw one frame even under noLoop(). */
   __redraw__=false;
   /** What settings() asked for: size()/fullScreen()/pixelDensity()/smooth(). */
-  __requested__={width:100,height:100,density:0,smooth:true};
+  __requested__={width:100,height:100,density:0,smooth:true,renderer:"",smoothLevel:0};
 
   private __exit_code__=0;
 
@@ -98,7 +110,8 @@ export class PApplet extends PConstants{
     super();
     if(settings)this.max_size=settings.max_size;
     this.__files__=settings?.files??new SketchFiles(settings?.base_path??"");
-    this.g=new PGraphicsJava2D(this,settings?.canvas??null,true);
+    this.__canvas_element__=settings?.canvas??null;
+    this.g=new PGraphicsJava2D(this,this.__canvas_element__,true);
   }
 
   async settings(){}
@@ -114,19 +127,21 @@ export class PApplet extends PConstants{
    * and another size is an error, as in Processing (size() with variables in setup() is not moved to
    * settings() by the preprocessor).
    */
-  size(width:number,height:number,_renderer?:string){
+  size(width:number,height:number,renderer?:string,_path?:string){
     if(this.__initialized__){
       if(width===this.width&&height===this.height)return;
       throw new exceptions.IllegalStateException(SIZE_ERROR);
     }
     this.__requested__.width=width;
     this.__requested__.height=height;
+    this.__requested__.renderer=renderer??"";
     this.__fullscreen__=false;
   }
 
-  fullScreen(_a?:number|string,_b?:number){
+  fullScreen(a?:number|string,_b?:number){
     if(this.__initialized__)throw new exceptions.IllegalStateException(SIZE_ERROR);
     this.__fullscreen__=true;
+    if(typeof a==="string")this.__requested__.renderer=a;
   }
 
   /** Allocate the window after settings(): 100x100 when size() was not called, density displayDensity(). */
@@ -136,6 +151,11 @@ export class PApplet extends PConstants{
     const w=this.__fullscreen__?Math.floor(this.max_size.width):r.width;
     const h=this.__fullscreen__?Math.floor(this.max_size.height):r.height;
     const density=r.density||this.displayDensity();
+    if(isOpenGL(r.renderer)){
+      this.g=r.renderer===P3D_NAME?new PGraphics3D(this,this.__canvas_element__,true):new PGraphics2D(this,this.__canvas_element__,true);
+      if(!r.smooth)(this.g as PGraphicsOpenGL).smoothLevel=1;
+      else if(r.smoothLevel)(this.g as PGraphicsOpenGL).smoothLevel=r.smoothLevel;
+    }
     this.g.setSize(w,h,density);
     if(!r.smooth)this.g.noSmooth();
     const canvas=this.g.canvas;
@@ -552,8 +572,9 @@ export class PApplet extends PConstants{
   }
 
   /** smooth()/noSmooth() (settings()): shapes are always antialiased; noSmooth() turns off image smoothing. */
-  smooth(_level?:number){
+  smooth(level?:number){
     this.__requested__.smooth=true;
+    if(level!==undefined)this.__requested__.smoothLevel=level;
     if(this.__initialized__)this.g.smooth();
   }
 
@@ -571,8 +592,6 @@ export class PApplet extends PConstants{
   displayDensity(_display?:number){
     return typeof devicePixelRatio==="number"&&devicePixelRatio>=2?2:1;
   }
-
-  hint(_which:number){}
 
   int(x:number){
     return Math.floor(x);
@@ -690,8 +709,39 @@ export class PApplet extends PConstants{
     return new PImage(this,{width,height,format});
   }
 
-  /** createGraphics(w, h[, renderer]): an offscreen JAVA2D surface (transparent, density 1). */
-  createGraphics(width:number,height:number,_renderer?:string,_path?:string):PGraphics{
+  /** The GL context of the OpenGL surfaces (the window's, or an offscreen one when the window is JAVA2D). */
+  __glContext__():GLContext{
+    return this.__gl__??=new GLContext(createNativeCanvas(1,1));
+  }
+
+  /** loadShader(fragment[, vertex]): a PShader from the sketch's .glsl files (null when missing). */
+  loadShader(fragName:string,vertName?:string):PShader|null{
+    const frag=this.__read_text__(fragName);
+    if(frag===null)return null;
+    let vert:string|null=null;
+    if(vertName!==undefined){
+      vert=this.__read_text__(vertName);
+      if(vert===null)return null;
+    }
+    return new PShader(this,vert,frag,{vert:vertName,frag:fragName});
+  }
+
+  /** filter(PShader) or filter(kind[, param]) */
+  filter(kind:number|PShader,param?:number){
+    if(kind instanceof PShader&&!(this.g instanceof PGraphicsOpenGL)){
+      exceptions.printError("filter(PShader) is not available with this renderer.");
+      return;
+    }
+    (this.g.filter as (k:unknown,p?:number)=>void)(kind,param);
+  }
+
+  /** createGraphics(w, h[, renderer]): an offscreen surface (transparent, density 1); P2D/P3D share the GL context. */
+  createGraphics(width:number,height:number,renderer?:string,_path?:string):PGraphics{
+    if(isOpenGL(renderer)){
+      const pg=renderer===P3D_NAME?new PGraphics3D(this,null,false):new PGraphics2D(this,null,false);
+      pg.setSize(width,height,1);
+      return pg;
+    }
     const pg=new PGraphicsJava2D(this,null);
     pg.setSize(width,height,1);
     return pg;
@@ -767,6 +817,12 @@ export class PApplet extends PConstants{
     return start + amt * (stop - start);
   }
 }
+const P2D_NAME="processing.opengl.PGraphics2D",P3D_NAME="processing.opengl.PGraphics3D";
+
+function isOpenGL(renderer?:string){
+  return renderer===P2D_NAME||renderer===P3D_NAME;
+}
+
 for(const name of DELEGATED){
   Object.defineProperty(PApplet.prototype,name,{
     value:function(this:PApplet,...args:unknown[]){

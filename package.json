@@ -61,7 +61,8 @@
   },
   "dependencies": {
     "@lezer/common": "^1.5.3",
-    "@lezer/lr": "^1.4.10"
+    "@lezer/lr": "^1.4.10",
+    "libtess": "^1.2.2"
   },
   "engines": {
     "node": ">=22.18"
