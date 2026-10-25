@@ -1,11 +1,15 @@
 {
   "size": {
     "library (src/lib/index.ts)": {
-      "gzipKiB": 173.1
+      "gzipKiB": 176.2
     },
     "runtime (2D, no compiler: src/lib/runtime/runner)": {
-      "gzipKiB": 47.4,
+      "gzipKiB": 50.5,
       "targetKiB": 50
+    },
+    "runtime (2D, no compiler: src/lib/runtime/runner): + on demand (P2D/P3D, PShader, PShape)": {
+      "gzipKiB": 41.5,
+      "targetKiB": 40
     },
     "parser (antlr4 + generated)": {
       "gzipKiB": 72.5

@@ -3,7 +3,8 @@ import { PMatrix2D } from "./PMatrix2D";
 import { Matrix2D } from "./Matrix2D";
 import { PFont } from "./PFont";
 import type { PApplet } from "./PApplet";
-import { PShape, drawShape } from "./PShape";
+import type { PShape } from "./PShape";
+import { requireShapes } from "./openglModule";
 import { exceptions } from "../../runtime/lang/index.ts";
 
 // Processing's constant values (PConstants).
@@ -803,6 +804,7 @@ export abstract class PGraphics extends PImage{
    * SPHERE); the shape starts with the current style.
    */
   createShape(kind?:number,...rest:(number|ArrayLike<number>)[]):PShape{
+    const {PShape}=requireShapes();
     // the parameters arrive as one float[] (Java varargs)
     const params=rest.length===1&&typeof rest[0]==="object"?Array.from(rest[0]):rest as number[];
     if(kind===undefined)return new PShape(this,PShape.GEOMETRY);
@@ -826,7 +828,7 @@ export abstract class PGraphics extends PImage{
   /** shape(s[, x, y[, w, h]]) in shapeMode */
   shape(s:PShape,x?:number,y?:number,c?:number,d?:number){
     if(!s)return;
-    drawShape(this,s,x,y,c,d);
+    requireShapes().drawShape(this,s,x,y,c,d);
   }
 
   // --- 3D (P3D only; JAVA2D and P2D print Processing's warning once per function) --------------------

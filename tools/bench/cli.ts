@@ -183,24 +183,55 @@ const SIZE_ENTRIES = [
   { name: "language runtime (src/runtime/lang)", entry: "src/runtime/lang/index.ts", external: [] },
 ];
 
+type SizeResult = { minKiB: number; gzipKiB: number; brotliKiB: number };
+
+function measureSize(code: Uint8Array): SizeResult {
+  const kib = (n: number) => n / 1024;
+  return {
+    minKiB: kib(code.length),
+    gzipKiB: kib(zlib.gzipSync(code, { level: 9 }).length),
+    brotliKiB: kib(zlib.brotliCompressSync(code, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } }).length),
+  };
+}
+
+/**
+ * Bundle an entry with code splitting: what loads at first is the entry with its static imports; the
+ * dynamic imports (the OpenGL renderers) are measured separately as the part loaded on demand.
+ */
+async function bundleSizes(entry: string, external: string[]): Promise<{ initial: SizeResult; lazy: SizeResult | null }> {
+  const result = await build({
+    entryPoints: [path.join(ROOT, entry)], bundle: true, minify: true, format: "esm", platform: "browser",
+    external, write: false, logLevel: "silent", splitting: true, outdir: path.join(ROOT, "node_modules/.cache/size-out"), metafile: true,
+  });
+  const files = new Map(result.outputFiles.map((f) => [path.relative(ROOT, f.path).split(path.sep).join("/"), f.contents]));
+  const outputs = result.metafile!.outputs;
+  const entryOut = Object.keys(outputs).find((k) => outputs[k].entryPoint)!;
+  const closure = (kinds: string[]) => {
+    const seen = new Set<string>([entryOut]);
+    const todo = [entryOut];
+    while (todo.length) {
+      for (const i of outputs[todo.pop()!].imports) {
+        if (kinds.includes(i.kind) && !seen.has(i.path) && outputs[i.path]) {
+          seen.add(i.path);
+          todo.push(i.path);
+        }
+      }
+    }
+    return seen;
+  };
+  const cat = (keys: Iterable<string>) => Buffer.concat([...keys].filter((k) => k.endsWith(".js")).map((k) => Buffer.from(files.get(k)!)));
+  const initial = closure(["import-statement"]);
+  const lazy = [...closure(["import-statement", "dynamic-import"])].filter((k) => !initial.has(k));
+  return { initial: measureSize(cat(initial)), lazy: lazy.length ? measureSize(cat(lazy)) : null };
+}
+
 async function benchSize(): Promise<{ md: string; failed: boolean; data: unknown }> {
   const rows: Row[] = [];
   const data: Record<string, unknown> = {};
   let failed = false;
-  for (const e of SIZE_ENTRIES) {
-    const result = await build({
-      entryPoints: [path.join(ROOT, e.entry)], bundle: true, minify: true, format: "esm", platform: "browser",
-      external: e.external, write: false, logLevel: "silent",
-    });
-    const code = result.outputFiles[0].contents;
-    const kib = (n: number) => n / 1024;
-    const r = {
-      minKiB: kib(code.length),
-      gzipKiB: kib(zlib.gzipSync(code, { level: 9 }).length),
-      brotliKiB: kib(zlib.brotliCompressSync(code, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } }).length),
-    };
-    data[e.name] = r;
-    const b = budget.size[e.name];
+  const add = (name: string, r: SizeResult) => {
+    data[name] = r;
+    const b = budget.size[name];
     let over: string | undefined;
     if (b) {
       if (r.gzipKiB > b.gzipKiB) {
@@ -211,9 +242,14 @@ async function benchSize(): Promise<{ md: string; failed: boolean; data: unknown
       }
       if (b.targetKiB !== undefined) over += ` (target ${b.targetKiB} KiB)`;
     }
-    rows.push({ name: e.name, values: { "min KiB": r.minKiB.toFixed(1), "gzip KiB": r.gzipKiB.toFixed(1), "brotli KiB": r.brotliKiB.toFixed(1) }, over });
+    rows.push({ name, values: { "min KiB": r.minKiB.toFixed(1), "gzip KiB": r.gzipKiB.toFixed(1), "brotli KiB": r.brotliKiB.toFixed(1) }, over });
+  };
+  for (const e of SIZE_ENTRIES) {
+    const { initial, lazy } = await bundleSizes(e.entry, e.external);
+    add(e.name, initial);
+    if (lazy) add(`${e.name}: + on demand (P2D/P3D, PShader, PShape)`, lazy);
   }
-  return { md: table("bundle size (esbuild --bundle --minify, gzip -9, brotli q11)", ["min KiB", "gzip KiB", "brotli KiB"], rows), failed, data };
+  return { md: table("bundle size (esbuild --bundle --minify --splitting; first load, then what loads on demand; gzip -9, brotli q11)", ["min KiB", "gzip KiB", "brotli KiB"], rows), failed, data };
 }
 
 function usage(): never {

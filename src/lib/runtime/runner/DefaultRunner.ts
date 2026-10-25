@@ -13,10 +13,8 @@ import { PGraphics } from "../PGraphics";
 import { PFont, loadDefaultFont } from "../PFont";
 import { SketchFiles, type SavedFile } from "../io/SketchFiles";
 import { PMatrix2D } from "../PMatrix2D";
-import { PMatrix3D } from "../PMatrix3D";
 import { PGraphicsJava2D } from "../PGraphicsJava2D";
-import { PShape } from "../PShape";
-import { loadOpenGL, type OpenGLModule } from "../openglModule";
+import { loadOpenGL, loadShapes, usesOpenGL, usesShapes, type OpenGLModule } from "../openglModule";
 import { JSONObject } from "../data/JSONObject";
 import { JSONArray } from "../data/JSONArray";
 import { javaClasses, lang } from "../../../runtime/lang/index.ts";
@@ -30,9 +28,7 @@ const PROCESSING_CLASSES:Record<string,unknown>={
   "processing.core.PGraphics":PGraphics,
   "processing.core.PFont":PFont,
   "processing.core.PMatrix2D":PMatrix2D,
-  "processing.core.PMatrix3D":PMatrix3D,
   "processing.awt.PGraphicsJava2D":PGraphicsJava2D,
-  "processing.core.PShape":PShape,
   "processing.data.JSONObject":JSONObject,
   "processing.data.JSONArray":JSONArray,
   "processing.event.MouseEvent":MouseEvent,
@@ -58,14 +54,6 @@ function addOpenGLClasses(gl:OpenGLModule){
     "processing.opengl.PGraphics3D":gl.PGraphics3D,
     "processing.opengl.PShader":gl.PShader,
   });
-}
-
-/**
- * Whether compiled code uses the OpenGL renderers or shaders: P2D/P3D (inlined as their class names),
- * processing.opengl classes, loadShader().
- */
-export function usesOpenGL(code:string):boolean{
-  return /processing\.opengl\.|\.loadShader\(/.test(code);
 }
 
 /** What the compiler found out about the sketch (CompileResult), and the files the host listed. */
@@ -235,6 +223,10 @@ export class DefaultRunner extends Runner{
     this.flushOutput();
     lang.setOutput((text)=>this.write_output(text));
     // P2D/P3D and shaders: the WebGL renderer is a separate chunk, loaded only for sketches that use it.
+    if(usesShapes(sketch)){
+      const shapes=await loadShapes();
+      addClasses({"processing.core.PShape":shapes.PShape,"processing.core.PMatrix3D":shapes.PMatrix3D});
+    }
     if(usesOpenGL(sketch))addOpenGLClasses(await loadOpenGL());
     const rt={lang,PApplet,classes:this.runtime_classes()};
     // The sketch's files: what the host added, then what the sketch names and the host listed, fetched

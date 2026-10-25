@@ -147,6 +147,32 @@ export function strokePolygons(pts:number[],closed:boolean,weight:number,cap:num
     else if(cap===PROJECT)out.push([p[0]-h,p[1]-h,p[0]+h,p[1]-h,p[0]+h,p[1]+h,p[0]-h,p[1]+h]);
     return out;
   }
+  if(n===2&&!closed){
+    // one segment: a single convex outline (a capsule for round caps), so nothing overlaps
+    const ax=p[0],ay=p[1],bx=p[2],by=p[3];
+    const len=Math.hypot(bx-ax,by-ay);
+    const dx=(bx-ax)/len,dy=(by-ay)/len;
+    const nx=-dy*h,ny=dx*h;
+    if(cap===ROUND){
+      const k=Math.max(4,roundSegments(h)>>1);
+      const poly:number[]=[];
+      const a0=Math.atan2(ny,nx);
+      for(let i=0;i<=k;i++){
+        const a=a0+Math.PI*i/k;
+        poly.push(bx+Math.cos(a+Math.PI)*h,by+Math.sin(a+Math.PI)*h);
+      }
+      for(let i=0;i<=k;i++){
+        const a=a0+Math.PI*i/k;
+        poly.push(ax+Math.cos(a)*h,ay+Math.sin(a)*h);
+      }
+      out.push(poly);
+      return out;
+    }
+    const e=cap===PROJECT?h:0;
+    const sx=ax-dx*e,sy=ay-dy*e,ex=bx+dx*e,ey=by+dy*e;
+    out.push([sx+nx,sy+ny,ex+nx,ey+ny,ex-nx,ey-ny,sx-nx,sy-ny]);
+    return out;
+  }
   const segs=closed?n:n-1;
   const dir=(i:number)=>{
     const a=i%n,b=(i+1)%n;

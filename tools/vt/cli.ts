@@ -73,6 +73,8 @@ function usage(): never {
       (Re)generate reference images/stdout with Processing. --missing: only absent or stale refs.
   node tools/vt/cli.ts shot <sketchDir> [--frames n] [--ref] [--out dir] [--offline]
       Ad-hoc: render any sketch folder; with --ref also render it with Processing and diff.
+  node tools/vt/cli.ts bench [name...] [--frames n] [--gpu]
+      Frame times of the performance sketches in tests/perf (SwiftShader, or the GPU with --gpu).
   node tools/vt/cli.ts list [--tag t]
   node tools/vt/cli.ts corpus [--filter Basics/Shape] [--frames n] [--examples dir] [--timeout ms] [--ref]
       Run Processing's bundled examples (254) through processing-ts and tally transpile/runtime errors.
@@ -391,6 +393,35 @@ async function cmdShot() {
   process.exit(run.ok ? 0 : 1);
 }
 
+/** Frame times of the performance sketches (tests/perf/<name>): SwiftShader by default, --gpu for the GPU. */
+async function cmdBench() {
+  const perfDir = path.join(ROOT, "tests/perf");
+  const names = fs.readdirSync(perfDir).filter((n) => fs.existsSync(path.join(perfDir, n, n + ".pde")) && (!args.length || args.some((a) => n.startsWith(a))));
+  const frames = flags.frames ? Number(flags.frames) : 30;
+  const runner = new BrowserRunner({ projectRoot: ROOT, headed: flags.headed, gpu: flags.gpu });
+  await runner.start();
+  const rows: string[] = [];
+  try {
+    for (const n of names) {
+      const run = await runner.run(readSketch(path.join(perfDir, n)), frames);
+      // the first frames include compiling shaders and filling caches
+      const ms = run.frameMs.slice(Math.min(5, run.frameMs.length - 1)).sort((a, b) => a - b);
+      const avg = ms.reduce((a, b) => a + b, 0) / Math.max(1, ms.length);
+      const med = ms[ms.length >> 1] ?? 0;
+      rows.push(`| ${n} | ${avg.toFixed(1)} | ${med.toFixed(1)} | ${(1000 / Math.max(med, 1e-3)).toFixed(0)} | ${run.ok ? "" : run.errors[0] ?? run.phase} |`);
+      console.log(rows[rows.length - 1]);
+    }
+  } finally {
+    await runner.stop();
+  }
+  console.log(`
+## frame time (${flags.gpu ? "GPU" : "SwiftShader"}, ${frames} frames, without the first 5)
+
+| sketch | avg ms | median ms | fps (median) | error |
+|---|---:|---:|---:|---|
+${rows.join("\n")}`);
+}
+
 async function cmdCorpus() {
   const examples = findExamples(findProcessing(flags.processing), flags.examples);
   if (!examples) {
@@ -433,6 +464,9 @@ switch (command) {
     break;
   case "corpus":
     await cmdCorpus();
+    break;
+  case "bench":
+    await cmdBench();
     break;
   case "list":
     for (const c of listCases(args)) {

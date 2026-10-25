@@ -5,9 +5,8 @@ import { createNativeCanvas } from "./PImage";
 import type { GLContext } from "./opengl/GLContext";
 import type { PGraphicsOpenGL } from "./opengl/PGraphicsOpenGL";
 import type { PShader } from "./opengl/PShader";
-import { openGL, requireOpenGL } from "./openglModule";
+import { openGL, requireOpenGL, requireShapes } from "./openglModule";
 import type { PShape } from "./PShape";
-import { loadOBJ, loadSVG } from "./io/shapeLoaders";
 import { PImage } from "./PImage";
 import { PSurface } from "./PSurface";
 import { JSONObject } from "./data/JSONObject";
@@ -759,6 +758,7 @@ export class PApplet extends PConstants{
     const text=this.__read_text__(name);
     if(text===null)return null;
     const ext=extensionOf(name);
+    const {loadSVG,loadOBJ}=requireShapes();
     if(ext==="svg"||ext==="svgz")return loadSVG(text,this.g);
     if(ext==="obj"){
       const dir=name.includes("/")?name.slice(0,name.lastIndexOf("/")+1):"";
