@@ -15,6 +15,7 @@
 // bundler's assets (`?url` imports, renamed in builds), so the sketch finds them wherever they are served.
 // Compile errors are build errors (with the tab, line and column); editing a tab reloads the page.
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { COMPILER_VERSION } from "../compiler/index.ts";
 import { sketchModule } from "../compiler/module.ts";
@@ -30,6 +31,7 @@ type PluginContext = {
 export type ProcessingPlugin = {
   name: string;
   enforce: "pre";
+  config(config: { root?: string }): { optimizeDeps: { exclude: string[]; include: string[] } } | null;
   resolveId(this: unknown, source: string, importer: string | undefined): string | null;
   load(this: PluginContext, id: string): { code: string; map: SourceMapV3 | null } | null;
 };
@@ -42,6 +44,7 @@ export type ProcessingPlugin = {
 export type ProcessingPluginOptions = { data?: boolean };
 
 const QUERY = "?pde";
+const PACKAGE = "@async0x4c/processing-ts";
 const toPosix = (p: string) => p.split(path.sep).join("/");
 
 export default function processing(options: ProcessingPluginOptions = {}): ProcessingPlugin {
@@ -49,6 +52,16 @@ export default function processing(options: ProcessingPluginOptions = {}): Proce
   return {
     name: "processing-ts",
     enforce: "pre",
+    // Vite's dev server pre-bundles dependencies into node_modules/.vite, away from the package's fonts/ and
+    // worker.js (found next to its modules); keep the package as it is, and pre-bundle its CommonJS dependency.
+    config(config) {
+      try {
+        createRequire(path.join(path.resolve(config.root ?? process.cwd()), "noop.js")).resolve(`${PACKAGE}/package.json`);
+      } catch {
+        return null; // the app does not use the package (this repository's own tests)
+      }
+      return { optimizeDeps: { exclude: [PACKAGE], include: [`${PACKAGE} > libtess`] } };
+    },
     resolveId(source, importer) {
       const q = source.endsWith(QUERY);
       const bare = q ? source.slice(0, -QUERY.length) : source;

@@ -55,7 +55,9 @@ export class BrowserRunner {
       root,
       logLevel: "error",
       clearScreen: false,
-      server: { host: "127.0.0.1", port: 5199, strictPort: false, fs: { allow: [root, ...(this.opts.extraFsAllow ?? [])] } },
+      // Service-Worker-Allowed: the offline runs register the worker for the whole origin, so that the sketch's
+      // Web Worker (thread "worker", its script under /src/) is served from the cache too.
+      server: { host: "127.0.0.1", port: 5199, strictPort: false, fs: { allow: [root, ...(this.opts.extraFsAllow ?? [])] }, headers: { "Service-Worker-Allowed": "/" } },
       // Pre-bundle up front so Vite does not reload the page mid-run when it discovers deps.
       optimizeDeps: { entries: ["tools/vt/harness/index.html"], include: ["@lezer/common", "@lezer/lr"] },
     });
@@ -152,7 +154,7 @@ export class BrowserRunner {
       };
       if (offline) {
         await page.evaluate(async () => {
-          await navigator.serviceWorker.register("./sw.js");
+          await navigator.serviceWorker.register("./sw.js", { scope: "/" });
           await navigator.serviceWorker.ready;
         });
         // Reload under the worker so that the page's own modules are cached too, then fill the cache.

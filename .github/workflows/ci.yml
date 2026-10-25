@@ -1,0 +1,49 @@
+# Checks of every push and pull request (ROADMAP P0-8, P4-5). The references made by real Processing are
+# committed (tests/visual/refs), so Processing is not needed here. Windows, like the machine that made them:
+# text rasterization in Chromium differs between platforms.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The Chromium build that playwright-core expects (headless, SwiftShader for WebGL).
+      - run: npx playwright-core install chromium
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:lang
+      # One step per run: a multi-line pwsh script fails only on its last command's exit code.
+      - name: Visual / output regression tests (main thread)
+        run: npm run test:visual
+      - name: Visual / output regression tests (in a worker)
+        run: npm run test:visual -- --exec worker
+      - name: Visual / output regression tests (compiled ahead of time)
+        run: npm run test:visual -- --exec aot
+      - name: Ahead-of-time builds end to end (CLI, Vite plugin, installed package)
+        run: npm run test:aot
+      # Budgets (tools/bench/budget.json): sizes are exact; times get slack on shared runners.
+      - name: Bundle size budget
+        run: npm run size
+      - name: Performance budget
+        run: npm run bench -- --slack 2
+      - name: Keep the outputs of failed checks
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: |
+            tests/visual/out/
+            tests/aot/out/
+            tests/bench/out/
+          if-no-files-found: ignore

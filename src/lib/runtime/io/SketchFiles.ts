@@ -59,7 +59,7 @@ export class SketchFiles {
   private readonly files = new Map<string, Uint8Array>();
   private readonly images = new Map<string, ImageBitmap>();
   private readonly savedPixels = new Map<string, SavedPixels>();
-  /** CSS families of the font files (.ttf/.otf) registered with the document, by key. */
+  /** CSS families of the font files (.ttf/.otf) registered with the document (or the worker), by key. */
   private readonly fonts = new Map<string, string>();
   /** Keys that were fetched and not found. */
   private readonly absent = new Set<string>();
@@ -134,7 +134,9 @@ export class SketchFiles {
   /** Make a font file usable by CSS name (createFont("a.ttf", size)). */
   private async registerFont(key: string) {
     const bytes = this.files.get(key);
-    const set = (globalThis as { document?: { fonts?: FontFaceSet } }).document?.fonts;
+    // The document's fonts, or the worker's (WorkerGlobalScope.fonts).
+    const g = globalThis as { document?: { fonts?: FontFaceSet }; fonts?: FontFaceSet };
+    const set = g.document?.fonts ?? g.fonts;
     if (!bytes || typeof FontFace === "undefined" || !set) return;
     const family = "__sketchfont_" + key.replace(/[^A-Za-z0-9]/g, "_");
     try {

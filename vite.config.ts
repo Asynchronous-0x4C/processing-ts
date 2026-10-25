@@ -3,7 +3,7 @@ import { build as esbuild } from "esbuild";
 import path, { resolve } from "path"
 import { defineConfig } from "vite"
 import { externalizeDeps } from 'vite-plugin-externalize-deps'
-import { buildStandaloneRuntime } from "./src/aot/standalone"
+import { buildStandaloneRuntime, literalAssetURLs } from "./src/aot/standalone"
 
 const SAMPLES_DIR=path.join("public","samples");
 
@@ -81,6 +81,21 @@ export default defineConfig({
       },
     },
     {
+      // The default font and the worker script as literal `new URL("./…", import.meta.url)` in dist/, which
+      // bundlers taking the package in copy as assets. After Vite's own asset handling ("post"), which would
+      // inline a literal font as base64. See src/lib/runtime/assetURLs.ts.
+      name: 'literal-asset-urls',
+      apply: 'build',
+      enforce: 'post',
+      transform(_code,id){
+        if(!/src[\\/]lib[\\/]runtime[\\/]assetURLs\.ts$/.test(id))return null;
+        return [
+          `export function defaultFontFileURL() { return new URL("./fonts/ProcessingSansPro-Regular.ttf", import.meta.url); }`,
+          `export function workerScriptURL() { return new URL("./worker.js", import.meta.url); }`,
+        ].join("\n");
+      },
+    },
+    {
       // Node tools: the CLI (dist/cli.js, "bin") and the Vite plugin (dist/vite.js), with the compiler bundled
       // in (the dependencies stay imports). Node does not strip types under node_modules, so they ship as JS.
       name: 'node-tools',
@@ -95,6 +110,13 @@ export default defineConfig({
           });
         }
         fs.copyFileSync(resolve(__dirname,"src/aot/client.d.ts"),path.join(options.dir!,"client.d.ts"));
+        // dist/worker.js: the Worker execution mode's script in one file (with the OpenGL renderers and
+        // libtess), so that a bundler only has to copy it.
+        await esbuild({
+          entryPoints:[resolve(__dirname,"src/lib/runtime/worker/entry.ts")],
+          bundle:true, format:"esm", platform:"browser", target:"es2022", minify:true, legalComments:"eof",
+          outfile:path.join(options.dir!,"worker.js"), logLevel:"warning", plugins:[literalAssetURLs(__dirname)],
+        });
       },
     },
     {

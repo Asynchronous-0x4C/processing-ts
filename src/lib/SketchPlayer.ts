@@ -28,10 +28,26 @@ export class SketchPlayer{
     this.runner=this.createRunner();
   }
 
-  /** The runner for `settings.thread` (SketchManager adds the worker runner). */
+  /** The page's runner; with thread "worker" it is replaced by the worker runner at the first run. */
   protected createRunner():Runner{
     return new DefaultRunner(this);
   }
+
+  /** thread "worker": load the worker runner (only pages that use it download it) and take over the listeners. */
+  private async useWorkerRunner(){
+    if(this.settings.thread!=="worker"||this.runner.is_worker)return;
+    const { WorkerRunner }=await import("./runtime/worker/WorkerRunner");
+    const old=this.runner;
+    const r=new WorkerRunner(this);
+    r.log_listeners=old.log_listeners;
+    r.error_listeners=old.error_listeners;
+    r.save_listeners=old.save_listeners;
+    this.runner=r;
+  }
+
+  /** Canvases whose drawing went to a worker (transferControlToOffscreen() works once per canvas). */
+  private static readonly transferred=new WeakSet<HTMLCanvasElement>();
+  private window_events=false;
 
   /**
    * Set canvas to draw sketch.
@@ -39,9 +55,38 @@ export class SketchPlayer{
    */
   mountPApplet(target:HTMLCanvasElement){
     this.target_element=target;
-    window.addEventListener('focus',()=>{this.runner.on_focus();});
-    window.addEventListener('blur',()=>{this.runner.on_blur();});
+    if(!this.window_events){
+      this.window_events=true;
+      window.addEventListener('focus',()=>{this.runner.on_focus();});
+      window.addEventListener('blur',()=>{this.runner.on_blur();});
+      window.addEventListener("keydown",e=>{if(this.runner.on_keydown)this.runner.on_keydown(e)});
+      window.addEventListener("keyup",e=>{if(this.runner.on_keyup)this.runner.on_keyup(e);});
+    }
     this.initEvent(target);
+  }
+
+  /**
+   * The canvas to give to a worker: the mounted one, or a copy put in its place in the page when that
+   * one already went to a worker (a canvas can be transferred once). `target_element` is then the copy.
+   */
+  freshCanvas():HTMLCanvasElement{
+    const old=this.target_element!;
+    if(!SketchPlayer.transferred.has(old)){
+      SketchPlayer.transferred.add(old);
+      return old;
+    }
+    const c=old.cloneNode(false) as HTMLCanvasElement;
+    old.replaceWith(c);
+    this.mountPApplet(c);
+    SketchPlayer.transferred.add(c);
+    return c;
+  }
+
+  /** The canvas as an image (PNG by default), in either thread mode. */
+  capture(mime="image/png"):Promise<Blob|null>{
+    if(this.runner.capture)return this.runner.capture(mime);
+    const c=this.target_element;
+    return c?new Promise((resolve)=>c.toBlob(resolve,mime)):Promise.resolve(null);
   }
 
   /**
@@ -55,8 +100,6 @@ export class SketchPlayer{
     target_element.addEventListener("pointerup",e=>{if(this.runner.on_pointerup)this.runner.on_pointerup(e)});
     target_element.addEventListener("pointerenter",e=>{if(this.runner.on_pointerenter)this.runner.on_pointerenter(e)});
     target_element.addEventListener("pointerleave",e=>{if(this.runner.on_pointerleave)this.runner.on_pointerleave(e)});
-    window.addEventListener("keydown",e=>{if(this.runner.on_keydown)this.runner.on_keydown(e)});
-    window.addEventListener("keyup",e=>{if(this.runner.on_keyup)this.runner.on_keyup(e);});
     target_element.addEventListener("wheel",e=>{if(this.runner.on_wheel)this.runner.on_wheel(e);},{passive:true});
     target_element.addEventListener("contextmenu",e=>{if(this.runner.on_contextmenu)this.runner.on_contextmenu(e)});
   }
@@ -68,6 +111,7 @@ export class SketchPlayer{
    */
   async runTranspiledSketch(sketch:CompiledSketch|PrecompiledSketch){
     this.stopSketch();
+    await this.useWorkerRunner();
     if(this.target_element==null){
       console.error("target_element is not set. Please call mountPApplet() before running a sketch");
       return;
@@ -100,8 +144,8 @@ export class SketchPlayer{
   /**
    * Send text printed without a final newline (print("x")) to the log listeners now.
    */
-  flushOutput(){
-    this.runner.flushOutput();
+  flushOutput():Promise<void>{
+    return Promise.resolve(this.runner.flushOutput());
   }
 
   /**

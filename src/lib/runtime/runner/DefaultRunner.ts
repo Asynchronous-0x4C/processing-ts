@@ -1,5 +1,4 @@
-import type { SketchPlayer } from "../../SketchPlayer";
-import type { SketchFunction } from "../../types";
+import type { SketchFunction, SketchSettings } from "../../types";
 import { Cursor } from "../awt/Cursor";
 import { PApplet } from "../PApplet";
 import { ArrayList } from "../util/ArrayList";
@@ -75,6 +74,24 @@ export async function loadModules(sketch:string|SketchFunction,options:RunOption
  */
 export type RunOptions={usesText?:boolean;files?:string[];listed?:string[];urls?:Record<string,string>;opengl?:boolean;shapes?:boolean;font?:string};
 
+/**
+ * What a runner needs from its host: SketchPlayer on the page, or the worker's stand-in (worker/entry.ts)
+ * whose canvas is the OffscreenCanvas transferred from the page.
+ */
+export interface RunnerHost{
+  target_element:HTMLCanvasElement|OffscreenCanvas|null;
+  base_uri:string;
+  provided_files:Map<string,Uint8Array|string>;
+  settings:SketchSettings;
+}
+
+/** A rectangle in CSS pixels of the page (the canvas element's bounding box). */
+export type Rect={left:number;top:number;width:number;height:number};
+
+/** requestAnimationFrame, or a 60 Hz timer where there is none (some workers). */
+const raf:(cb:(t:number)=>void)=>number=typeof requestAnimationFrame==="function"?(cb)=>requestAnimationFrame(cb):(cb)=>setTimeout(()=>cb(performance.now()),1000/60) as unknown as number;
+const caf:(id:number)=>void=typeof cancelAnimationFrame==="function"?(id)=>cancelAnimationFrame(id):(id)=>clearTimeout(id);
+
 export abstract class Runner{
   pre_count:number=-1;
   initiated:boolean=false;
@@ -85,7 +102,22 @@ export abstract class Runner{
 
   arg_classes:{name:string,type:any}[]=[{name:"PApplet",type:PApplet},{name:"PVector",type:PVector},{name:"ArrayList",type:ArrayList},{name:"HashMap",type:HashMap},{name:"Cursor",type:Cursor},{name:"Runnable",type:Runnable},{name:"Consumer",type:Consumer},{name:"Supplier",type:Supplier},{name:"Function",type:Function},{name:"FunctionalInterface",type:FunctionalInterface},];
 
-  abstract manager:SketchPlayer;
+  abstract manager:RunnerHost;
+
+  /** Where the canvas is on the page (CSS pixels): mouse coordinates and the scaling of the sketch. */
+  element_rect():Rect{
+    const r=(this.manager.target_element as HTMLCanvasElement).getBoundingClientRect();
+    return {left:r.left,top:r.top,width:r.width,height:r.height};
+  }
+
+  /** Whether the page has the focus when the sketch starts (Processing's `focused`). */
+  has_focus():boolean{
+    return typeof document!=="undefined"&&document.hasFocus();
+  }
+
+  device_pixel_ratio():number{
+    return typeof devicePixelRatio==="number"?devicePixelRatio:1;
+  }
 
   /** Text printed by the sketch that does not end with a newline yet. */
   private pending_output="";
@@ -101,7 +133,8 @@ export abstract class Runner{
     }
   }
 
-  flushOutput(){
+  /** Send a pending partial line (print("x")) to the log listeners; the worker runner does it asynchronously. */
+  flushOutput():void|Promise<void>{
     if(this.pending_output==="")return;
     const line=this.pending_output;
     this.pending_output="";
@@ -129,6 +162,11 @@ export abstract class Runner{
   abstract on_focus():void;
   abstract on_blur():void;
 
+  /** The worker runner (the sketch runs in a Web Worker). */
+  readonly is_worker:boolean=false;
+  /** The canvas as an image, when the page cannot read it (the worker's canvas). */
+  capture?(mime:string):Promise<Blob|null>;
+
   on_pointermove?(e:PointerEvent):void;
   on_pointerdown?(e:PointerEvent):void;
   on_pointerup?(e:PointerEvent):void;
@@ -154,7 +192,7 @@ export abstract class Runner{
   }
 
   convert_mouse(x:number,y:number):{x:number,y:number}{
-    const rect=this.manager.target_element!.getBoundingClientRect();
+    const rect=this.element_rect();
     return {x:(x-rect.left)*this.scaling.x,y:(y-rect.top)*this.scaling.y};
   }
 
@@ -167,7 +205,7 @@ export abstract class Runner{
   abstract update_resolution(r:number):void;
 
   get_maximum_size():{width:number,height:number}{
-    const rect=this.manager.target_element!.getBoundingClientRect();
+    const rect=this.element_rect();
     return {width:rect.width,height:rect.height};
   }
 
@@ -210,7 +248,7 @@ export class DefaultRunner extends Runner{
   pre_count: number=-1;
   initiated: boolean=false;
 
-  manager: SketchPlayer;
+  manager: RunnerHost;
 
   /** Events waiting for the end of the next frame (Processing handles them after draw()). */
   event_queue:Array<MouseEvent|KeyEvent|{name:"_windowResized"}>;
@@ -228,7 +266,7 @@ export class DefaultRunner extends Runner{
   private press:{x:number,y:number,moved:boolean}|null=null;
   private last_press={time:-Infinity,x:0,y:0,button:0,count:0};
 
-  constructor(manager:SketchPlayer){
+  constructor(manager:RunnerHost){
     super();
     this.manager=manager;
     this.event_queue=[];
@@ -249,7 +287,7 @@ export class DefaultRunner extends Runner{
     if(options.font)setDefaultFontURL(options.font);
     const fonts=options.usesText?loadDefaultFont():null;
     await files.preload(options.files??[],options.listed??[]);
-    const renderer={canvas:this.manager.target_element!,base_path:this.manager.base_uri,max_size:this.get_maximum_size(),files};
+    const renderer={canvas:this.manager.target_element as HTMLCanvasElement,base_path:this.manager.base_uri,max_size:this.get_maximum_size(),files};
     try{
       this.applet=(typeof sketch==="string"?new globalThis.Function("$rt","__renderer__",sketch):sketch)(rt,renderer) as PApplet;
     }catch(e){
@@ -257,13 +295,14 @@ export class DefaultRunner extends Runner{
       return;
     }
     this.applet.__log_listener__=(args:any[])=>{this.log_listeners.forEach(l=>l(args))};
-    if(typeof document!=="undefined")this.applet.focused=document.hasFocus();
+    this.applet.focused=this.has_focus();
     // Text in setup() and the first frames must already use the default font, as in Processing.
     if(fonts)await fonts;
     this.initiated=true;
     try{
       await this.applet.settings();
       this.applet.__init_surface__();
+      this.surface_ready();
       this.applet.__begin__();
       await this.applet.setup();
       this.applet.__end__();
@@ -283,7 +322,7 @@ export class DefaultRunner extends Runner{
    */
   private frame(now:number){
     if(!this.applet||!this.initiated)return;
-    this.animation_id=requestAnimationFrame((t)=>this.frame(t));
+    this.animation_id=raf((t)=>this.frame(t));
     if(this.stepping)return;
     const period=1000/Math.max(this.applet.__frameRate__,0.001);
     // A little slack so that 60 fps on a 60 Hz display does not skip every other frame.
@@ -351,10 +390,13 @@ export class DefaultRunner extends Runner{
   }
 
   loop(){
-    cancelAnimationFrame(this.animation_id);
+    caf(this.animation_id);
     this.next_frame=0;
-    this.animation_id=requestAnimationFrame((t)=>this.frame(t));
+    this.animation_id=raf((t)=>this.frame(t));
   }
+
+  /** The window has its size (after settings()): the worker tells the page. */
+  protected surface_ready(){}
 
   /** Stop the sketch (the editor's stop button): the canvas is cleared. */
   stop(){
@@ -363,9 +405,9 @@ export class DefaultRunner extends Runner{
     this.applet?.__stop__();
   }
 
-  private halt(){
+  protected halt(){
     this.initiated=false;
-    cancelAnimationFrame(this.animation_id);
+    caf(this.animation_id);
   }
 
   on_focus(){
@@ -439,7 +481,7 @@ export class DefaultRunner extends Runner{
     // AWT's KEY_TYPED follows the press of a key that types a character; its keyCode is 0.
     if(typesCharacter(k.key))this.event_queue.push(new KeyEvent(e,Date.now(),KeyEvent.TYPE,modifiers,k.key,0,e.repeat));
     if(e.key==="Tab"){
-      e.preventDefault();
+      e.preventDefault?.();
     }
   }
 
@@ -473,9 +515,9 @@ export class DefaultRunner extends Runner{
 
   set_scaling(): void {
     if(!this.applet)return;
-    const rect=this.manager.target_element!.getBoundingClientRect();
+    const rect=this.element_rect();
     this.scaling={x:this.applet.width/rect.width,y:this.applet.height/rect.height};
-    this.update_resolution(window.devicePixelRatio/Math.max(this.scaling.x,this.scaling.y));
+    this.update_resolution(this.device_pixel_ratio()/Math.max(this.scaling.x,this.scaling.y));
   }
 
   get_applet_size():{w:number,h:number}{

@@ -118,3 +118,31 @@ describe("processing-ts build / Vite plugin", () => {
     }
   });
 });
+
+import { parseXml } from "../../src/lib/runtime/io/xmlLite";
+
+describe("parseXml (SVG in workers, where there is no DOMParser)", () => {
+  it("reads elements, attributes and namespaces as Element does", () => {
+    const root = parseXml(`<?xml version="1.0"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [ <!ENTITY e "x"> ]>
+<!-- comment <rect/> -->
+<svg:svg xmlns:svg="http://www.w3.org/2000/svg" width='100' height="50">
+  <g id="a&amp;b" transform="translate(1, 2)"><rect x="1" y="2"/><![CDATA[<circle/>]]>text</g>
+  <path d="M 0 0 L 10 10" style="fill:#ff0000"></path>
+</svg:svg>`)!;
+    expect(root.localName).toBe("svg");
+    expect(root.getAttribute("width")).toBe("100");
+    expect(root.getAttribute("missing")).toBeNull();
+    expect(Array.from(root.children).map((c) => c.localName)).toEqual(["g", "path"]);
+    const g = root.children[0];
+    expect(g.getAttribute("id")).toBe("a&b");
+    expect(g.hasAttribute("transform")).toBe(true);
+    expect(Array.from(g.children).map((c) => c.localName)).toEqual(["rect"]);
+    expect(root.children[1].getAttribute("d")).toBe("M 0 0 L 10 10");
+  });
+
+  it("returns null for broken markup", () => {
+    expect(parseXml("<svg width=\"1\"")).toBeNull();
+    expect(parseXml("no markup")).toBeNull();
+  });
+});

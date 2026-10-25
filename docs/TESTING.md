@@ -9,6 +9,8 @@
 | 型検査の適合性 | `npm run test:check` | 新コンパイラの型検査（`analyzeSketch`）の受理/拒否・最初のエラーの行・メッセージを、本物の Processing の `cli --build`（前処理 + ECJ）と比較。入力は同梱 examples・リポジトリのスケッチと、AST を使って機械的に作る意味エラーの変種（`tools/check/mutations.ts`）。Processing の結果は `node_modules/.cache/processing-ts-check` にキャッシュ（初回は約 40 分、以後は数秒）。誤検出・見逃しがあると終了コード 1（結果: `tests/check/out/report.md`） |
 | 言語仕様の適合性 | `npm run test:lang` | 新コンパイラ（`compileSketch`）が生成したコードを Node で実行し、`lang` タグのケースの `println` 出力を本物の Processing の参照 stdout と行単位で比較（後述「stdout 適合テスト」）。約 1 秒 |
 | 性能 / サイズ | `npm run bench` / `npm run size` | 変換時間・バンドルサイズ（後述「性能・サイズ計測」） |
+| 事前変換・配布の E2E | `npm run test:aot` | `processing-ts build` の出力・Vite プラグイン・ビルドしたパッケージを入れたアプリ・Worker 実行を、本物の Processing の参照と比較（後述「事前変換・配布の E2E」） |
+| CI | `.github/workflows/ci.yml` | push / pull request ごとに上のうち Processing の要らないもの（型・単体・lang・視覚 3 種・test:aot・size・bench）。Windows のランナー（後述「CI」） |
 
 # 視覚 / 出力回帰テスト
 
@@ -38,7 +40,7 @@ npm run vt -- list                  # ケース一覧（参照の有無・期待
 node tools/vt/zoom.ts <case> <x> <y> <w> <h> [倍率]   # 参照と processing-ts の同じ領域を拡大して並べる（tests/visual/out/<case>/zoom.png）
 ```
 
-`run` のその他のオプション: `--offline`（後述）、`--update`（先に参照を再生成）、`--frames n`（フレーム数を上書き）、`--headed`（ブラウザを表示）、`--gpu`（SwiftShader ではなく GPU を使う）、`--json`（結果を JSON で標準出力）、`--out <dir>`。
+`run` のその他のオプション: `--exec worker|aot`（後述「実行のしかた」）、`--offline`（後述）、`--update`（先に参照を再生成）、`--frames n`（フレーム数を上書き）、`--headed`（ブラウザを表示）、`--gpu`（SwiftShader ではなく GPU を使う）、`--json`（結果を JSON で標準出力）、`--out <dir>`。
 
 所要時間の目安（このリポジトリの開発機）: `run` 全 20 ケースで約 10 秒、`ref` 全ケースで約 50 秒（JAVA2D 約 2 秒/件、P2D/P3D 約 5 秒/件）。
 
@@ -127,6 +129,18 @@ tests/visual/refs/<name>.png / .stdout.txt / .meta.json   ← `ref` が生成。
    スケッチフォルダを `/@fs/<絶対パス>/` として `base_uri` にし、`data/` のファイル一覧を `SketchData.files` で渡す（ホストと同じ使い方）。
 4. `println` は `SketchManager.addEventListener("log")` で収集。
 
+### 実行のしかた: `--exec main|worker|aot`
+
+同じケース・同じ参照で、processing-ts の 3 つの実行経路を確かめる（既定は main）。
+
+| `--exec` | 経路 | 撮り方 |
+|---|---|---|
+| `main` | `SketchManager` がページで変換し、メインスレッドで実行 | `canvas.toDataURL()` |
+| `worker` | `SketchManager({ thread: "worker" })`: キャンバスを OffscreenCanvas にして Web Worker で実行（入力スクリプトのマウス/キーもページから転送される） | ページからは読めないので `SketchPlayer.capture()`（Worker の `convertToBlob`） |
+| `aot` | Node で `sketchModule()`（`processing-ts build` / Vite プラグインと同じモジュール）にし、ページは blob URL から import して `SketchPlayer`（コンパイラなし）で実行 | `canvas.toDataURL()` |
+
+オフライン実行の Service Worker はオリジン全体をスコープにして登録する（dev サーバが `Service-Worker-Allowed: /` を返す）。Worker のスクリプト（`/src/lib/runtime/worker/entry.ts`）もキャッシュから読ませるため。
+
 ### 入力スクリプト: `tools/vt/input.ts`
 
 `vt.json` の `input` に書いた操作を、両方の実行でフレームの間に再生する（`frame: n` は n 回目の draw() の後。0 は setup() の直後。どちらも次の draw() の後でハンドラが呼ばれる）。
@@ -181,6 +195,29 @@ node tools/lang/cli.ts --corpus      # 同梱 examples + リポジトリのス�
 - 新しい言語仕様のケースは `lang_` で始まる名前にする。視覚テスト（ブラウザ）と `npm run test:lang`（Node）の両方で同じ参照と比べる。
 - `--corpus` は「変換できるか（コンパイラの例外・不正な JS が無いか）」を見る。スタブ上の実行時例外（PVector などが無い）は一覧に出すだけで失敗にしない。拒否されたスケッチは `npm run test:check` で Processing と照合する。
 
+## 事前変換・配布の E2E（tools/aot）
+
+```sh
+npm run test:aot                       # 全部（約 3 分）
+npm run test:aot -- cli offline        # モードを選ぶ
+npm run test:aot -- package --keep     # 一時フォルダを残す
+```
+
+決定的な数ケース（hex_colors・files_load・text_metrics・shape_svg・p3d_box・p3d_shape_obj・static_mode など）を、利用者と同じ形で動かして参照画像・参照 stdout と比べる。ページは本物のフレームループで動くので、キャンバスの大きさが決まってから 1.5 秒待って撮る（どのフレームでも同じ絵になるケースだけを使う）。合成画像は `tests/aot/out/<モード>/<ケース>/composite.png`。
+
+| モード | 内容 |
+|---|---|
+| `cli` | `buildSketch()`（= `processing-ts build`）の出力フォルダを静的サーバで配信して `index.html` を開く（standalone のランタイム・data/・スケッチの隣のファイル） |
+| `offline` | 同じ出力の `--sw` 版を一度開き、オフラインにして再読み込み（すべて Service Worker のキャッシュから） |
+| `cli-worker` | `--worker` 版（事前変換した関数を Worker で実行）。キャンバスはスクリーンショットで撮る |
+| `vite` / `dev` | ケースを `?pde` で import するアプリを Vite でビルドして配信 / Vite の dev サーバで開く（プラグインは `src/aot/vite.ts`） |
+| `worker` | dev サーバで `thread: "worker"`: draw() の無限ループ中もページが応答すること、`stopSketch()` で止まること、次の実行で新しいキャンバスに描くこと、`cursor()`/`surface.setTitle()` がページに届くこと |
+| `package` / `package-dev` | `vite build` したパッケージ（dist/）を `tests/aot/out/package-app/node_modules/@async0x4c/processing-ts` に置いたアプリから、パッケージ名で `SketchManager`（メインスレッド・Worker）・`/runtime` と `/vite` プラグインの `?pde` を使い、Vite でビルド / dev サーバで開く。既定フォントと worker.js が利用者のバンドラにアセットとしてコピーされること、dev サーバの事前バンドルでも動くことの確認 |
+
+## CI（.github/workflows/ci.yml）
+
+push と pull request で、`npm ci` → `npx playwright-core install chromium` → typecheck → `npm test` → `test:lang` → `test:visual`（main・`--exec worker`・`--exec aot`）→ `test:aot` → `size` → `bench -- --slack 2`。参照はコミット済みなので Processing は要らない。Chromium のテキストのラスタライズは OS で違うので、参照を作った開発機と同じ Windows のランナーで動かす。失敗したときは `tests/visual/out`・`tests/aot/out`・`tests/bench/out` を成果物として残す。時間の予算は共有ランナー向けに 2 倍の余裕（`--slack`）。サイズは厳密。
+
 ## 性能・サイズ計測（tools/bench）
 
 ```sh
@@ -193,10 +230,10 @@ node tools/bench/cli.ts all --update-budget   # 意図した変更でサイズ/�
 - 入力: `public/samples` の全スケッチ、`tests/visual/cases` の全ケース、生成した約 5,000 行のスケッチ（`synthetic-5k`、`tools/bench/inputs.ts`）。
 - parse: `src/lib/transpiler/SketchParser.ts` を esbuild で Node 用にバンドルし、入力ごとに新しいプロセスで「最初の 1 回（cold）」と「その後の中央値（warm）」を測る。
 - compile: 新コンパイラ全体（`compileSketch`: Lezer 解析 + 構文エラー + AST + 型検査 + コード生成）を同じ方法で測る。cold にはライブラリモデルの読み込みを含む。
-- transpile: ヘッドレス Chromium の新しいページで `SketchManager.transpileSketch`（新コンパイラ）を繰り返し、1 回目（cold）と 2 回目以降の中央値（warm）を出す。
+- transpile: ヘッドレス Chromium の新しいページで `SketchManager.transpileSketch`（新コンパイラ）を繰り返し、1 回目（cold）と 2 回目以降の中央値（warm）を出す。cached は変換キャッシュ（`CompileCache`）の効果: 新しいページで変換して IndexedDB に入れ、同じオリジンの別の新しいページで `transpileSketchCached()` が IndexedDB から取り出すまでの時間。
 - parse: 旧トランスパイラの ANTLR パーサ（比較用。ライブラリには含まれない）。
-- サイズはコード分割（esbuild の splitting）で測り、エントリから静的 import でたどれる部分（最初に読み込まれる量）と、動的 import でだけ読み込まれる部分（「+ on demand」: P2D/P3D・PShader・PShape）を別の行に出す。
-- 予算: `tools/bench/budget.json`。超えると終了コード 1（回帰検出用）。サイズは +5%、時間は +50%（最低 5ms）の余裕で `--update-budget` が書き換える。
+- サイズはコード分割（esbuild の splitting）で測り、エントリから静的 import でたどれる部分（最初に読み込まれる量）と、動的 import でだけ読み込まれる部分（「+ on demand」: P2D/P3D・PShader・PShape と、Worker 実行の WorkerRunner）を別の行に出す。「runtime」は `src/lib/runtime.ts`（SketchPlayer）。Worker のスクリプト（`worker/entry.ts`）も別の行。
+- 予算: `tools/bench/budget.json`。超えると終了コード 1（回帰検出用）。サイズは +5%、時間は +50%（最低 5ms）の余裕で `--update-budget` が書き換える。`--slack <倍率>` は時間の予算だけを倍にする（CI 用）。
 - 結果: `tests/bench/out/<command>.md` と `.json`（gitignore 済み）。
 
 2026-10-04 時点の主な値（P1-9 の後）: ブラウザでの変換は `simple_shooter_game`（199 行）が cold 22ms・warm 3ms、`synthetic-5k` が cold 84ms・warm 40ms（旧トランスパイラは 199 行の cold が約 170ms）。Node の compile は `synthetic-5k` の warm 54〜64ms（うち Lezer の解析 約 20ms）。バンドル（P2-10 の後）: ライブラリ 155 KiB gz（PixiJS は P2-1 で削除）、ランタイム単体（2D + 言語ランタイム、コンパイラなし）36 KiB gz、うち新コンパイラ 119 KiB gz（フロントエンド 40.6 KiB、Lezer パーサ単体 30.5 KiB、ライブラリモデル 36 KiB）、言語ランタイム 19 KiB gz。

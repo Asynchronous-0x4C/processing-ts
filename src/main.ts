@@ -4,6 +4,8 @@ import sample_data from "./scripts/samples.json";
 
 const manager: SketchManager = new SketchManager({
   keep_aspect_ratio: true,
+  // ?thread=worker runs sketches in a Web Worker (the stop button also ends endless loops).
+  thread: new URLSearchParams(location.search).get('thread') === 'worker' ? 'worker' : 'main',
   // Compiled sketches are kept by source in IndexedDB (not in development: the compiler changes there).
   cache: import.meta.env.PROD
 });
@@ -163,7 +165,8 @@ function getActiveTab() {
 function updateControlState() {
   runButton.disabled = isRunning;
   stopButton.disabled = !isRunning;
-  sketchCanvas.classList.toggle('running', isRunning);
+  // The worker mode puts a new canvas in place of the old one for each run.
+  manager.target_element?.classList.toggle('running', isRunning);
 }
 
 function initializeSampleSelector() {

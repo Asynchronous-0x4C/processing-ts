@@ -7,6 +7,14 @@ const CURSORS:Record<number,string>={
   8:"n-resize",9:"s-resize",10:"w-resize",11:"e-resize",12:"pointer",13:"move",
 };
 
+/** The page side of the window when the sketch runs in a worker (worker/entry.ts): cursor and title. */
+export type SurfaceHost={cursor(css:string):void;cursorImage(image:ImageBitmap,hotspotX:number,hotspotY:number):void;title(title:string):void};
+let host:SurfaceHost|null=null;
+
+export function setSurfaceHost(h:SurfaceHost|null){
+  host=h;
+}
+
 export class PSurface{
   readonly MIN_WINDOW_WIDTH=128;
   readonly MIN_WINDOW_HEIGHT=128;
@@ -23,6 +31,10 @@ export class PSurface{
   setCursor(kind:number|PImage,hotspotX=0,hotspotY=0){
     if(kind instanceof PImage){
       const src=kind.__canvas__;
+      if(src&&host){
+        void createImageBitmap(src as CanvasImageSource).then((b)=>host?.cursorImage(b,hotspotX,hotspotY));
+        return;
+      }
       if(!src||typeof document==="undefined")return;
       const c=document.createElement("canvas");
       c.width=kind.width;
@@ -44,11 +56,13 @@ export class PSurface{
   }
 
   setCursorStyle(css:string): void {
+    if(host)return host.cursor(css);
     const canvas=this.applet.g.canvas;
     if(canvas&&"style" in canvas)canvas.style.cursor=css;
   }
 
   setTitle(title:string){
-    document.title=title;
+    if(host)return host.title(title);
+    if(typeof document!=="undefined")document.title=title;
   }
 }

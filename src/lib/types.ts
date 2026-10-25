@@ -7,10 +7,11 @@ import type { PApplet } from "./runtime/PApplet";
  * @property thread "main" (default) runs the sketch on the page's thread; "worker" runs it in a Web
  *   Worker drawing to an OffscreenCanvas (the page stays responsive and stopSketch() can end an endless loop).
  * @property manual_step When true, the frame loop is not started automatically; advance frames with `step()`.
+ * @property workerURL The worker script (worker.js of the package) when the bundler did not find it (thread "worker").
  * @property cache Keep compiled sketches (by a hash of the source) in memory and IndexedDB: true, or a
  *   CompileCache of your own (SketchManager only).
  */
-export type SketchSettings={frameRate?:number,thread?:"main"|"worker",keep_aspect_ratio?:boolean,manual_step?:boolean,cache?:boolean|import("./CompileCache").CompileCache};
+export type SketchSettings={frameRate?:number,thread?:"main"|"worker",keep_aspect_ratio?:boolean,manual_step?:boolean,workerURL?:string|URL,cache?:boolean|import("./CompileCache").CompileCache};
 /**
  * @property files Other files of the sketch folder, relative to it ("data/a.png"): fetched before setup()
  *   so that names built at run time (loadImage("frame" + i + ".png")) are found too.

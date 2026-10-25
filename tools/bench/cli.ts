@@ -31,12 +31,16 @@ const { values: flags, positionals } = parseArgs({
     runs: { type: "string", default: "20" },
     filter: { type: "string" },
     "update-budget": { type: "boolean", default: false },
+    slack: { type: "string", default: "1" },
     help: { type: "boolean", short: "h", default: false },
   },
 });
 
 const budget: Budget = JSON.parse(fs.readFileSync(BUDGET_FILE, "utf8"));
 const RUNS = Number(flags.runs);
+/** --slack: time budgets times this factor (CI machines are slower and noisier than the one that set them). */
+const SLACK = Number(flags.slack);
+const timeLimit = (ms: number | undefined) => (ms === undefined ? undefined : Math.round(ms * SLACK * 10) / 10);
 
 function median(xs: number[]) {
   const s = [...xs].sort((a, b) => a - b);
@@ -91,7 +95,7 @@ console.log(JSON.stringify({ cold, warm: times[Math.floor(times.length / 2)], er
     if (p.status !== 0) throw new Error(`parse runner failed for ${input.name}:\n${p.stderr}`);
     const r = JSON.parse(p.stdout.trim().split("\n").pop()!) as { cold: number; warm: number; error: string | null };
     data[input.name] = { lines: input.lines, ...r };
-    const limit = budget.parse[input.name]?.warmMs;
+    const limit = timeLimit(budget.parse[input.name]?.warmMs);
     const over = limit !== undefined && r.warm > limit ? `**over ${limit}ms**` : limit !== undefined ? `≤ ${limit}ms` : undefined;
     if (limit !== undefined && r.warm > limit) failed = true;
     rows.push({ name: input.name, values: { lines: input.lines, "cold ms": ms(r.cold), "warm ms": ms(r.warm), error: r.error ? "yes" : "" }, over });
@@ -130,7 +134,7 @@ console.log(JSON.stringify({ cold, warm: times[Math.floor(times.length / 2)], di
     if (p.status !== 0) throw new Error(`compile runner failed for ${input.name}:\n${p.stderr}`);
     const r = JSON.parse(p.stdout.trim().split("\n").pop()!) as { cold: number; warm: number; diagnostics: number };
     data[input.name] = { lines: input.lines, ...r };
-    const limit = budget.compile[input.name]?.warmMs;
+    const limit = timeLimit(budget.compile[input.name]?.warmMs);
     const over = limit !== undefined && r.warm > limit ? `**over ${limit}ms**` : limit !== undefined ? `≤ ${limit}ms` : undefined;
     if (limit !== undefined && r.warm > limit) failed = true;
     rows.push({ name: input.name, values: { lines: input.lines, "cold ms": ms(r.cold), "warm ms": ms(r.warm), diagnostics: r.diagnostics || "" }, over });
@@ -159,7 +163,7 @@ async function benchTranspile(): Promise<{ md: string; failed: boolean; data: un
         error: cold.error ?? null,
       };
       data[input.name] = r;
-      const limit = budget.transpile[input.name]?.coldMs;
+      const limit = timeLimit(budget.transpile[input.name]?.coldMs);
       const over = limit !== undefined && r.coldMs > limit ? `**over ${limit}ms**` : limit !== undefined ? `≤ ${limit}ms` : undefined;
       if (limit !== undefined && r.coldMs > limit) failed = true;
       rows.push({
@@ -178,6 +182,7 @@ async function benchTranspile(): Promise<{ md: string; failed: boolean; data: un
 const SIZE_ENTRIES = [
   { name: "library (src/lib/index.ts)", entry: "src/lib/index.ts", external: [] },
   { name: "runtime (2D, no compiler: src/lib/runtime.ts)", entry: "src/lib/runtime.ts", external: [] },
+  { name: "worker script (thread \"worker\": src/lib/runtime/worker/entry.ts)", entry: "src/lib/runtime/worker/entry.ts", external: [] },
   { name: "parser (antlr4 + generated)", entry: "src/lib/transpiler/SketchParser.ts", external: [] },
   { name: "parser (lezer, src/compiler/grammar)", entry: "src/compiler/grammar/parser.ts", external: [] },
   { name: "compiler front end (lezer + AST, src/compiler/parse.ts)", entry: "src/compiler/parse.ts", external: [] },
@@ -196,21 +201,27 @@ function measureSize(code: Uint8Array): SizeResult {
   };
 }
 
+/** What loads on demand, by the module a dynamic import names (the worker runner, or the OpenGL/shape modules). */
+function lazyGroup(entryPoint: string): string {
+  return /worker\//.test(entryPoint) ? "worker runner (thread \"worker\")" : "P2D/P3D, PShader, PShape";
+}
+
 /**
  * Bundle an entry with code splitting: what loads at first is the entry with its static imports; the
- * dynamic imports (the OpenGL renderers) are measured separately as the part loaded on demand.
+ * dynamic imports (the OpenGL renderers, the worker runner) are measured separately as the parts loaded
+ * on demand.
  */
-async function bundleSizes(entry: string, external: string[]): Promise<{ initial: SizeResult; lazy: SizeResult | null }> {
+async function bundleSizes(entry: string, external: string[]): Promise<{ initial: SizeResult; lazy: Map<string, SizeResult> }> {
   const result = await build({
     entryPoints: [path.join(ROOT, entry)], bundle: true, minify: true, format: "esm", platform: "browser",
     external, write: false, logLevel: "silent", splitting: true, outdir: path.join(ROOT, "node_modules/.cache/size-out"), metafile: true,
   });
   const files = new Map(result.outputFiles.map((f) => [path.relative(ROOT, f.path).split(path.sep).join("/"), f.contents]));
   const outputs = result.metafile!.outputs;
-  const entryOut = Object.keys(outputs).find((k) => outputs[k].entryPoint)!;
-  const closure = (kinds: string[]) => {
-    const seen = new Set<string>([entryOut]);
-    const todo = [entryOut];
+  const entryOut = Object.keys(outputs).find((k) => outputs[k].entryPoint === entry)!;
+  const closure = (from: string, kinds: string[]) => {
+    const seen = new Set<string>([from]);
+    const todo = [from];
     while (todo.length) {
       for (const i of outputs[todo.pop()!].imports) {
         if (kinds.includes(i.kind) && !seen.has(i.path) && outputs[i.path]) {
@@ -222,9 +233,16 @@ async function bundleSizes(entry: string, external: string[]): Promise<{ initial
     return seen;
   };
   const cat = (keys: Iterable<string>) => Buffer.concat([...keys].filter((k) => k.endsWith(".js")).map((k) => Buffer.from(files.get(k)!)));
-  const initial = closure(["import-statement"]);
-  const lazy = [...closure(["import-statement", "dynamic-import"])].filter((k) => !initial.has(k));
-  return { initial: measureSize(cat(initial)), lazy: lazy.length ? measureSize(cat(lazy)) : null };
+  const initial = closure(entryOut, ["import-statement"]);
+  const groups = new Map<string, Set<string>>();
+  for (const k of closure(entryOut, ["import-statement", "dynamic-import"])) {
+    const ep = outputs[k].entryPoint;
+    if (initial.has(k) || !ep || k === entryOut) continue;
+    const g = groups.get(lazyGroup(ep)) ?? new Set<string>();
+    for (const c of closure(k, ["import-statement"])) if (!initial.has(c)) g.add(c);
+    groups.set(lazyGroup(ep), g);
+  }
+  return { initial: measureSize(cat(initial)), lazy: new Map([...groups].map(([n, g]) => [n, measureSize(cat(g))])) };
 }
 
 async function benchSize(): Promise<{ md: string; failed: boolean; data: unknown }> {
@@ -249,7 +267,7 @@ async function benchSize(): Promise<{ md: string; failed: boolean; data: unknown
   for (const e of SIZE_ENTRIES) {
     const { initial, lazy } = await bundleSizes(e.entry, e.external);
     add(e.name, initial);
-    if (lazy) add(`${e.name}: + on demand (P2D/P3D, PShader, PShape)`, lazy);
+    for (const [group, r] of [...lazy].sort()) add(`${e.name}: + on demand (${group})`, r);
   }
   return { md: table("bundle size (esbuild --bundle --minify --splitting; first load, then what loads on demand; gzip -9, brotli q11)", ["min KiB", "gzip KiB", "brotli KiB"], rows), failed, data };
 }
@@ -266,6 +284,7 @@ function usage(): never {
   --runs n          warm runs per input (default 20)
   --filter text     only inputs whose name contains text
   --update-budget   rewrite tools/bench/budget.json limits from current values (+5% size, +50% time)
+  --slack factor    multiply the time budgets (e.g. 2 on CI machines); sizes are exact
 
 Budgets (tools/bench/budget.json) are regression guards: the command exits 1 when one is exceeded.
 Results: tests/bench/out/<command>.md and .json`);

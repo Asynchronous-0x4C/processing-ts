@@ -20,8 +20,9 @@ import { standaloneRuntimeDir } from "./standalone.ts";
  * @property sketchOnly Only sketch.js (and its map): for pages that bring their own runtime.
  * @property sw Write sw.js and register it (offline use).
  * @property title The page title (default: the sketch name).
+ * @property worker Run the sketch in a Web Worker (SketchSettings.thread "worker"): the page stays responsive.
  */
-export type BuildOptions = { out?: string; runtime?: string; sketchOnly?: boolean; sw?: boolean; title?: string };
+export type BuildOptions = { out?: string; runtime?: string; sketchOnly?: boolean; sw?: boolean; title?: string; worker?: boolean };
 
 export type BuildReport = { ok: boolean; errors: string[]; out: string; files: string[]; name: string; compileMs: number };
 
@@ -76,7 +77,7 @@ export async function buildSketch(sketchDir: string, options: BuildOptions = {})
     runtimeURL = `./${RUNTIME_DIR}/`;
   }
 
-  write("index.html", indexHtml(options.title ?? folder.name, runtimeURL, !!options.sw));
+  write("index.html", indexHtml(options.title ?? folder.name, runtimeURL, !!options.sw, !!options.worker));
   if (options.sw) {
     // Everything but the worker itself, cached at install; a new build (other content) is a new cache.
     const hash = crypto.createHash("sha256");
@@ -94,7 +95,7 @@ function isInside(p: string, dir: string) {
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 /** The page: the canvas fills the window until size() sets it (fullScreen() sketches get the window). */
-export function indexHtml(title: string, runtimeURL: string, sw: boolean): string {
+export function indexHtml(title: string, runtimeURL: string, sw: boolean, worker = false): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -112,7 +113,7 @@ export function indexHtml(title: string, runtimeURL: string, sw: boolean): strin
 <script type="module">
 import { SketchPlayer } from ${JSON.stringify(runtimeURL + "runtime.js")};
 import sketch from "./sketch.js";
-const player = new SketchPlayer();
+const player = new SketchPlayer(${worker ? `{ thread: "worker" }` : ""});
 player.mountPApplet(document.getElementById("sketch"));
 player.addEventListener("log", (line) => console.log(...line));
 player.addEventListener("error", (message) => console.error(message));

@@ -11,6 +11,15 @@
       "gzipKiB": 41.5,
       "targetKiB": 40
     },
+    "runtime (2D, no compiler: src/lib/runtime.ts): + on demand (worker runner (thread \"worker\"))": {
+      "gzipKiB": 1.9
+    },
+    "worker script (thread \"worker\": src/lib/runtime/worker/entry.ts)": {
+      "gzipKiB": 51.7
+    },
+    "worker script (thread \"worker\": src/lib/runtime/worker/entry.ts): + on demand (P2D/P3D, PShader, PShape)": {
+      "gzipKiB": 42.4
+    },
     "parser (antlr4 + generated)": {
       "gzipKiB": 72.5
     },

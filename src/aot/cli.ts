@@ -16,6 +16,7 @@ const USAGE = `processing-ts ${COMPILER_VERSION}
       --runtime <url>    load runtime.js from this folder URL instead of copying the runtime
       --sketch-only      write only sketch.js (and sketch.js.map), for pages with their own runtime
       --title <text>     page title (default: the sketch name)
+      --worker           run the sketch in a Web Worker (the page stays responsive)
   processing-ts check <sketchDir>   Report compile errors (exit code 1 when there are any)
 
 <sketchDir> is a Processing sketch folder (main tab <folder>.pde, other tabs, data/) or its main .pde file.`;
@@ -30,6 +31,7 @@ function main(argv: string[]): Promise<number> | number {
       runtime: { type: "string" },
       "sketch-only": { type: "boolean", default: false },
       title: { type: "string" },
+      worker: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -51,7 +53,7 @@ function main(argv: string[]): Promise<number> | number {
     return errors.length ? 1 : 0;
   }
   if (command === "build") {
-    return buildSketch(dir, { out: values.out, sw: values.sw, runtime: values.runtime, sketchOnly: values["sketch-only"], title: values.title }).then((r) => {
+    return buildSketch(dir, { out: values.out, sw: values.sw, runtime: values.runtime, sketchOnly: values["sketch-only"], title: values.title, worker: values.worker }).then((r) => {
       for (const e of r.errors) console.error(e);
       if (!r.ok) return 1;
       console.log(`${r.name}: ${r.files.length} files in ${path.relative(process.cwd(), r.out) || "."} (compiled in ${r.compileMs.toFixed(0)}ms)`);

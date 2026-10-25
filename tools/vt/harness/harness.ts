@@ -42,7 +42,10 @@ class Session {
   readonly canvas = document.createElement("canvas");
   readonly manager: SketchManager | SketchPlayer;
 
+  readonly exec: RunOptions["exec"];
+
   constructor(sketchBase: string, exec: RunOptions["exec"] = "main") {
+    this.exec = exec;
     const settings = { frameRate: 60, thread: exec === "worker" ? "worker" : "main", keep_aspect_ratio: false, manual_step: true } as const;
     // Sketches compiled ahead of time need only the runtime (SketchPlayer, no compiler, no new Function).
     this.manager = exec === "aot" ? new SketchPlayer(settings) : new SketchManager(settings);
@@ -95,25 +98,42 @@ class Session {
     this.frameMs.push(performance.now() - t);
   }
 
-  result(ok: boolean): Result {
-    this.manager.flushOutput();
-    let png: string | undefined;
+  /** The canvas as a PNG data URL (from the worker in the worker mode: the page cannot read that canvas). */
+  private async png(): Promise<{ url: string; width: number; height: number } | undefined> {
+    if (this.exec !== "worker") {
+      const c = this.manager.target_element!;
+      return { url: c.toDataURL("image/png"), width: c.width, height: c.height };
+    }
+    const blob = await this.manager.capture("image/png");
+    if (!blob) return undefined;
+    const bmp = await createImageBitmap(blob);
+    const url = await new Promise<string>((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.readAsDataURL(blob);
+    });
+    return { url, width: bmp.width, height: bmp.height };
+  }
+
+  async result(ok: boolean): Promise<Result> {
+    await this.manager.flushOutput();
+    let shot: Awaited<ReturnType<Session["png"]>>;
     if (ok) {
       this.phase = "capture";
-      png = this.canvas.toDataURL("image/png");
+      shot = await this.png();
       this.phase = "done";
     } else {
       try {
-        png = this.canvas.toDataURL("image/png");
+        shot = await this.png();
       } catch {
         // canvas unusable
       }
     }
-    const { phase, logs, errors, transpileMs, timings, setupMs, frameMs, code, canvas } = this;
-    return { ok: ok && errors.length === 0, phase, png, width: png ? canvas.width : 0, height: png ? canvas.height : 0, logs, errors, transpileMs, timings, setupMs, frameMs, code };
+    const { phase, logs, errors, transpileMs, timings, setupMs, frameMs, code } = this;
+    return { ok: ok && errors.length === 0, phase, png: shot?.url, width: shot?.width ?? 0, height: shot?.height ?? 0, logs, errors, transpileMs, timings, setupMs, frameMs, code };
   }
 
-  fail(e: unknown): Result {
+  fail(e: unknown): Promise<Result> {
     this.errors.push(`[${this.phase}] ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
     return this.result(false);
   }
@@ -152,13 +172,13 @@ async function step(): Promise<Result | null> {
   }
 }
 
-function finish(): Result {
+function finish(): Promise<Result> {
   return session!.result(true);
 }
 
 /** Where the sketch canvas is on the page (for mouse input). */
 function canvasRect() {
-  const r = session!.canvas.getBoundingClientRect();
+  const r = session!.manager.target_element!.getBoundingClientRect();
   return { x: r.left, y: r.top, width: r.width, height: r.height };
 }
 

@@ -1,5 +1,6 @@
 // The runtime as plain ES modules for pages without a bundler (the output of `processing-ts build`):
-// runtime.js (SketchPlayer), webgl.js, their chunks (the OpenGL part loads on demand) and fonts/.
+// runtime.js (SketchPlayer), webgl.js, worker.js (thread "worker"), their chunks (the OpenGL part loads on
+// demand) and fonts/.
 // The published package ships it prebuilt in dist/standalone/; in the repository it is built from src/.
 import fs from "node:fs";
 import path from "node:path";
@@ -7,14 +8,39 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * esbuild plugin: src/lib/runtime/assetURLs.ts with literal URLs of the files next to the built chunks
+ * (fonts/, worker.js), the form bundlers that take the built files in copy as assets.
+ */
+export function literalAssetURLs(root: string) {
+  const file = path.resolve(root, "src/lib/runtime/assetURLs.ts");
+  return {
+    name: "literal-asset-urls",
+    setup(b: { onLoad(o: { filter: RegExp }, f: (a: { path: string }) => { contents: string; loader: "js" } | undefined): void }) {
+      b.onLoad({ filter: /assetURLs\.ts$/ }, (args) => path.resolve(args.path) !== file ? undefined : {
+        loader: "js",
+        contents: [
+          `export function defaultFontFileURL() { return new URL("./fonts/ProcessingSansPro-Regular.ttf", import.meta.url); }`,
+          `export function workerScriptURL() { return new URL("./worker.js", import.meta.url); }`,
+        ].join("\n"),
+      });
+    },
+  };
+}
+
 /** Build the standalone runtime from the sources into `outDir` (needs esbuild, a devDependency). */
 export async function buildStandaloneRuntime(root: string, outDir: string, minify = true): Promise<void> {
   const { build } = await import("esbuild");
   fs.rmSync(outDir, { recursive: true, force: true });
   await build({
-    entryPoints: { runtime: path.join(root, "src/lib/runtime.ts"), webgl: path.join(root, "src/lib/webgl.ts") },
+    entryPoints: {
+      runtime: path.join(root, "src/lib/runtime.ts"),
+      webgl: path.join(root, "src/lib/webgl.ts"),
+      worker: path.join(root, "src/lib/runtime/worker/entry.ts"),
+    },
     bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", minify,
     outdir: outDir, chunkNames: "chunk-[hash]", logLevel: "warning", legalComments: "eof",
+    plugins: [literalAssetURLs(root)],
   });
   fs.cpSync(path.join(root, "src/lib/runtime/fonts"), path.join(outDir, "fonts"), { recursive: true });
 }

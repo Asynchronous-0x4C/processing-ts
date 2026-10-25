@@ -1,6 +1,7 @@
 // loadShape(): SVG documents and Wavefront OBJ models as PShape trees, written from the file formats'
 // specifications (SVG 1.1 paths, shapes, styles and transforms; OBJ v/vt/vn/f with MTL materials).
 import { PShape } from "../PShape";
+import { parseXml, type XmlElement } from "./xmlLite";
 import { PMatrix3D } from "../PMatrix3D";
 import type { PGraphics } from "../PGraphics";
 import type { PImage } from "../PImage";
@@ -85,7 +86,7 @@ function parseTransform(s:string|null):PMatrix3D|null{
   return found?m:null;
 }
 
-function styleOf(el:Element,parent:SvgStyle):SvgStyle{
+function styleOf(el:XmlElement,parent:SvgStyle):SvgStyle{
   const s={...parent};
   const props=new Map<string,string>();
   for(const name of ["fill","stroke","stroke-width","fill-opacity","stroke-opacity","opacity","stroke-linecap","stroke-linejoin"]){
@@ -265,7 +266,7 @@ function parsePath(shape:PShape,d:string){
   }
 }
 
-function svgElement(el:Element,g:PGraphics,parentStyle:SvgStyle):PShape|null{
+function svgElement(el:XmlElement,g:PGraphics,parentStyle:SvgStyle):PShape|null{
   const tag=el.localName;
   if(tag==="defs"||tag==="title"||tag==="desc"||tag==="metadata"||tag==="style"||tag==="clipPath"||tag==="mask"||tag==="linearGradient"||tag==="radialGradient"||tag==="symbol"||tag==="pattern")return null;
   if(el.getAttribute("display")==="none")return null;
@@ -343,9 +344,8 @@ function svgElement(el:Element,g:PGraphics,parentStyle:SvgStyle):PShape|null{
 
 /** An SVG document as a GROUP shape (its size from width/height, or the viewBox). */
 export function loadSVG(text:string,g:PGraphics):PShape|null{
-  if(typeof DOMParser==="undefined")return null;
-  const doc=new DOMParser().parseFromString(text,"image/svg+xml");
-  const root=doc.documentElement;
+  // DOMParser on the page; the small reader in workers.
+  const root:XmlElement|null=typeof DOMParser==="undefined"?parseXml(text):new DOMParser().parseFromString(text,"image/svg+xml").documentElement as unknown as XmlElement;
   if(!root||root.localName!=="svg")return null;
   const base:SvgStyle={fill:0xff000000|0,stroke:null,strokeWeight:1,fillOpacity:1,strokeOpacity:1,opacity:1,cap:2,join:8};
   const shape=svgElement(root,g,base)!;
