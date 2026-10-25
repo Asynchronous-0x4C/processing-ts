@@ -19,13 +19,16 @@ export type ShapeVertex={
   code:number,c?:number[],
   /** a contour (beginContour()) starts here */
   brk?:boolean,
+  /** custom attributes (attrib*()): the renderer method and its arguments */
+  at?:[string,unknown[]][],
 };
 
 /** The style a shape draws with (taken from the renderer when the shape is created). */
 type ShapeStyle={
   fill:boolean,fillColor:number,stroke:boolean,strokeColor:number,strokeWeight:number,
   strokeCap:number,strokeJoin:number,tint:boolean,tintColor:number,
-  ambient:number,specular:number,emissive:number,shininess:number,
+  /** setAmbient: ambient() was called (else the ambient color follows the fill, per vertex) */
+  setAmbient:boolean,ambient:number,specular:number,emissive:number,shininess:number,
 };
 
 /**
@@ -105,7 +108,7 @@ export class PShape extends PConstants{
       stroke:s?.stroke??true,strokeColor:s?.strokeColor??(0xff000000|0),strokeWeight:s?.strokeWeight??1,
       strokeCap:s?.strokeCap??2,strokeJoin:s?.strokeJoin??8,
       tint:false,tintColor:-1,
-      ambient:s?(s.setAmbient?s.ambientColor:s.fillColor):-1,specular:s?.specularColor??(0xff808080|0),emissive:s?.emissiveColor??(0xff000000|0),shininess:s?.shininess??1,
+      setAmbient:!!s?.setAmbient,ambient:s?(s.setAmbient?s.ambientColor:s.fillColor):-1,specular:s?.specularColor??(0xff808080|0),emissive:s?.emissiveColor??(0xff000000|0),shininess:s?.shininess??1,
     };
     this.is3D_=!!pg?.is3D();
   }
@@ -138,9 +141,18 @@ export class PShape extends PConstants{
       vt.brk=true;
       this.nextBreak=false;
     }
+    if(this.attribs.size)vt.at=[...this.attribs.values()];
     this.vertices.push(vt);
     return vt;
   }
+
+  /** Custom attributes for the vertices that follow, by name: the renderer call that sets them. */
+  private attribs=new Map<string,[string,unknown[]]>();
+
+  attrib(name:string,...v:unknown[]){this.attribs.set(name,["attrib",[name,...v]]);}
+  attribPosition(name:string,x:number,y:number,z:number){this.attribs.set(name,["attribPosition",[name,x,y,z]]);}
+  attribNormal(name:string,x:number,y:number,z:number){this.attribs.set(name,["attribNormal",[name,x,y,z]]);}
+  attribColor(name:string,c:number){this.attribs.set(name,["attribColor",[name,c]]);}
 
   /** vertex(x, y), (x, y, z), (x, y, u, v) or (x, y, z, u, v) */
   vertex(x:number,y:number,a?:number,b?:number,c?:number){
@@ -238,7 +250,7 @@ export class PShape extends PConstants{
     this.style.tint=false;
   }
 
-  ambient(...a:number[]){this.style.ambient=this.color(a);}
+  ambient(...a:number[]){this.style.ambient=this.color(a);this.style.setAmbient=true;}
   specular(...a:number[]){this.style.specular=this.color(a);}
   emissive(...a:number[]){this.style.emissive=this.color(a);}
   shininess(s:number){this.style.shininess=s;}
@@ -323,7 +335,7 @@ export class PShape extends PConstants{
     if(vt){vt.u=u;vt.v=v;}
   }
 
-  setAmbient(a:number,b?:number){this.style.ambient=b??a;}
+  setAmbient(a:number,b?:number){this.style.ambient=b??a;this.style.setAmbient=true;}
   setSpecular(a:number,b?:number){this.style.specular=b??a;}
   setEmissive(a:number,b?:number){this.style.emissive=b??a;}
   setShininess(a:number,b?:number){this.style.shininess=b??a;}
@@ -595,7 +607,7 @@ export class PShape extends PConstants{
     gs.stroke=s.stroke;gs.strokeColor=s.strokeColor;gs.strokeWeight=s.strokeWeight;
     gs.strokeCap=s.strokeCap;gs.strokeJoin=s.strokeJoin;
     gs.tint=s.tint;gs.tintColor=s.tintColor;
-    gs.setAmbient=true;gs.ambientColor=s.ambient;gs.specularColor=s.specular;gs.emissiveColor=s.emissive;gs.shininess=s.shininess;
+    gs.setAmbient=s.setAmbient;gs.ambientColor=s.ambient;gs.specularColor=s.specular;gs.emissiveColor=s.emissive;gs.shininess=s.shininess;
   }
 
   private drawPrimitive(g:PGraphics){
@@ -635,6 +647,7 @@ export class PShape extends PConstants{
         gs.strokeWeight=v.weight;
       }
       if(this.hasNormals)g.normal(v.nx,v.ny,v.nz);
+      if(v.at)for(const [fn,args] of v.at)(g[fn as "attrib"] as (...a:unknown[])=>void).apply(g,args);
       switch(v.code){
         case 1:
           if(this.is3D_)(g.bezierVertex as (...a:number[])=>void)(...v.c!,v.x,v.y,v.z);
@@ -660,12 +673,79 @@ export class PShape extends PConstants{
     g.endShape(this.closed?CLOSE:0);
   }
 
+  /**
+   * getTessellation(): a GROUP whose first child holds the fill geometry and the second the stroke lines
+   * (as in Processing 4), here as copies of the shape with only fills and only strokes.
+   */
   getTessellation():PShape{
-    return this;
+    const group=this.copy();
+    group.family=GROUP;
+    group.kind=0;
+    group.vertices=[];
+    group.children=[];
+    group.parent=null;
+    const fill=this.copy(),lines=this.copy();
+    fill.matrix=lines.matrix=null;
+    fill.beginTessellation();
+    fill.setStroke(false);
+    lines.setFill(false);
+    group.addChild(fill);
+    group.addChild(lines);
+    return group;
   }
 
-  beginTessellation(){}
-  endTessellation(){}
+  /** A deep copy (vertices, children, style, transformation); caches are not copied. */
+  copy():PShape{
+    const c=Object.assign(Object.create(PShape.prototype) as PShape,this);
+    c.style={...this.style};
+    c.params=[...this.params];
+    c.vertices=this.vertices.map((v)=>({...v}));
+    c.matrix=this.matrix?new PMatrix3D(this.matrix):null;
+    c.__cache__=null;
+    c.parent=null;
+    c.children=[];
+    (c as unknown as {named:Map<string,PShape>}).named=new Map();
+    for(const ch of this.children)c.addChild(ch.copy());
+    return c;
+  }
+
+  /**
+   * beginTessellation([kind]): the shape's vertices can be read and changed as triangles: primitives
+   * (box, rect, triangle, quad) become TRIANGLES geometry with their vertices.
+   */
+  beginTessellation(_kind?:number){
+    for(const c of this.children)c.beginTessellation();
+    if(this.family!==PShape.PRIMITIVE)return;
+    const p=this.params;
+    const tris:number[][]=[];
+    const quad=(a:number[],b:number[],c:number[],d:number[],n:number[])=>{tris.push([...a,...n],[...b,...n],[...c,...n],[...a,...n],[...c,...n],[...d,...n]);};
+    if(this.kind===BOX){
+      const w=(p[0]??0)/2,h=(p[1]??p[0]??0)/2,d=(p[2]??p[0]??0)/2;
+      quad([-w,-h,d],[w,-h,d],[w,h,d],[-w,h,d],[0,0,1]);
+      quad([w,-h,d],[w,-h,-d],[w,h,-d],[w,h,d],[1,0,0]);
+      quad([w,-h,-d],[-w,-h,-d],[-w,h,-d],[w,h,-d],[0,0,-1]);
+      quad([-w,-h,-d],[-w,-h,d],[-w,h,d],[-w,h,-d],[-1,0,0]);
+      quad([-w,-h,-d],[w,-h,-d],[w,-h,d],[-w,-h,d],[0,-1,0]);
+      quad([-w,h,d],[w,h,d],[w,h,-d],[-w,h,-d],[0,1,0]);
+    }else if(this.kind===RECT){
+      const [x,y,w,h]=p;
+      quad([x,y,0],[x+w,y,0],[x+w,y+h,0],[x,y+h,0],[0,0,1]);
+    }else if(this.kind===TRIANGLE){
+      tris.push([p[0],p[1],0,0,0,1],[p[2],p[3],0,0,0,1],[p[4],p[5],0,0,0,1]);
+    }else if(this.kind===QUAD){
+      quad([p[0],p[1],0],[p[2],p[3],0],[p[4],p[5],0],[p[6],p[7],0],[0,0,1]);
+    }else return;
+    const s=this.style;
+    this.family=PShape.GEOMETRY;
+    this.kind=9; // TRIANGLES
+    this.vertices=tris.map((t)=>({x:t[0],y:t[1],z:t[2],u:0,v:0,fill:s.fill?s.fillColor:0,stroke:s.strokeColor,weight:s.strokeWeight,nx:t[3],ny:t[4],nz:t[5],code:0}));
+    this.hasNormals=true;
+    this.touch();
+  }
+
+  endTessellation(){
+    this.touch();
+  }
 }
 
 // Changes reach the renderers' caches: methods that change a shape bump its version (and its parents');

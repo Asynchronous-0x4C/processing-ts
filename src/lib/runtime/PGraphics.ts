@@ -897,6 +897,11 @@ export abstract class PGraphics extends PImage{
   resetShader(_kind?:number){this.unavailable("resetShader",true);}
   /** hint(): the OpenGL renderers act on these; JAVA2D ignores them. */
   hint(_which:number){}
+  /** Custom vertex attributes for shaders (P2D/P3D; ignored here). */
+  attrib(_name:string,..._v:unknown[]){}
+  attribPosition(_name:string,_x:number,_y:number,_z:number){}
+  attribNormal(_name:string,_x:number,_y:number,_z:number){}
+  attribColor(_name:string,_c:number){}
   flush(){}
 
   // --- renderer hooks -------------------------------------------------------------------------------

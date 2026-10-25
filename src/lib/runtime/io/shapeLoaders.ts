@@ -428,7 +428,7 @@ export function loadOBJ(text:string,g:PGraphics,dir:string,loadText:(name:string
         face.style.fill=true;
         face.style.fillColor=fill;
         face.style.stroke=false;
-        if(mtl?.ka!=null)face.style.ambient=mtl.ka;
+        if(mtl?.ka!=null){face.style.ambient=mtl.ka;face.style.setAmbient=true;}
         else face.style.ambient=fill;
         if(mtl?.ks!=null)face.style.specular=mtl.ks;
         if(mtl)face.style.shininess=mtl.ns;

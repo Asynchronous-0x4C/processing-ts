@@ -74,6 +74,14 @@ export class PMatrix3D{
     this.m30=f(n[12]);this.m31=f(n[13]);this.m32=f(n[14]);this.m33=f(n[15]);
   }
 
+  /** Copy another matrix's elements (already floats) without rounding: the renderer's matrix stack. */
+  __copy__(m:PMatrix3D){
+    this.m00=m.m00;this.m01=m.m01;this.m02=m.m02;this.m03=m.m03;
+    this.m10=m.m10;this.m11=m.m11;this.m12=m.m12;this.m13=m.m13;
+    this.m20=m.m20;this.m21=m.m21;this.m22=m.m22;this.m23=m.m23;
+    this.m30=m.m30;this.m31=m.m31;this.m32=m.m32;this.m33=m.m33;
+  }
+
   translate(tx:number,ty:number,tz=0){
     this.m03=f(this.m03+f(f(f(tx*this.m00)+f(ty*this.m01))+f(tz*this.m02)));
     this.m13=f(this.m13+f(f(f(tx*this.m10)+f(ty*this.m11))+f(tz*this.m12)));

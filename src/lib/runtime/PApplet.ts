@@ -22,6 +22,7 @@ import { Random } from "../../runtime/lang/util.ts";
 import { Noise } from "./util/noise";
 import { blendColor } from "./util/imageOps";
 import { exceptions } from "../../runtime/lang/index.ts";
+import { parseIntOr, parseFloatOr, parseBooleanStr, parseIntArray, parseFloatArray } from "../../runtime/lang/misc.ts";
 
 /** The smallest/largest of the arguments or of one array (Processing reads list[0] first: an empty array throws). */
 function extreme(a:(number|ArrayLike<number>)[],better:(x:number,y:number)=>boolean):number{
@@ -58,7 +59,7 @@ const DELEGATED=[
   "ambient","specular","emissive","shininess","normal","texture","textureMode","textureWrap",
   "camera","beginCamera","endCamera","perspective","ortho","frustum","printCamera","printProjection",
   "screenZ","modelX","modelY","modelZ","shader","resetShader","flush","hint",
-  "createShape","shape",
+  "createShape","shape","attrib","attribPosition","attribNormal","attribColor",
 ] as const;
 
 export interface PApplet extends Pick<PGraphics,typeof DELEGATED[number]>{}
@@ -175,6 +176,40 @@ export class PApplet extends PConstants{
     this.__initialized__=true;
     this.g.background(204);
   }
+
+  /** parseInt(x[, otherwise]): Strings as int() reads them, numbers truncated, booleans 1/0; arrays element-wise. */
+  parseInt(x:unknown,otherwise?:number):number|Int32Array{
+    if(x!==null&&typeof x==="object")return parseIntArray(x as ArrayLike<unknown>);
+    if(typeof x==="string"||x===null)return parseIntOr(x as string|null,otherwise??0);
+    if(typeof x==="boolean")return x?1:0;
+    return Math.trunc(x as number)|0;
+  }
+
+  parseFloat(x:unknown,otherwise?:number):number|Float32Array{
+    if(x!==null&&typeof x==="object")return parseFloatArray(x as ArrayLike<unknown>);
+    if(typeof x==="string"||x===null)return parseFloatOr(x as string|null,otherwise??NaN);
+    return Math.fround(x as number);
+  }
+
+  parseBoolean(x:unknown):boolean|boolean[]{
+    if(x!==null&&typeof x==="object")return Array.from(x as ArrayLike<unknown>,(v)=>this.parseBoolean(v) as boolean);
+    return typeof x==="string"||x===null?parseBooleanStr(x as string|null):(x as number)!==0;
+  }
+
+  parseByte(x:number|boolean):number{
+    return typeof x==="boolean"?(x?1:0):((Math.trunc(x)<<24)>>24);
+  }
+
+  parseChar(x:number):number{
+    return x&0xffff;
+  }
+
+  /** orientation() (Android), windowTitle()/windowResizable()/windowMove()/windowRatio(): the browser page owns the window. */
+  orientation(_which:number){}
+  windowTitle(_title:string){}
+  windowResizable(_resizable:boolean){}
+  windowMove(_x:number,_y:number){}
+  windowRatio(_w:number,_h:number){}
 
   getSurface(){
     return this.surface;

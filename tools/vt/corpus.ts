@@ -27,6 +27,8 @@ export type CorpusResult = {
 
 /** Visual comparison as in the test cases: pixelmatch threshold and the share of differing pixels allowed. */
 const VISUAL = { threshold: 0.1, maxDiffRatio: 0.01 };
+/** P2D/P3D: rasterization differs between GPUs (the 3D test cases allow 2%). */
+const VISUAL_GL = { threshold: 0.1, maxDiffRatio: 0.02 };
 
 /**
  * Whether a sketch draws the same frames on every run: no unseeded random()/noise(), no clock or date,
@@ -128,7 +130,7 @@ export async function runCorpus(opts: {
         error,
         transpileMs: run.transpileMs,
       };
-      if (opts.ref && result.renderer === "JAVA2D" && outcome === "ok" && run.png) {
+      if (opts.ref && outcome === "ok" && run.png) {
         const why = isDeterministic(code);
         if (why) result.visual = "nondeterministic";
         else {
@@ -140,9 +142,10 @@ export async function runCorpus(opts: {
             const ref = readPng(refPng), actual = pngFromDataUrl(run.png);
             const out = path.join(opts.ref.outDir, rel.replace(/[\/ ]/g, "_"));
             fs.mkdirSync(path.dirname(out), { recursive: true });
-            const c = compare(ref, actual, VISUAL.threshold, out + ".diff.png");
+            const crit = result.renderer === "JAVA2D" ? VISUAL : VISUAL_GL;
+            const c = compare(ref, actual, crit.threshold, out + ".diff.png");
             result.diffRatio = c.diffRatio;
-            result.visual = !c.sizeMismatch && c.diffRatio <= VISUAL.maxDiffRatio ? "match" : "differ";
+            result.visual = !c.sizeMismatch && c.diffRatio <= crit.maxDiffRatio ? "match" : "differ";
             if (result.visual === "differ") composite([ref, actual, readPng(out + ".diff.png")], out + ".png");
             fs.rmSync(out + ".diff.png", { force: true });
           }
@@ -162,14 +165,24 @@ function visualSection(results: CorpusResult[]): string[] {
   if (!v.length) return [];
   const match = v.filter((r) => r.visual === "match"), differ = v.filter((r) => r.visual === "differ");
   const compared = match.length + differ.length;
+  const by = (renderers: string[]) => {
+    const g = v.filter((r) => renderers.includes(r.renderer));
+    const m = g.filter((r) => r.visual === "match").length, d = g.filter((r) => r.visual === "differ").length;
+    return `| ${renderers.join("/")} | ${m + d} | ${m} | ${m + d ? ((m / (m + d)) * 100).toFixed(0) : "-"}% | ${g.filter((r) => r.visual === "nondeterministic").length} | ${g.filter((r) => r.visual === "noref").length} |`;
+  };
   return [
-    "## 見た目の一致（JAVA2D・決定的）",
+    "## 見た目の一致（決定的なスケッチ）",
     "",
-    `比較 ${compared} 本中 **${match.length} 本一致（${compared ? ((match.length / compared) * 100).toFixed(0) : "-"}%）**。決定的でないので比べなかったもの ${v.filter((r) => r.visual === "nondeterministic").length} 本、参照が作れなかったもの ${v.filter((r) => r.visual === "noref").length} 本。`,
+    `比較 ${compared} 本中 **${match.length} 本一致（${compared ? ((match.length / compared) * 100).toFixed(0) : "-"}%）**。基準は不一致ピクセルが JAVA2D で 1%、P2D/P3D で 2% 以下。`,
     "",
-    "| 不一致のスケッチ | 差分 |",
-    "|---|---:|",
-    ...differ.sort((a, b) => (b.diffRatio ?? 0) - (a.diffRatio ?? 0)).map((r) => `| ${r.name} | ${((r.diffRatio ?? 0) * 100).toFixed(2)}% |`),
+    "| レンダラ | 比較 | 一致 | 一致率 | 決定的でない | 参照なし |",
+    "|---|---:|---:|---:|---:|---:|",
+    by(["JAVA2D"]),
+    by(["P2D", "P3D"]),
+    "",
+    "| 不一致のスケッチ | レンダラ | 差分 |",
+    "|---|---|---:|",
+    ...differ.sort((a, b) => (b.diffRatio ?? 0) - (a.diffRatio ?? 0)).map((r) => `| ${r.name} | ${r.renderer} | ${((r.diffRatio ?? 0) * 100).toFixed(2)}% |`),
     "",
   ];
 }
@@ -187,7 +200,7 @@ export function corpusReport(results: CorpusResult[], meta: { examples: string; 
     "",
     `\`npm run vt -- corpus\` の出力（${new Date().toISOString().slice(0, 10)}）。Processing ${meta.processing} の同梱 examples をヘッドレス Chromium で変換し、setup + draw ${meta.frames} 回を実行した結果。`,
     results.some((r) => r.visual)
-      ? "見た目の一致（`--ref`）: JAVA2D で完走し、時刻や種なしの乱数に依存しないスケッチを、本物の Processing の同じフレームと比べた（視覚テストと同じ基準: 不一致ピクセル 1% 以下）。"
+      ? "見た目の一致（`--ref`）: 完走し、時刻や種なしの乱数に依存しないスケッチを、本物の Processing の同じフレームと比べた（視覚テストと同じ基準: 不一致ピクセル JAVA2D 1%・P2D/P3D 2% 以下）。"
       : "「ok」はエラーなく完走したことだけを意味し、見た目の一致は確認していない（`--ref` で比較する）。",
     "",
     "## 集計",

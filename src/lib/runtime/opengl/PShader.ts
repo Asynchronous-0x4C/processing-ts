@@ -56,10 +56,13 @@ function hoistGlobalInitializers(src:string):string{
   let stmt="";
   let i=0;
   const flushStmt=(end:string)=>{
-    const m=decl.exec(stmt);
-    if(depth===0&&m&&!/^\s*(const|uniform|in|out|attribute|varying)\b/.test(stmt)&&!hasTopLevelComma(m[3])){
+    // comments and blank lines before the declaration stay where they are
+    const lead=/^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*/.exec(stmt)![0];
+    const body=stmt.slice(lead.length);
+    const m=decl.exec(body);
+    if(depth===0&&m&&!/^\s*(const|uniform|in|out|attribute|varying)\b/.test(body)&&!hasTopLevelComma(m[3])){
       // (the line count stays: error messages name the lines of the original)
-      out+=`${stmt.slice(0,stmt.indexOf(m[1]))}${m[1]} ${m[2]}${end}${"\n".repeat((m[3].match(/\n/g)??[]).length)}`;
+      out+=`${lead}${body.slice(0,body.indexOf(m[1]))}${m[1]} ${m[2]}${end}${"\n".repeat((m[3].match(/\n/g)??[]).length)}`;
       moved.push(`${m[2]} =${m[3].replace(/\s*\n\s*/g," ")};`);
     }else out+=stmt+end;
     stmt="";
@@ -269,8 +272,7 @@ export class PShader{
         }
         this.failed=true;
         const name=e.stage==="vertex"?this.vertName:e.stage==="fragment"?this.fragName:`${this.vertName} / ${this.fragName}`;
-        exceptions.printError(`Cannot compile ${e.stage==="link"?"shader program":name}:\n${e.log.trim()}`);
-        throw new exceptions.RuntimeException(`Cannot compile ${e.stage==="link"?"shader program":e.stage+" shader"} ${name}`);
+        throw new exceptions.RuntimeException(`Cannot compile ${e.stage==="link"?"shader program":e.stage+" shader "+name}:\n${e.log.trim()}`);
       }
     }
   }

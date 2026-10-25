@@ -62,9 +62,30 @@ class Batch{
   clear(){
     this.words=0;
     this.nidx=0;
+    this.custom=null;
   }
   empty(){return this.nidx===0;}
+  /** Custom vertex attributes (attrib*()): values per vertex index, zero where not given. */
+  custom:Map<string,{size:number,data:Float32Array}>|null=null;
+  /** Store a custom attribute value for vertex i. */
+  setCustom(name:string,i:number,v:ArrayLike<number>){
+    this.custom??=new Map();
+    let a=this.custom.get(name);
+    const need=(i+1)*v.length;
+    if(!a){
+      a={size:v.length,data:new Float32Array(Math.max(need,1024))};
+      this.custom.set(name,a);
+    }else if(need>a.data.length){
+      const d=new Float32Array(Math.max(need,a.data.length*2));
+      d.set(a.data);
+      a.data=d;
+    }
+    for(let k=0;k<a.size;k++)a.data[i*a.size+k]=v[k]??0;
+  }
 }
+
+/** A custom attribute of one vertex: positions and normals go into eye space like the vertex's. */
+type CustomAttrib={kind:"position"|"normal"|"color"|"raw",v:number[]};
 
 const PV=13; // polygon vertex: x y z | rgba | nx ny nz | u v | ambient | specular | emissive | shininess
 const LV=8; // line vertex: x y z | rgba | other end x y z | half width (signed)
@@ -78,10 +99,12 @@ type ShapeVertex={
   amb:number,spec:number,emis:number,shine:number,
   /** 0 vertex, 1 bezier, 2 quadratic, 3 curve; contours start with `brk` */
   code:number,c?:number[],brk?:boolean,
+  /** custom attributes (attrib*()) */
+  at?:Map<string,CustomAttrib>,
 };
 
 /** A shape's tessellation in GPU buffers. */
-type GPUGeometry={vbo:WebGLBuffer,ibo:WebGLBuffer,count:number};
+type GPUGeometry={vbo:WebGLBuffer,ibo:WebGLBuffer,count:number,custom?:Map<string,{size:number,buf:WebGLBuffer}>};
 /** Geometry drawn with one texture. */
 type Segment={tex:PImage|null,repeat:boolean,polys:GPUGeometry|null,lines:GPUGeometry|null,points:GPUGeometry|null};
 type ShapeCache={glc:GLContext,version:number,is3D:boolean,detail:number,segments:Segment[]};
@@ -108,6 +131,109 @@ function normalMatrixOf(m:PMatrix3D):Float32Array{
     B/det,(a*i-c*g)/det,-(a*f2-c*d)/det,
     C/det,-(a*h-b*g)/det,(a*e-b*d)/det,
   ]);
+}
+
+/**
+ * Whether a closed outline is a convex polygon in its plane (projected along the largest component of
+ * its normal), turning one way only, without repeated points.
+ */
+function convexOutline(v:{x:number,y:number,z:number}[]):boolean{
+  const n=v.length;
+  let nx=0,ny=0,nz=0;
+  for(let i=0;i<n;i++){
+    const a=v[i],b=v[(i+1)%n];
+    nx+=(a.y-b.y)*(a.z+b.z);ny+=(a.z-b.z)*(a.x+b.x);nz+=(a.x-b.x)*(a.y+b.y);
+  }
+  const ax=Math.abs(nx),ay=Math.abs(ny),az=Math.abs(nz);
+  if(ax+ay+az===0)return false;
+  const [U,V]:("x"|"y"|"z")[]=ax>=ay&&ax>=az?["y","z"]:ay>=az?["z","x"]:["x","y"];
+  let sign=0;
+  for(let i=0;i<n;i++){
+    const a=v[i],b=v[(i+1)%n],c=v[(i+2)%n];
+    const cr=(b[U]-a[U])*(c[V]-b[V])-(b[V]-a[V])*(c[U]-b[U]);
+    if(cr===0){
+      if(b[U]===a[U]&&b[V]===a[V])return false;
+      continue;
+    }
+    const s=cr>0?1:-1;
+    if(sign===0)sign=s;
+    else if(s!==sign)return false;
+  }
+  return sign!==0;
+}
+
+/** A unit mesh for box()/sphere(): positions, normals, triangle indices, stroke edges (index pairs). */
+type Mesh={pos:Float32Array,nrm:Float32Array,idx:Uint32Array,edges:Uint32Array};
+
+/** The unit box: each face clockwise as seen from outside (front facing); strokes outline each face. */
+const BOX_MESH:Mesh=(()=>{
+  const faces:[number[][],number[]][]=[
+    [[[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]],[0,0,1]],
+    [[[1,-1,1],[1,-1,-1],[1,1,-1],[1,1,1]],[1,0,0]],
+    [[[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,1,-1]],[0,0,-1]],
+    [[[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1]],[-1,0,0]],
+    [[[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]],[0,-1,0]],
+    [[[-1,1,1],[1,1,1],[1,1,-1],[-1,1,-1]],[0,1,0]],
+  ];
+  const pos:number[]=[],nrm:number[]=[],idx:number[]=[],edges:number[]=[];
+  faces.forEach(([pts,n],fi)=>{
+    for(const q of pts){
+      pos.push(q[0]/2,q[1]/2,q[2]/2);
+      nrm.push(...n);
+    }
+    const b=fi*4;
+    idx.push(b,b+1,b+2,b,b+2,b+3);
+    edges.push(b,b+1,b+1,b+2,b+2,b+3,b+3,b);
+  });
+  return {pos:Float32Array.from(pos),nrm:Float32Array.from(nrm),idx:Uint32Array.from(idx),edges:Uint32Array.from(edges)};
+})();
+
+const sphereMeshes=new Map<string,Mesh>();
+
+/**
+ * The unit sphere as Processing builds it (measured from getTessellation()): a pole at y = +1, vres - 1
+ * rings at steps of 180°/vres from it, ures points per ring from the x axis toward +z, then the pole at
+ * y = -1; positions from the half-degree tables. Bands are split along ring(k+1)[i]–ring(k)[i+1].
+ */
+function sphereMesh(ures:number,vres:number):Mesh{
+  const key=ures+"x"+vres;
+  let m=sphereMeshes.get(key);
+  if(m)return m;
+  const pos:number[]=[0,1,0];
+  const cx:number[]=[],cz:number[]=[];
+  const delta=Math.fround(SINCOS_LENGTH/ures);
+  for(let i=0;i<ures;i++){
+    const k=Math.trunc(Math.fround(i*delta))%SINCOS_LENGTH;
+    cx.push(cosLUT[k]);cz.push(sinLUT[k]);
+  }
+  const step=Math.fround(SINCOS_LENGTH*0.5/vres);
+  let angle=step;
+  for(let j=1;j<vres;j++){
+    const k=Math.trunc(angle)%SINCOS_LENGTH;
+    const r=sinLUT[k],y=cosLUT[k];
+    for(let i=0;i<ures;i++)pos.push(Math.fround(cx[i]*r),y,Math.fround(cz[i]*r));
+    angle=Math.fround(angle+step);
+  }
+  pos.push(0,-1,0);
+  const south=pos.length/3-1;
+  const ring=(j:number,i:number)=>1+(j-1)*ures+(i%ures);
+  const idx:number[]=[],edges:number[]=[];
+  const tri=(a:number,b:number,c:number)=>{
+    idx.push(a,b,c);
+    edges.push(a,b,b,c,c,a);
+  };
+  for(let i=0;i<ures;i++)tri(ring(1,i),0,ring(1,i+1));
+  for(let j=1;j+1<vres;j++){
+    for(let i=0;i<ures;i++){
+      tri(ring(j+1,i),ring(j,i),ring(j,i+1));
+      tri(ring(j+1,i),ring(j,i+1),ring(j+1,i+1));
+    }
+  }
+  for(let i=0;i<ures;i++)tri(south,ring(vres-1,i),ring(vres-1,i+1));
+  const pf=Float32Array.from(pos);
+  m={pos:pf,nrm:pf,idx:Uint32Array.from(idx),edges:Uint32Array.from(edges)};
+  sphereMeshes.set(key,m);
+  return m;
 }
 
 type Light={type:number,pos:number[],normal:number[],ambient:number[],diffuse:number[],specular:number[],falloff:number[],spot:number[]};
@@ -145,7 +271,9 @@ export class PGraphicsOpenGL extends PGraphics{
   cameraMat=new PMatrix3D();
   cameraInv=new PMatrix3D();
   projection=new PMatrix3D();
+  /** pushMatrix() copies (reused objects; mvDepth of them are in use). */
   private mvStack:PMatrix3D[]=[];
+  private mvDepth=0;
   private projStack:PMatrix3D[]=[];
   cameraFOV=0;cameraX=0;cameraY=0;cameraZ=0;cameraNear=0;cameraFar=0;cameraAspect=0;
   private manipulatingCamera=false;
@@ -486,14 +614,13 @@ export class PGraphicsOpenGL extends PGraphics{
   }
 
   pushMatrix(){
-    if(this.mvStack.length>=32)throw new exceptions.RuntimeException("Too many calls to pushMatrix().");
-    this.mvStack.push(new PMatrix3D(this.modelview));
+    if(this.mvDepth>=32)throw new exceptions.RuntimeException("Too many calls to pushMatrix().");
+    (this.mvStack[this.mvDepth++]??=new PMatrix3D()).__copy__(this.modelview);
   }
 
   popMatrix(){
-    const m=this.mvStack.pop();
-    if(!m)throw new exceptions.RuntimeException("Too many calls to popMatrix(), and not enough to pushMatrix().");
-    this.modelview.set(m);
+    if(this.mvDepth===0)throw new exceptions.RuntimeException("Too many calls to popMatrix(), and not enough to pushMatrix().");
+    this.modelview.__copy__(this.mvStack[--this.mvDepth]);
     this.changed();
   }
 
@@ -880,8 +1007,30 @@ export class PGraphicsOpenGL extends PGraphics{
       vtx.brk=true;
       this.nextBreak=false;
     }
+    if(this.pendingAttribs.size)vtx.at=new Map(this.pendingAttribs);
     this.shapeVerts.push(vtx);
     return vtx;
+  }
+
+  /** Custom attributes for the vertices that follow (they keep their value, as fill() does). */
+  private pendingAttribs=new Map<string,CustomAttrib>();
+
+  attribPosition(name:string,x:number,y:number,z:number){
+    this.pendingAttribs.set(name,{kind:"position",v:[x,y,z]});
+  }
+
+  attribNormal(name:string,x:number,y:number,z:number){
+    this.pendingAttribs.set(name,{kind:"normal",v:[x,y,z]});
+  }
+
+  attribColor(name:string,c:number){
+    this.pendingAttribs.set(name,{kind:"color",v:[((c>>16)&0xff)/255,((c>>8)&0xff)/255,(c&0xff)/255,(c>>>24)/255]});
+  }
+
+  /** attrib(name, values...) with floats, ints or booleans (as numbers). */
+  attrib(name:string,...v:(number|boolean|ArrayLike<number|boolean>)[]){
+    const vals=v.length===1&&typeof v[0]==="object"?Array.from(v[0] as ArrayLike<number|boolean>):v as (number|boolean)[];
+    this.pendingAttribs.set(name,{kind:"raw",v:vals.map(Number)});
   }
 
   /** vertex(x, y), vertex(x, y, z), vertex(x, y, u, v), vertex(x, y, z, u, v) or vertex(float[]) */
@@ -987,6 +1136,7 @@ export class PGraphicsOpenGL extends PGraphics{
     const s=this.style;
     const contours=this.flatten(this.shapeVerts);
     const v=contours.flat();
+    this.pendingAttribs.clear();
     const tex=this.shapeTexture;
     this.shapeTexture=null;
     if(!v.length)return;
@@ -1029,7 +1179,8 @@ export class PGraphicsOpenGL extends PGraphics{
         break;
       case QUAD_STRIP:
         for(let i=0;i+3<v.length;i+=2){
-          tris.push([v[i],v[i+1],v[i+3]],[v[i],v[i+3],v[i+2]]);
+          // split along v1-v2 (measured with vertex colors)
+          tris.push([v[i],v[i+1],v[i+2]],[v[i+1],v[i+3],v[i+2]]);
           edges.push({pts:[v[i],v[i+1],v[i+3],v[i+2]],closed:true});
         }
         break;
@@ -1059,6 +1210,12 @@ export class PGraphicsOpenGL extends PGraphics{
     }
     if(contours.length===1&&all.length===3){
       out.push([all[0],all[1],all[2]]);
+      return;
+    }
+    // a single convex outline of one color: a fan covers the same area (much faster than the tessellator;
+    // with vertex colors the triangulation shows, so those keep the tessellator's)
+    if(contours.length===1&&all.length<=32&&all.every((v)=>v.fill===all[0].fill)&&convexOutline(all)){
+      for(let i=1;i+1<all.length;i++)out.push([all[0],all[i],all[i+1]]);
       return;
     }
     const tris=tessellate((i)=>[all[i].x,all[i].y,all[i].z],idx,true,(coords,data,weights)=>{
@@ -1093,7 +1250,13 @@ export class PGraphicsOpenGL extends PGraphics{
     const b=this.polys;
     b.reserve(tris.length*3,tris.length*3);
     const m=this.modelview;
-    const inv=this.is3DRenderer?this.modelviewInv:null;
+    const m00=m.m00,m01=m.m01,m02=m.m02,m03=m.m03,m10=m.m10,m11=m.m11,m12=m.m12,m13=m.m13,m20=m.m20,m21=m.m21,m22=m.m22,m23=m.m23;
+    // normals into eye space: the inverse transpose of the 3×3 part (cofactors with the determinant's sign)
+    const c00=m11*m22-m12*m21,c01=m12*m20-m10*m22,c02=m10*m21-m11*m20;
+    const c10=m02*m21-m01*m22,c11=m00*m22-m02*m20,c12=m01*m20-m00*m21;
+    const c20=m01*m12-m02*m11,c21=m02*m10-m00*m12,c22=m00*m11-m01*m10;
+    const sg=m00*c00+m01*c01+m02*c02<0?-1:1;
+    const eyeNormals=this.is3DRenderer;
     const tw=tex?(this.textureMode_===IMAGE?tex.width:1):1,th=tex?(this.textureMode_===IMAGE?tex.height:1):1;
     for(const t of tris){
       let fnx=0,fny=0,fnz=1;
@@ -1107,25 +1270,43 @@ export class PGraphicsOpenGL extends PGraphics{
       for(const p of t){
         const nx=autoNormals?fnx:p.nx,ny=autoNormals?fny:p.ny,nz=autoNormals?fnz:p.nz;
         let ex=nx,ey=ny,ez=nz;
-        if(inv){
-          ex=inv.m00*nx+inv.m10*ny+inv.m20*nz;
-          ey=inv.m01*nx+inv.m11*ny+inv.m21*nz;
-          ez=inv.m02*nx+inv.m12*ny+inv.m22*nz;
-          const l=Math.hypot(ex,ey,ez);
+        if(eyeNormals){
+          ex=sg*(c00*nx+c01*ny+c02*nz);
+          ey=sg*(c10*nx+c11*ny+c12*nz);
+          ez=sg*(c20*nx+c21*ny+c22*nz);
+          const l=Math.sqrt(ex*ex+ey*ey+ez*ez);
           if(l>0){ex/=l;ey/=l;ez/=l;}
         }
         const o=b.words;
-        b.f[o]=m.multX(p.x,p.y,p.z);b.f[o+1]=m.multY(p.x,p.y,p.z);b.f[o+2]=m.multZ(p.x,p.y,p.z);
+        const x=p.x,y=p.y,z=p.z;
+        b.f[o]=m00*x+m01*y+m02*z+m03;b.f[o+1]=m10*x+m11*y+m12*z+m13;b.f[o+2]=m20*x+m21*y+m22*z+m23;
         b.u[o+3]=rgba(p.fill);
         b.f[o+4]=ex;b.f[o+5]=ey;b.f[o+6]=ez;
         b.f[o+7]=p.u/tw;b.f[o+8]=p.v/th;
         b.u[o+9]=rgba(p.amb);b.u[o+10]=rgba(p.spec);b.u[o+11]=rgba(p.emis);
         b.f[o+12]=p.shine;
+        if(p.at)this.writeCustom(b,b.words/PV,p.at,eyeNormals?[m00,m01,m02,m03,m10,m11,m12,m13,m20,m21,m22,m23]:null,sg,[c00,c01,c02,c10,c11,c12,c20,c21,c22]);
         b.idx[b.nidx++]=b.words/PV;
         b.words+=PV;
       }
     }
     this.dirty=true;
+  }
+
+  /** A vertex's custom attributes into the batch (positions and normals through the modelview). */
+  private writeCustom(b:Batch,i:number,at:Map<string,CustomAttrib>,m:number[]|null,sg:number,c:number[]){
+    const mv=this.modelview;
+    for(const [name,a] of at){
+      let v=a.v;
+      if(a.kind==="position"){
+        const [x,y,z]=v;
+        v=[mv.m00*x+mv.m01*y+mv.m02*z+mv.m03,mv.m10*x+mv.m11*y+mv.m12*z+mv.m13,mv.m20*x+mv.m21*y+mv.m22*z+mv.m23,1];
+      }else if(a.kind==="normal"&&m){
+        const [x,y,z]=v;
+        v=[sg*(c[0]*x+c[1]*y+c[2]*z),sg*(c[3]*x+c[4]*y+c[5]*z),sg*(c[6]*x+c[7]*y+c[8]*z)];
+      }
+      b.setCustom(name,i,v);
+    }
   }
 
   /** Flat-colored triangles in model space 2D (x, y pairs), or in eye space: P2D strokes and points. */
@@ -1518,65 +1699,70 @@ export class PGraphicsOpenGL extends PGraphics{
     this.pointImpl(x,y,0,s.strokeColor,s.strokeWeight);
   }
 
-  /** box(size) or box(w, h, d): centered at the origin, with outward normals and texture-free faces. */
+  /** box(size) or box(w, h, d): centered at the origin, with outward normals. */
   box(w:number,h?:number,d?:number){
     if(!this.is3DRenderer)return this.unavailable("box");
-    h??=w;d??=w;
-    const x1=-w/2,x2=w/2,y1=-h/2,y2=h/2,z1=-d/2,z2=d/2;
-    // each face clockwise as seen from outside (front facing), with its normal
-    const faces:[number[][],number[]][]=[
-      [[[x1,y1,z2],[x2,y1,z2],[x2,y2,z2],[x1,y2,z2]],[0,0,1]],
-      [[[x2,y1,z2],[x2,y1,z1],[x2,y2,z1],[x2,y2,z2]],[1,0,0]],
-      [[[x2,y1,z1],[x1,y1,z1],[x1,y2,z1],[x2,y2,z1]],[0,0,-1]],
-      [[[x1,y1,z1],[x1,y1,z2],[x1,y2,z2],[x1,y2,z1]],[-1,0,0]],
-      [[[x1,y1,z1],[x2,y1,z1],[x2,y1,z2],[x1,y1,z2]],[0,-1,0]],
-      [[[x1,y2,z2],[x2,y2,z2],[x2,y2,z1],[x1,y2,z1]],[0,1,0]],
-    ];
-    const s=this.style;
-    const saved=[this.normalX,this.normalY,this.normalZ];
-    this.beginShape(QUADS);
-    this.shapeHasNormal=true;
-    for(const [pts,n] of faces){
-      this.normalX=n[0];this.normalY=n[1];this.normalZ=n[2];
-      for(const p of pts)this.newVertex(p[0],p[1],p[2],0,0);
-    }
-    this.endShape();
-    [this.normalX,this.normalY,this.normalZ]=saved;
-    void s;
+    this.addMesh(BOX_MESH,w,h??w,d??w);
   }
 
   /** sphere(r): a UV sphere of sphereDetail() resolution, with normals. */
   sphere(r:number){
     if(!this.is3DRenderer)return this.unavailable("sphere");
-    const ures=this.sphereU,vres=this.sphereV;
+    this.addMesh(sphereMesh(this.sphereU,this.sphereV),r,r,r);
+  }
+
+  /**
+   * A unit mesh scaled by (sx, sy, sz) into the batches, without intermediate objects: box() and
+   * sphere() are drawn tens of thousands of times per frame by some sketches.
+   */
+  private addMesh(mesh:Mesh,sx:number,sy:number,sz:number){
     const s=this.style;
-    // rings from the top (y = -r) to the bottom
-    const ring=(j:number)=>{
-      const phi=Math.PI*j/vres;
-      const out:number[][]=[];
-      for(let i=0;i<=ures;i++){
-        const th=Math.PI*2*i/ures;
-        const nx=Math.sin(phi)*Math.cos(th),ny=-Math.cos(phi),nz=Math.sin(phi)*Math.sin(th);
-        out.push([nx,ny,nz]);
+    const m=this.modelview;
+    const m00=m.m00,m01=m.m01,m02=m.m02,m03=m.m03,m10=m.m10,m11=m.m11,m12=m.m12,m13=m.m13,m20=m.m20,m21=m.m21,m22=m.m22,m23=m.m23;
+    if(s.fill){
+      this.useTexture(null);
+      const bt=this.polys;
+      const n=mesh.pos.length/3;
+      bt.reserve(n,mesh.idx.length);
+      // normals: the inverse transpose of the modelview's 3×3 part (cofactors, with the determinant's
+      // sign) after the inverse of the scale
+      const c00=m11*m22-m12*m21,c01=m12*m20-m10*m22,c02=m10*m21-m11*m20;
+      const c10=m02*m21-m01*m22,c11=m00*m22-m02*m20,c12=m01*m20-m00*m21;
+      const c20=m01*m12-m02*m11,c21=m02*m10-m00*m12,c22=m00*m11-m01*m10;
+      const sg=m00*c00+m01*c01+m02*c02<0?-1:1;
+      const isx=sg/(sx||1),isy=sg/(sy||1),isz=sg/(sz||1);
+      const col=rgba(s.fillColor),amb=rgba(s.setAmbient?s.ambientColor:s.fillColor),spec=rgba(s.specularColor),emis=rgba(s.emissiveColor),shine=s.shininess;
+      const base=bt.words/PV;
+      const P=mesh.pos,N=mesh.nrm,f=bt.f,u=bt.u;
+      let o=bt.words;
+      for(let i=0;i<n;i++){
+        const x=P[i*3]*sx,y=P[i*3+1]*sy,z=P[i*3+2]*sz;
+        f[o]=m00*x+m01*y+m02*z+m03;
+        f[o+1]=m10*x+m11*y+m12*z+m13;
+        f[o+2]=m20*x+m21*y+m22*z+m23;
+        u[o+3]=col;
+        const nx=N[i*3]*isx,ny=N[i*3+1]*isy,nz=N[i*3+2]*isz;
+        let ex=c00*nx+c01*ny+c02*nz,ey=c10*nx+c11*ny+c12*nz,ez=c20*nx+c21*ny+c22*nz;
+        const l=Math.sqrt(ex*ex+ey*ey+ez*ez);
+        if(l>0){ex/=l;ey/=l;ez/=l;}
+        f[o+4]=ex;f[o+5]=ey;f[o+6]=ez;
+        f[o+7]=0;f[o+8]=0;
+        u[o+9]=amb;u[o+10]=spec;u[o+11]=emis;f[o+12]=shine;
+        o+=PV;
       }
-      return out;
-    };
-    const tris:ShapeVertex[][]=[];
-    const mk=(n:number[]):ShapeVertex=>({x:n[0]*r,y:n[1]*r,z:n[2]*r,u:0,v:0,fill:s.fillColor,stroke:s.strokeColor,weight:s.strokeWeight,
-      nx:n[0],ny:n[1],nz:n[2],amb:s.setAmbient?s.ambientColor:s.fillColor,spec:s.specularColor,emis:s.emissiveColor,shine:s.shininess,code:0});
-    let prev=ring(0).map(mk);
-    for(let j=1;j<=vres;j++){
-      const cur=ring(j).map(mk);
-      for(let i=0;i<ures;i++){
-        // clockwise as seen from outside
-        if(j>1)tris.push([prev[i],cur[i],prev[i+1]]);
-        if(j<vres)tris.push([prev[i+1],cur[i],cur[i+1]]);
-      }
-      prev=cur;
+      bt.words=o;
+      const I=mesh.idx,ix=bt.idx;
+      let k=bt.nidx;
+      for(let i=0;i<I.length;i++)ix[k++]=base+I[i];
+      bt.nidx=k;
+      this.dirty=true;
     }
-    if(s.fill)this.addTriangles(tris,false,null);
-    if(s.stroke){
-      for(const t of tris)this.strokeVertices(t,true);
+    if(s.stroke&&s.strokeWeight>0){
+      const E=mesh.edges,P=mesh.pos,c=s.strokeColor,w=s.strokeWeight;
+      for(let i=0;i<E.length;i+=2){
+        const p=E[i]*3,q=E[i+1]*3;
+        this.lineSegment(P[p]*sx,P[p+1]*sy,P[p+2]*sz,P[q]*sx,P[q+1]*sy,P[q+2]*sz,c,c,w);
+      }
     }
   }
 
@@ -1728,7 +1914,7 @@ export class PGraphicsOpenGL extends PGraphics{
     this.enabledAttribs.clear();
   }
 
-  private attrib(prog:GLProgram,names:string[],size:number,type:number,normalized:boolean,stride:number,offset:number){
+  private bindAttrib(prog:GLProgram,names:string[],size:number,type:number,normalized:boolean,stride:number,offset:number){
     const gl=this.glc!.gl;
     for(const n of names){
       const loc=prog.attribs.get(n);
@@ -1860,6 +2046,36 @@ export class PGraphicsOpenGL extends PGraphics{
     return b.nidx;
   }
 
+  /** The sketch's own vertex attributes (attrib*()) that the program declares. */
+  private customAttribs(prog:GLProgram,b:Batch,cached:GPUGeometry|null){
+    const gl=this.glc!.gl;
+    const bind=(name:string,size:number,buf:WebGLBuffer)=>{
+      const loc=prog.attribs.get(name);
+      if(loc===undefined||loc<0)return;
+      gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+      gl.enableVertexAttribArray(loc);
+      this.enabledAttribs.add(loc);
+      gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);
+    };
+    if(cached){
+      cached.custom?.forEach((a,name)=>bind(name,a.size,a.buf));
+    }else if(b.custom){
+      const n=b.words/b.stride;
+      for(const [name,a] of b.custom){
+        if(!prog.attribs.has(name))continue;
+        const buf=this.customBuffers.get(name)??this.glc!.gl.createBuffer()!;
+        this.customBuffers.set(name,buf);
+        gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+        const data=new Float32Array(n*a.size);
+        data.set(a.data.subarray(0,Math.min(a.data.length,n*a.size)));
+        gl.bufferData(gl.ARRAY_BUFFER,data,gl.STREAM_DRAW);
+        bind(name,a.size,buf);
+      }
+    }
+  }
+
+  private customBuffers=new Map<string,WebGLBuffer>();
+
   /** Draw polygons (eye space with mv = null, else model space through mv). */
   private drawPolys(b:Batch,cached:GPUGeometry|null,tex:PImage|null,repeat:boolean,mv:PMatrix3D|null){
     const glc=this.glc!,gl=glc.gl;
@@ -1874,14 +2090,15 @@ export class PGraphicsOpenGL extends PGraphics{
     gl.useProgram(prog.program);
     const count=this.bindGeometry(b,cached);
     const st=PV*4;
-    this.attrib(prog,["position","vertex"],3,gl.FLOAT,false,st,0);
-    this.attrib(prog,["color"],4,gl.UNSIGNED_BYTE,true,st,12);
-    this.attrib(prog,["normal"],3,gl.FLOAT,false,st,16);
-    this.attrib(prog,["texCoord"],2,gl.FLOAT,false,st,28);
-    this.attrib(prog,["ambient"],4,gl.UNSIGNED_BYTE,true,st,36);
-    this.attrib(prog,["specular"],4,gl.UNSIGNED_BYTE,true,st,40);
-    this.attrib(prog,["emissive"],4,gl.UNSIGNED_BYTE,true,st,44);
-    this.attrib(prog,["shininess"],1,gl.FLOAT,false,st,48);
+    this.bindAttrib(prog,["position","vertex"],3,gl.FLOAT,false,st,0);
+    this.bindAttrib(prog,["color"],4,gl.UNSIGNED_BYTE,true,st,12);
+    this.bindAttrib(prog,["normal"],3,gl.FLOAT,false,st,16);
+    this.bindAttrib(prog,["texCoord"],2,gl.FLOAT,false,st,28);
+    this.bindAttrib(prog,["ambient"],4,gl.UNSIGNED_BYTE,true,st,36);
+    this.bindAttrib(prog,["specular"],4,gl.UNSIGNED_BYTE,true,st,40);
+    this.bindAttrib(prog,["emissive"],4,gl.UNSIGNED_BYTE,true,st,44);
+    this.bindAttrib(prog,["shininess"],1,gl.FLOAT,false,st,48);
+    this.customAttribs(prog,b,cached);
     this.uniforms(prog,custom,texInfo,tex,mv);
     gl.drawElements(gl.TRIANGLES,count,gl.UNSIGNED_INT,0);
   }
@@ -1896,9 +2113,9 @@ export class PGraphicsOpenGL extends PGraphics{
     gl.useProgram(prog.program);
     const count=this.bindGeometry(b,cached);
     const st=LV*4;
-    this.attrib(prog,["position","vertex"],3,gl.FLOAT,false,st,0);
-    this.attrib(prog,["color"],4,gl.UNSIGNED_BYTE,true,st,12);
-    this.attrib(prog,["direction"],4,gl.FLOAT,false,st,16);
+    this.bindAttrib(prog,["position","vertex"],3,gl.FLOAT,false,st,0);
+    this.bindAttrib(prog,["color"],4,gl.UNSIGNED_BYTE,true,st,12);
+    this.bindAttrib(prog,["direction"],4,gl.FLOAT,false,st,16);
     this.uniforms(prog,custom,null,null,mv);
     gl.drawElements(gl.TRIANGLES,count,gl.UNSIGNED_INT,0);
   }
@@ -1913,9 +2130,9 @@ export class PGraphicsOpenGL extends PGraphics{
     gl.useProgram(prog.program);
     const count=this.bindGeometry(b,cached);
     const st=QV*4;
-    this.attrib(prog,["position","vertex"],3,gl.FLOAT,false,st,0);
-    this.attrib(prog,["color"],4,gl.UNSIGNED_BYTE,true,st,12);
-    this.attrib(prog,["offset"],2,gl.FLOAT,false,st,16);
+    this.bindAttrib(prog,["position","vertex"],3,gl.FLOAT,false,st,0);
+    this.bindAttrib(prog,["color"],4,gl.UNSIGNED_BYTE,true,st,12);
+    this.bindAttrib(prog,["offset"],2,gl.FLOAT,false,st,16);
     this.uniforms(prog,custom,null,null,mv);
     gl.drawElements(gl.TRIANGLES,count,gl.UNSIGNED_INT,0);
   }
@@ -1936,7 +2153,19 @@ export class PGraphicsOpenGL extends PGraphics{
       gl.bufferData(gl.ARRAY_BUFFER,b.f.subarray(0,b.words),gl.STATIC_DRAW);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,b.idx.subarray(0,b.nidx),gl.STATIC_DRAW);
-      const g={vbo,ibo,count:b.nidx};
+      const g:GPUGeometry={vbo,ibo,count:b.nidx};
+      if(b.custom){
+        g.custom=new Map();
+        const n=b.words/b.stride;
+        for(const [name,a] of b.custom){
+          const buf=gl.createBuffer()!;
+          gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+          const data=new Float32Array(n*a.size);
+          data.set(a.data.subarray(0,Math.min(a.data.length,n*a.size)));
+          gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+          g.custom.set(name,{size:a.size,buf});
+        }
+      }
       b.clear();
       return g;
     };
@@ -1949,7 +2178,10 @@ export class PGraphicsOpenGL extends PGraphics{
     const gl=this.glc.gl;
     for(const s of c.segments){
       for(const g of [s.polys,s.lines,s.points]){
-        if(g){gl.deleteBuffer(g.vbo);gl.deleteBuffer(g.ibo);}
+        if(g){
+          gl.deleteBuffer(g.vbo);gl.deleteBuffer(g.ibo);
+          g.custom?.forEach((a)=>gl.deleteBuffer(a.buf));
+        }
       }
     }
   }

@@ -182,7 +182,12 @@ boolean __vtRegister() {
 }
 @Override
 public void handleDraw() {
-  super.handleDraw();
+  super.handleDraw();${/\bvoid\s+draw\s*\(\s*\)/.test(code) ? "" : `
+  // no draw(): the frame is what setup() drew
+  if (frameCount == 1 && !__vtCaptured && g instanceof processing.opengl.PGraphicsOpenGL) {
+    ${saveGL}
+    __vtCaptured = true;
+  }`}
   if (__vtCaptured || (!(g instanceof processing.opengl.PGraphicsOpenGL) && (frameCount > ${frames} || (!isLooping() && frameCount > 1)))) {
     if (!__vtCaptured) save("${out}");
     System.out.println("${DONE_MARKER}");
