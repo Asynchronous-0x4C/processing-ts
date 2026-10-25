@@ -92,6 +92,18 @@ export class BrowserRunner {
     }
   }
 
+  /** The first compile in a fresh page after SketchManager.warmUp(). */
+  async transpileWarmedUpTime(sketch: SketchSource): Promise<number> {
+    const page = await this.browser!.newPage();
+    try {
+      await page.goto(`${this.baseUrl}/tools/vt/harness/index.html`, { waitUntil: "load" });
+      await page.waitForFunction(() => (window as any).__vt__ !== undefined);
+      return (await page.evaluate((o) => (window as any).__vt__.transpileWarmedUp(o), { main: sketch.main, files: sketch.files })).ms;
+    } finally {
+      await page.close();
+    }
+  }
+
   /**
    * The compile cache across visits: a fresh page compiles the sketch (miss, stored in IndexedDB), then
    * another fresh page of the same origin gets it from IndexedDB. Returns both times.

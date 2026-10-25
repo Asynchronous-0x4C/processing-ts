@@ -155,11 +155,13 @@ async function benchTranspile(): Promise<{ md: string; failed: boolean; data: un
       const cold = runs[0];
       const warm = runs.slice(1);
       const cache = await runner.transpileCacheTimes(input.sketch);
+      const warmedUp = await runner.transpileWarmedUpTime(input.sketch);
       const r = {
         lines: input.lines,
         coldMs: cold.total,
         warmMs: median(warm.map((x) => x.total)),
         cachedMs: cache.hit ? cache.hitMs : null,
+        warmedUpMs: warmedUp,
         error: cold.error ?? null,
       };
       data[input.name] = r;
@@ -168,14 +170,14 @@ async function benchTranspile(): Promise<{ md: string; failed: boolean; data: un
       if (limit !== undefined && r.coldMs > limit) failed = true;
       rows.push({
         name: input.name,
-        values: { lines: r.lines, "cold ms": ms(r.coldMs), "warm ms": ms(r.warmMs), "cached ms": r.cachedMs === null ? "-" : ms(r.cachedMs), error: r.error ? "yes" : "" },
+        values: { lines: r.lines, "cold ms": ms(r.coldMs), "after warmUp ms": ms(r.warmedUpMs), "warm ms": ms(r.warmMs), "cached ms": r.cachedMs === null ? "-" : ms(r.cachedMs), error: r.error ? "yes" : "" },
         over,
       });
     }
   } finally {
     await runner.stop();
   }
-  return { md: table("transpile: SketchManager.transpileSketch with the new compiler (headless Chromium, cold = first run in a fresh page; cached = transpileSketchCached() in a fresh page, from IndexedDB)", ["lines", "cold ms", "warm ms", "cached ms", "error"], rows), failed, data };
+  return { md: table("transpile: SketchManager.transpileSketch with the new compiler (headless Chromium, cold = first run in a fresh page; after warmUp = the first compile in a fresh page after SketchManager.warmUp(); cached = transpileSketchCached() in a fresh page, from IndexedDB)", ["lines", "cold ms", "after warmUp ms", "warm ms", "cached ms", "error"], rows), failed, data };
 }
 
 // --- size: esbuild bundles (minified ESM) and their gzip/brotli sizes

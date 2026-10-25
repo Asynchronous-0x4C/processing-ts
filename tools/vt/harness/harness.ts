@@ -187,7 +187,7 @@ function canvasRect() {
  * Returns the total and per-phase milliseconds of every run.
  */
 function transpile(opts: { main: string; files: { name: string; content: string }[] }, repeat: number) {
-  const manager = new SketchManager({ manual_step: true });
+  const manager = new SketchManager({ manual_step: true, warm_up: false });
   const runs: { total: number; timings?: Record<string, number>; error?: string }[] = [];
   for (let i = 0; i < repeat; i++) {
     const t = performance.now();
@@ -222,5 +222,14 @@ async function transpileCached(opts: { main: string; files: { name: string; cont
   return { ms, hit, ok: !r.error?.error };
 }
 
-const api = { run, transpile, transpileCached, start, step, finish, canvasRect };
+/** The first compile after SketchManager.warmUp() (what an editor gets when the page was idle before Run). */
+function transpileWarmedUp(opts: { main: string; files: { name: string; content: string }[] }) {
+  const manager = new SketchManager({ manual_step: true, warm_up: false });
+  manager.warmUp();
+  const t = performance.now();
+  const r = manager.transpileSketch({ main: opts.main, content: opts.files });
+  return { ms: performance.now() - t, ok: !r.error?.error };
+}
+
+const api = { run, transpile, transpileCached, transpileWarmedUp, start, step, finish, canvasRect };
 (window as unknown as { __vt__: typeof api }).__vt__ = api;

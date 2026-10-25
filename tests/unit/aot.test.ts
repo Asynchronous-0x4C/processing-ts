@@ -146,3 +146,13 @@ describe("parseXml (SVG in workers, where there is no DOMParser)", () => {
     expect(parseXml("no markup")).toBeNull();
   });
 });
+
+import { WARM_UP_SKETCH } from "../../src/lib/SketchManager";
+
+describe("SketchManager.warmUp()", () => {
+  it("compiles its sketch without diagnostics", () => {
+    const r = compileSketch([{ name: "WarmUp.pde", text: WARM_UP_SKETCH }]);
+    expect(r.diagnostics).toEqual([]);
+    expect(r.code).not.toBeNull();
+  });
+});
