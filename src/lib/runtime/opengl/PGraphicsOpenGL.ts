@@ -1729,8 +1729,7 @@ export class PGraphicsOpenGL extends PGraphics{
     gl.enable(gl.BLEND);
     gl.blendEquation(gl.FUNC_ADD);
     switch(mode){
-      // REPLACE writes the color times its alpha (measured: (255, 200, 0, 180) gives (180, 141, 0))
-      case REPLACE:gl.blendFuncSeparate(gl.SRC_ALPHA,gl.ZERO,gl.ONE,gl.ZERO);break;
+      case REPLACE:gl.disable(gl.BLEND);break;
       case ADD:gl.blendFuncSeparate(gl.SRC_ALPHA,gl.ONE,gl.ONE,gl.ONE);break;
       case SUBTRACT:
         gl.blendEquationSeparate(gl.FUNC_REVERSE_SUBTRACT,gl.FUNC_ADD);

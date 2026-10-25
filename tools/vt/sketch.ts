@@ -148,6 +148,10 @@ export function injectForReference(
   if (redirect && mode === "static") code = redirect + " " + code;
 
   const out = javaPath(outPng);
+  // OpenGL frames are saved from their pixels, and loadPixels() is called once after setup(): without that,
+  // Processing 4.5.2 reads an empty (white) frame after a draw() that used filter(PShader) (save(), get()
+  // and loadPixels() alike), although the window shows the filtered frame.
+  const save = `if (g instanceof processing.opengl.PGraphicsOpenGL) { loadPixels(); PImage __vtImg = createImage(pixelWidth, pixelHeight, RGB); arrayCopy(pixels, __vtImg.pixels); __vtImg.updatePixels(); __vtImg.save("${out}"); } else { save("${out}"); }`;
   if (mode === "active") {
     // handleDraw(): frameCount is 0 during setup(), 1 during the first draw(), and is incremented
     // after each call, so "frameCount > frames" right after super.handleDraw() means `frames`
@@ -163,8 +167,9 @@ boolean __vtRedirectStdout() {
 ` : ""}@Override
 public void handleDraw() {
   super.handleDraw();
+  if (frameCount == 1 && g instanceof processing.opengl.PGraphicsOpenGL) loadPixels();
   if (frameCount > ${frames} || (!isLooping() && frameCount > 1)) {
-    save("${out}");
+    ${save}
     System.out.println("${DONE_MARKER}");
     exit();
   }${input?.length ? " else {\n    __vtInput(frameCount - 1);\n  }" : ""}
@@ -174,7 +179,7 @@ ${input?.length ? javaInputMethod(input) : ""}`;
     code += `
 
 // ---- injected by tools/vt (reference capture) ----
-save("${out}");
+${save}
 System.out.println("${DONE_MARKER}");
 exit();
 `;

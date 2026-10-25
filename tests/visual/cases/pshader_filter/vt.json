@@ -2,7 +2,5 @@
   "tags": [
     "3d",
     "shader"
-  ],
-  "expect": "fail",
-  "knownIssue": "PShader / loadShader() / filter() are not implemented."
+  ]
 }
