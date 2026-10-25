@@ -1,0 +1,10 @@
+{
+  "tags": [
+    "p2d",
+    "text",
+    "image"
+  ],
+  "threshold": 0.2,
+  "maxDiffRatio": 0.03,
+  "note": "text() and image() in P2D (text is drawn from textures), get/set/pixels on a GL surface."
+}

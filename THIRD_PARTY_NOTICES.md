@@ -12,6 +12,12 @@ It includes the following third-party components, which keep their own licenses.
 
 - Test data: `tests/visual/cases/font_vlw/data/ProcessingSansPro-20.vlw` holds glyph bitmaps rendered from this font by Processing ("Create Font" format, ASCII only). It is a Modified Version under the OFL and keeps the OFL: [`tests/visual/cases/font_vlw/ProcessingSansPro-LICENSE.txt`](tests/visual/cases/font_vlw/ProcessingSansPro-LICENSE.txt). It is not part of the distributed library.
 
+## libtess.js (polygon tessellation for P2D/P3D)
+
+- Package: [`libtess`](https://github.com/brendankenny/libtess.js) 1.2.2 (npm dependency, bundled into the library), a JavaScript port of SGI's GLU tessellator
+- License: SGI Free Software License B, Version 2.0 (permissive, X11-style) — full text in `node_modules/libtess/LICENSE` and at http://oss.sgi.com/projects/FreeB/
+- Copyright 2000, Silicon Graphics, Inc. All Rights Reserved. Copyright 2012, Google Inc. All Rights Reserved.
+
 ## Lezer Java grammar
 
 - Files: `src/compiler/grammar/processing.grammar` (forked from @lezer/java 1.1.4) and the generated `src/compiler/grammar/parser.ts`

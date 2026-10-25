@@ -1,0 +1,8 @@
+{
+  "tags": [
+    "p2d",
+    "shape"
+  ],
+  "maxDiffRatio": 0.02,
+  "note": "createShape() in P2D: primitives, geometry with vertex colors, groups, shape transformations."
+}

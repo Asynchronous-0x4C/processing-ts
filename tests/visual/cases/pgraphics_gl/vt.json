@@ -1,0 +1,8 @@
+{
+  "tags": [
+    "p2d",
+    "image"
+  ],
+  "maxDiffRatio": 0.02,
+  "note": "createGraphics(P2D/P3D/JAVA2D) offscreen surfaces drawn into a P2D window."
+}

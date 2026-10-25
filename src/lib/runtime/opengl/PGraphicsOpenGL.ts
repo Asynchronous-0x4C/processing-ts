@@ -21,6 +21,8 @@ const DISABLE_DEPTH_TEST=2,ENABLE_DEPTH_TEST=-2,DISABLE_DEPTH_MASK=5,ENABLE_DEPT
 const ENABLE_DEPTH_SORT=3,DISABLE_DEPTH_SORT=-3;
 const POINTS_KIND=3,LINES_KIND=5;
 
+const IDENTITY=new PMatrix3D();
+
 /** ARGB → the 32-bit word whose bytes in memory are R, G, B, A. */
 function rgba(c:number):number{
   return ((c&0xff00ff00)|((c>>16)&0xff)|((c&0xff)<<16))>>>0;
@@ -615,17 +617,22 @@ export class PGraphicsOpenGL extends PGraphics{
 
   // --- style ------------------------------------------------------------------------------------------
 
-  protected applyBlendMode(mode:number){
+  /** The geometry queued so far is drawn with the mode it was drawn with. */
+  blendMode(mode:number){
     this.flush();
+    super.blendMode(mode);
+  }
+
+  protected applyBlendMode(mode:number){
     if(mode===DIFFERENCE||mode>SCREEN){
       this.warnOnce(`blendMode(${({32:"DIFFERENCE",512:"OVERLAY",1024:"HARD_LIGHT",2048:"SOFT_LIGHT",4096:"DODGE",8192:"BURN"} as Record<number,string>)[mode]??mode}) is not supported by this renderer.`);
     }
   }
 
   popStyle(){
-    const old=this.style.blendMode;
+    const next=this.styleStack[this.styleStack.length-1];
+    if(next&&next.blendMode!==this.style.blendMode)this.flush();
     super.popStyle();
-    if(this.style.blendMode!==old)this.flush();
   }
 
   hint(which:number){
@@ -1001,7 +1008,10 @@ export class PGraphicsOpenGL extends PGraphics{
       }
     }
     if((s.fill||tex)&&tris.length)this.addTriangles(tris,auto,tex);
-    if(s.stroke)for(const e of edges)this.strokeVertices(e.pts,e.closed);
+    if(s.stroke){
+      if(this.is3DRenderer)for(const e of edges)this.strokeVertices(e.pts,e.closed);
+      else this.stroke2DGroup(edges.map((e)=>({xy:e.pts.flatMap((p)=>[p.x,p.y]),closed:e.closed,color:e.pts[0].stroke,weight:e.pts[0].weight})));
+    }
   }
 
   /** Triangles of a polygon with contours (holes), through the GLU tessellator (nonzero winding). */
@@ -1087,13 +1097,13 @@ export class PGraphicsOpenGL extends PGraphics{
     this.dirty=true;
   }
 
-  /** Flat-colored triangles already in model space 2D (x, y pairs): P2D strokes and points. */
-  private addFlat2D(xy:number[],color:number){
+  /** Flat-colored triangles in model space 2D (x, y pairs), or in eye space: P2D strokes and points. */
+  private addFlat2D(xy:number[],color:number,eye=false){
     this.useTexture(null);
     const b=this.polys;
     const n=xy.length/2;
     b.reserve(n,n);
-    const m=this.modelview;
+    const m=eye?IDENTITY:this.modelview;
     const c=rgba(color),amb=rgba(color),spec=rgba(0xff000000|0),emis=rgba(0xff000000|0);
     for(let i=0;i<n;i++){
       const x=xy[i*2],y=xy[i*2+1];
@@ -1129,7 +1139,48 @@ export class PGraphicsOpenGL extends PGraphics{
 
   /** A 2D stroke (model space) as polygons in the polygon batch: overlaps merged when translucent. */
   private stroke2D(xy:number[],closed:boolean,color:number,weight:number){
-    if(weight<=0)return;
+    this.stroke2DGroup([{xy,closed,color,weight}]);
+  }
+
+  /**
+   * The outlines of one shape. When the stroke is exactly one pixel wide and every segment is horizontal
+   * or vertical on the screen, Processing's P2D covers whole pixels (measured: rect(20, 20, 8, 4) and
+   * line(20, 20, 30, 20) fill exact rows and columns, while a triangle's horizontal edge stays across two
+   * rows): the segments are moved by half a pixel and extended by half a pixel at both ends.
+   */
+  private stroke2DGroup(lines:{xy:number[],closed:boolean,color:number,weight:number}[]){
+    const m=this.modelview;
+    const scale=Math.sqrt(Math.abs(m.m00*m.m11-m.m01*m.m10));
+    const pixel=lines.every((l)=>Math.abs(l.weight*scale-1)<1e-6);
+    if(pixel){
+      const rects:{tris:number[],color:number}[]=[];
+      let aligned=true;
+      for(const l of lines){
+        const n=l.xy.length/2,segs=l.closed?n:n-1;
+        const tris:number[]=[];
+        for(let k=0;k<segs&&aligned;k++){
+          const a=k,b=(k+1)%n;
+          const ax=m.multX(l.xy[a*2],l.xy[a*2+1]),ay=m.multY(l.xy[a*2],l.xy[a*2+1]);
+          const bx=m.multX(l.xy[b*2],l.xy[b*2+1]),by=m.multY(l.xy[b*2],l.xy[b*2+1]);
+          if(ax!==bx&&ay!==by){
+            aligned=false;
+            break;
+          }
+          const x0=Math.min(ax,bx),x1=Math.max(ax,bx)+1,y0=Math.min(ay,by),y1=Math.max(ay,by)+1;
+          tris.push(x0,y0,x1,y0,x1,y1,x0,y0,x1,y1,x0,y1);
+        }
+        if(!aligned)break;
+        rects.push({tris,color:l.color});
+      }
+      if(aligned){
+        for(const r of rects)if(r.tris.length)this.addFlat2D(r.tris,r.color,true);
+        return;
+      }
+    }
+    for(const l of lines)if(l.weight>0)this.stroke2DPolys(l.xy,l.closed,l.color,l.weight);
+  }
+
+  private stroke2DPolys(xy:number[],closed:boolean,color:number,weight:number){
     const s=this.style;
     const polys=strokePolygons(xy,closed,weight,s.strokeCap,s.strokeJoin);
     if(!polys.length)return;
@@ -1161,10 +1212,11 @@ export class PGraphicsOpenGL extends PGraphics{
       b.f[o+4]=ox;b.f[o+5]=oy;b.f[o+6]=oz;b.f[o+7]=w;
       b.words+=LV;
     };
-    put(ax,ay,az,c1,bx,by,bz,h);
-    put(ax,ay,az,c1,bx,by,bz,-h);
-    put(bx,by,bz,c2,ax,ay,az,-h);
-    put(bx,by,bz,c2,ax,ay,az,h);
+    const dx=bx-ax,dy=by-ay,dz=bz-az;
+    put(ax,ay,az,c1,dx,dy,dz,h);
+    put(ax,ay,az,c1,dx,dy,dz,-h);
+    put(bx,by,bz,c2,-dx,-dy,-dz,-h);
+    put(bx,by,bz,c2,-dx,-dy,-dz,h);
     const ix=b.idx;
     ix[b.nidx++]=base;ix[b.nidx++]=base+1;ix[b.nidx++]=base+2;
     ix[b.nidx++]=base+1;ix[b.nidx++]=base+3;ix[b.nidx++]=base+2;
@@ -1326,16 +1378,18 @@ export class PGraphicsOpenGL extends PGraphics{
     flushContour(false);
     if(fill)this.fillContours(contours);
     if(stroke){
+      if(!this.is3DRenderer){
+        this.stroke2DGroup(contours.map((c)=>({xy:c.pts,closed:c.closed,color:s.strokeColor,weight:s.strokeWeight})));
+        return;
+      }
       for(const c of contours){
-        if(this.is3DRenderer){
-          const pts=c.pts;
-          const n=pts.length/2;
-          const segs=c.closed?n:n-1;
-          for(let k=0;k<segs;k++){
-            const a=k,b=(k+1)%n;
-            this.lineSegment(pts[a*2],pts[a*2+1],0,pts[b*2],pts[b*2+1],0,s.strokeColor,s.strokeColor,s.strokeWeight);
-          }
-        }else this.stroke2D(c.pts,c.closed,s.strokeColor,s.strokeWeight);
+        const pts=c.pts;
+        const n=pts.length/2;
+        const segs=c.closed?n:n-1;
+        for(let k=0;k<segs;k++){
+          const a=k,b=(k+1)%n;
+          this.lineSegment(pts[a*2],pts[a*2+1],0,pts[b*2],pts[b*2+1],0,s.strokeColor,s.strokeColor,s.strokeWeight);
+        }
       }
     }
   }
@@ -1675,7 +1729,8 @@ export class PGraphicsOpenGL extends PGraphics{
     gl.enable(gl.BLEND);
     gl.blendEquation(gl.FUNC_ADD);
     switch(mode){
-      case REPLACE:gl.disable(gl.BLEND);break;
+      // REPLACE writes the color times its alpha (measured: (255, 200, 0, 180) gives (180, 141, 0))
+      case REPLACE:gl.blendFuncSeparate(gl.SRC_ALPHA,gl.ZERO,gl.ONE,gl.ZERO);break;
       case ADD:gl.blendFuncSeparate(gl.SRC_ALPHA,gl.ONE,gl.ONE,gl.ONE);break;
       case SUBTRACT:
         gl.blendEquationSeparate(gl.FUNC_REVERSE_SUBTRACT,gl.FUNC_ADD);

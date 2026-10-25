@@ -2,9 +2,12 @@ import { PConstants } from "./PConstants";
 import { PGraphics } from "./PGraphics";
 import { PGraphicsJava2D } from "./PGraphicsJava2D";
 import { createNativeCanvas } from "./PImage";
-import { GLContext } from "./opengl/GLContext";
-import { PGraphicsOpenGL, PGraphics2D, PGraphics3D } from "./opengl/PGraphicsOpenGL";
-import { PShader } from "./opengl/PShader";
+import type { GLContext } from "./opengl/GLContext";
+import type { PGraphicsOpenGL } from "./opengl/PGraphicsOpenGL";
+import type { PShader } from "./opengl/PShader";
+import { openGL, requireOpenGL } from "./openglModule";
+import type { PShape } from "./PShape";
+import { loadOBJ, loadSVG } from "./io/shapeLoaders";
 import { PImage } from "./PImage";
 import { PSurface } from "./PSurface";
 import { JSONObject } from "./data/JSONObject";
@@ -55,6 +58,7 @@ const DELEGATED=[
   "ambient","specular","emissive","shininess","normal","texture","textureMode","textureWrap",
   "camera","beginCamera","endCamera","perspective","ortho","frustum","printCamera","printProjection",
   "screenZ","modelX","modelY","modelZ","shader","resetShader","flush","hint",
+  "createShape","shape",
 ] as const;
 
 export interface PApplet extends Pick<PGraphics,typeof DELEGATED[number]>{}
@@ -152,7 +156,8 @@ export class PApplet extends PConstants{
     const h=this.__fullscreen__?Math.floor(this.max_size.height):r.height;
     const density=r.density||this.displayDensity();
     if(isOpenGL(r.renderer)){
-      this.g=r.renderer===P3D_NAME?new PGraphics3D(this,this.__canvas_element__,true):new PGraphics2D(this,this.__canvas_element__,true);
+      const GL=requireOpenGL();
+      this.g=r.renderer===P3D_NAME?new GL.PGraphics3D(this,this.__canvas_element__,true):new GL.PGraphics2D(this,this.__canvas_element__,true);
       if(!r.smooth)(this.g as PGraphicsOpenGL).smoothLevel=1;
       else if(r.smoothLevel)(this.g as PGraphicsOpenGL).smoothLevel=r.smoothLevel;
     }
@@ -711,7 +716,21 @@ export class PApplet extends PConstants{
 
   /** The GL context of the OpenGL surfaces (the window's, or an offscreen one when the window is JAVA2D). */
   __glContext__():GLContext{
-    return this.__gl__??=new GLContext(createNativeCanvas(1,1));
+    return this.__gl__??=new (requireOpenGL().GLContext)(createNativeCanvas(1,1));
+  }
+
+  /** loadShape(name): an SVG document or an OBJ model (with its materials and textures), or null. */
+  loadShape(name:string,_options?:string):PShape|null{
+    const text=this.__read_text__(name);
+    if(text===null)return null;
+    const ext=extensionOf(name);
+    if(ext==="svg"||ext==="svgz")return loadSVG(text,this.g);
+    if(ext==="obj"){
+      const dir=name.includes("/")?name.slice(0,name.lastIndexOf("/")+1):"";
+      return loadOBJ(text,this.g,dir,(n)=>this.__read_text__(n),(n)=>this.loadImage(n));
+    }
+    exceptions.printError("loadShape() only works with .svg and .obj files: "+name);
+    return null;
   }
 
   /** loadShader(fragment[, vertex]): a PShader from the sketch's .glsl files (null when missing). */
@@ -723,12 +742,13 @@ export class PApplet extends PConstants{
       vert=this.__read_text__(vertName);
       if(vert===null)return null;
     }
-    return new PShader(this,vert,frag,{vert:vertName,frag:fragName});
+    return new (requireOpenGL().PShader)(this,vert,frag,{vert:vertName,frag:fragName});
   }
 
   /** filter(PShader) or filter(kind[, param]) */
   filter(kind:number|PShader,param?:number){
-    if(kind instanceof PShader&&!(this.g instanceof PGraphicsOpenGL)){
+    const GL=openGL();
+    if(typeof kind!=="number"&&!(GL&&this.g instanceof GL.PGraphicsOpenGL)){
       exceptions.printError("filter(PShader) is not available with this renderer.");
       return;
     }
@@ -738,7 +758,8 @@ export class PApplet extends PConstants{
   /** createGraphics(w, h[, renderer]): an offscreen surface (transparent, density 1); P2D/P3D share the GL context. */
   createGraphics(width:number,height:number,renderer?:string,_path?:string):PGraphics{
     if(isOpenGL(renderer)){
-      const pg=renderer===P3D_NAME?new PGraphics3D(this,null,false):new PGraphics2D(this,null,false);
+      const GL=requireOpenGL();
+      const pg=renderer===P3D_NAME?new GL.PGraphics3D(this,null,false):new GL.PGraphics2D(this,null,false);
       pg.setSize(width,height,1);
       return pg;
     }

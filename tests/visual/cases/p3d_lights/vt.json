@@ -1,0 +1,7 @@
+{
+  "tags": [
+    "3d"
+  ],
+  "maxDiffRatio": 0.02,
+  "note": "pointLight/spotLight/directionalLight, falloff, specular/shininess/emissive/ambient materials."
+}

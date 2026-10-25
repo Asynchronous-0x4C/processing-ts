@@ -1,0 +1,9 @@
+{
+  "tags": [
+    "3d",
+    "image"
+  ],
+  "maxDiffRatio": 0.03,
+  "threshold": 0.15,
+  "note": "texture()/textureMode/textureWrap/tint, image() in 3D, createGraphics(P2D) as a texture."
+}

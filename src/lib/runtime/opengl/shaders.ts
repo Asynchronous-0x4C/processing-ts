@@ -163,9 +163,10 @@ void main() {
 
 /**
  * Lines: each segment is a quad whose four corners share the segment's ends; `direction` holds the
- * other end (xyz) and the signed half-width in pixels (w). The quad is widened across the segment's
- * direction on the screen, so the width stays in pixels (unless `perspective` is set), and pulled a
- * little toward the eye so that strokes win over the faces they outline.
+ * vector to the other end (xyz, as Processing's line shaders read it: position + direction) and the
+ * signed half-width in pixels (w). The quad is widened across the segment's direction on the screen, so
+ * the width stays in pixels (unless `perspective` is set), and pulled a little toward the eye so that
+ * strokes win over the faces they outline.
  */
 export const LINE_VERT=`${HEADER}
 uniform mat4 modelviewMatrix;
@@ -180,7 +181,7 @@ in vec4 direction;
 out vec4 vertColor;
 void main() {
   vec4 p0 = modelviewMatrix * position;
-  vec4 p1 = modelviewMatrix * vec4(direction.xyz, 1.0);
+  vec4 p1 = modelviewMatrix * (position + vec4(direction.xyz, 0.0));
   p0.xyz *= scale;
   p1.xyz *= scale;
   vec4 c0 = projectionMatrix * p0;

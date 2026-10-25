@@ -1,0 +1,8 @@
+{
+  "tags": [
+    "3d",
+    "shape"
+  ],
+  "maxDiffRatio": 0.02,
+  "note": "loadShape(OBJ) with MTL materials in P3D with lights()."
+}

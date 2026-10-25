@@ -101,8 +101,31 @@ export class SketchFiles {
       })());
     }
     await Promise.all(jobs);
+    await this.preloadDependencies();
     await Promise.all([...this.files.keys()].filter((k) => isImageFile(k) && !this.images.has(k)).map((k) => this.decode(k)));
     await Promise.all([...this.files.keys()].filter((k) => /\.(ttf|otf|woff2?)$/i.test(k) && !this.fonts.has(k)).map((k) => this.registerFont(k)));
+  }
+
+  /** Files that loaded files refer to: an OBJ's material libraries and their textures (next to them). */
+  private async preloadDependencies() {
+    const seen = new Set<string>();
+    for (let round = 0; round < 3; round++) {
+      const jobs: Promise<boolean>[] = [];
+      for (const key of [...this.files.keys()]) {
+        const ext = extensionOf(key);
+        if (seen.has(key) || (ext !== "obj" && ext !== "mtl")) continue;
+        seen.add(key);
+        const dir = key.includes("/") ? key.slice(0, key.lastIndexOf("/") + 1) : "";
+        const text = new TextDecoder().decode(this.files.get(key)!);
+        const re = ext === "obj" ? /^[ \t]*mtllib[ \t]+(.+?)[ \t]*$/gm : /^[ \t]*(?:map_\w+|bump|disp|decal)[ \t]+(?:-\S+[ \t]+\S+[ \t]+)*(.+?)[ \t]*$/gm;
+        for (const m of text.matchAll(re)) {
+          const name = m[1].replace(/\\/g, "/");
+          jobs.push(this.fetchKey(isURL(dir) ? new URL(name, dir).href : normalizePath(dir + name)));
+        }
+      }
+      if (!jobs.length) break;
+      await Promise.all(jobs);
+    }
   }
 
   /** Make a font file usable by CSS name (createFont("a.ttf", size)). */

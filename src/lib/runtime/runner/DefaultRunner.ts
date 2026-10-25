@@ -15,8 +15,8 @@ import { SketchFiles, type SavedFile } from "../io/SketchFiles";
 import { PMatrix2D } from "../PMatrix2D";
 import { PMatrix3D } from "../PMatrix3D";
 import { PGraphicsJava2D } from "../PGraphicsJava2D";
-import { PGraphicsOpenGL, PGraphics2D, PGraphics3D } from "../opengl/PGraphicsOpenGL";
-import { PShader } from "../opengl/PShader";
+import { PShape } from "../PShape";
+import { loadOpenGL, type OpenGLModule } from "../openglModule";
 import { JSONObject } from "../data/JSONObject";
 import { JSONArray } from "../data/JSONArray";
 import { javaClasses, lang } from "../../../runtime/lang/index.ts";
@@ -32,10 +32,7 @@ const PROCESSING_CLASSES:Record<string,unknown>={
   "processing.core.PMatrix2D":PMatrix2D,
   "processing.core.PMatrix3D":PMatrix3D,
   "processing.awt.PGraphicsJava2D":PGraphicsJava2D,
-  "processing.opengl.PGraphicsOpenGL":PGraphicsOpenGL,
-  "processing.opengl.PGraphics2D":PGraphics2D,
-  "processing.opengl.PGraphics3D":PGraphics3D,
-  "processing.opengl.PShader":PShader,
+  "processing.core.PShape":PShape,
   "processing.data.JSONObject":JSONObject,
   "processing.data.JSONArray":JSONArray,
   "processing.event.MouseEvent":MouseEvent,
@@ -43,10 +40,32 @@ const PROCESSING_CLASSES:Record<string,unknown>={
   "processing.event.Event":Event,
 };
 
-// getClass().getName() of Processing's classes
-for(const [name,cls] of Object.entries(PROCESSING_CLASSES)){
-  const c=cls as {$javaName?:string};
-  if(!Object.prototype.hasOwnProperty.call(c,"$javaName"))Object.defineProperty(c,"$javaName",{value:name,writable:true,configurable:true});
+/** Register classes by binary name (with their getClass().getName()). */
+function addClasses(classes:Record<string,unknown>){
+  for(const [name,cls] of Object.entries(classes)){
+    PROCESSING_CLASSES[name]=cls;
+    const c=cls as {$javaName?:string};
+    if(!Object.prototype.hasOwnProperty.call(c,"$javaName"))Object.defineProperty(c,"$javaName",{value:name,writable:true,configurable:true});
+  }
+}
+addClasses({...PROCESSING_CLASSES});
+
+/** The OpenGL module's classes (registered when it is loaded). */
+function addOpenGLClasses(gl:OpenGLModule){
+  addClasses({
+    "processing.opengl.PGraphicsOpenGL":gl.PGraphicsOpenGL,
+    "processing.opengl.PGraphics2D":gl.PGraphics2D,
+    "processing.opengl.PGraphics3D":gl.PGraphics3D,
+    "processing.opengl.PShader":gl.PShader,
+  });
+}
+
+/**
+ * Whether compiled code uses the OpenGL renderers or shaders: P2D/P3D (inlined as their class names),
+ * processing.opengl classes, loadShader().
+ */
+export function usesOpenGL(code:string):boolean{
+  return /processing\.opengl\.|\.loadShader\(/.test(code);
 }
 
 /** What the compiler found out about the sketch (CompileResult), and the files the host listed. */
@@ -215,6 +234,8 @@ export class DefaultRunner extends Runner{
     this.event_queue=[];
     this.flushOutput();
     lang.setOutput((text)=>this.write_output(text));
+    // P2D/P3D and shaders: the WebGL renderer is a separate chunk, loaded only for sketches that use it.
+    if(usesOpenGL(sketch))addOpenGLClasses(await loadOpenGL());
     const rt={lang,PApplet,classes:this.runtime_classes()};
     // The sketch's files: what the host added, then what the sketch names and the host listed, fetched
     // (and images decoded) now so that loadImage() etc. can return at once, as in Processing.

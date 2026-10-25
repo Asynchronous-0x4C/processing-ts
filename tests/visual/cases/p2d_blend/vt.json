@@ -1,0 +1,8 @@
+{
+  "tags": [
+    "p2d",
+    "color"
+  ],
+  "maxDiffRatio": 0.02,
+  "note": "blendMode() in P2D (the modes the OpenGL renderer supports)."
+}

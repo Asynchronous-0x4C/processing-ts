@@ -1,0 +1,8 @@
+{
+  "tags": [
+    "2d",
+    "shape"
+  ],
+  "maxDiffRatio": 0.02,
+  "note": "loadShape(SVG) with shape() in CORNER/CENTER/CORNERS and a child with disableStyle()."
+}

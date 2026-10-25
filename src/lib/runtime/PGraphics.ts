@@ -3,6 +3,7 @@ import { PMatrix2D } from "./PMatrix2D";
 import { Matrix2D } from "./Matrix2D";
 import { PFont } from "./PFont";
 import type { PApplet } from "./PApplet";
+import { PShape, drawShape } from "./PShape";
 import { exceptions } from "../../runtime/lang/index.ts";
 
 // Processing's constant values (PConstants).
@@ -792,6 +793,40 @@ export abstract class PGraphics extends PImage{
       this.textLine(line,ax,y);
       y+=lead;
     }
+  }
+
+  // --- shapes (PShape) -----------------------------------------------------------------------------
+
+  /**
+   * createShape() (GEOMETRY, for beginShape()/vertex()), createShape(GROUP), createShape(PATH) or
+   * createShape(kind, params...) for a primitive (RECT, ELLIPSE, ARC, TRIANGLE, QUAD, LINE, POINT, BOX,
+   * SPHERE); the shape starts with the current style.
+   */
+  createShape(kind?:number,...rest:(number|ArrayLike<number>)[]):PShape{
+    // the parameters arrive as one float[] (Java varargs)
+    const params=rest.length===1&&typeof rest[0]==="object"?Array.from(rest[0]):rest as number[];
+    if(kind===undefined)return new PShape(this,PShape.GEOMETRY);
+    if(kind===0)return new PShape(this,0);
+    if(kind===21)return new PShape(this,PShape.PATH);
+    if([2,4,8,16,30,31,32,40,41].includes(kind)){
+      const sh=new PShape(this,PShape.PRIMITIVE);
+      sh.kind=kind;
+      sh.params=params;
+      if(kind===30||kind===31||kind===32){sh.width=params[2];sh.height=params[3];}
+      else if(kind===41){sh.width=params[0];sh.height=params[1]??params[0];sh.depth=params[2]??params[0];}
+      else if(kind===40){sh.width=sh.height=sh.depth=params[0]*2;}
+      if(kind===40||kind===41)sh.set3D(true);
+      return sh;
+    }
+    const sh=new PShape(this,PShape.GEOMETRY);
+    sh.kind=kind;
+    return sh;
+  }
+
+  /** shape(s[, x, y[, w, h]]) in shapeMode */
+  shape(s:PShape,x?:number,y?:number,c?:number,d?:number){
+    if(!s)return;
+    drawShape(this,s,x,y,c,d);
   }
 
   // --- 3D (P3D only; JAVA2D and P2D print Processing's warning once per function) --------------------
