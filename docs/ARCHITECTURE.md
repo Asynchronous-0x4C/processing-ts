@@ -12,8 +12,9 @@ SketchManager.transpileSketch()  → compileSketch()  src/compiler/index.ts（�
    │  構文解析（Lezer）→ 型付き AST → 前処理（モード・settings()）→ 型検査 → コード生成 + Source Map
    │  エラーは "Tab.pde:行:列: error: ..." の形で error listener へ（複数件）
    ▼
-JS（関数本体）
-   │  DefaultRunner.init(): new Function("$rt", "__renderer__", code)($rt, renderer)
+JS（関数本体）                       ←─ 事前変換（下の「事前変換（AOT）」）: sketch.js / `?pde` モジュールの関数
+   │  SketchPlayer.runTranspiledSketch() → Runner.init()（Worker 実行では WorkerRunner → Worker の中の DefaultRunner）
+   │  DefaultRunner.init(): new Function("$rt", "__renderer__", code)($rt, renderer)（事前変換なら関数をそのまま呼ぶ）
    │    $rt = { lang（src/runtime/lang の Java 言語ランタイム）, PApplet, classes（java.* と processing.* のクラス）}
    ▼
 スケッチクラス（PApplet のサブクラス）のインスタンス
@@ -30,8 +31,13 @@ PApplet → g: PGraphicsJava2D（PGraphics の Canvas 2D 実装。キャンバ�
 
 | パス | 内容 |
 |---|---|
-| `src/lib/index.ts` | ライブラリのエントリ。`SketchManager` だけを export |
-| `src/lib/SketchManager.ts` | 公開 API。読み込み・変換・実行・停止・イベント登録・アスペクト比維持 |
+| `src/lib/index.ts` | ライブラリのエントリ（パッケージの `.`）。`SketchManager` と `SketchPlayer`・`CompileCache`・型 |
+| `src/lib/runtime.ts`, `compiler.ts`, `webgl.ts` | サブパス `/runtime`（SketchPlayer。コンパイラなし）・`/compiler`（compileSketch・sketchModule）・`/webgl`（OpenGL と PShape を静的に読み込んで登録）のエントリ |
+| `src/lib/SketchPlayer.ts` | 公開 API の実行部分: キャンバスの登録・イベント・実行（`CompiledSketch` も `PrecompiledSketch` も）・停止・step・capture・ファイルの追加・リスナー。`thread: "worker"` なら最初の実行で WorkerRunner を読み込んで替わる |
+| `src/lib/SketchManager.ts` | `SketchPlayer` の派生。.pde の読み込み・ページでの変換・変換キャッシュ・`warmUp()` |
+| `src/lib/types.ts` | `SketchSettings`・`SketchData`・`CompiledSketch`・`PrecompiledSketch`・`CompileErrors`（コンパイラに依存しない） |
+| `src/lib/CompileCache.ts` | 変換結果のキャッシュ（メモリ + IndexedDB。キーはソースと `COMPILER_VERSION` のハッシュ） |
+| `src/aot/` | 事前変換（Node）: `cli.ts`（`processing-ts build/check`）、`build.ts`（静的サイトの出力・Service Worker）、`vite.ts`（Vite プラグイン）、`sketchFolder.ts`（スケッチフォルダの読み込み）、`standalone.ts`（バンドラなし用のランタイムのビルド）、`client.d.ts`（`?pde` の型） |
 | `src/lib/transpiler/` | 旧トランスパイラ（使用していない。文法と速度の比較対象） |
 | `src/lib/transpiler/SketchParser.ts` | 構文解析（SLL → 失敗時 LL の 2 段階）とエラーリスナー。ランタイムに依存しないので Node でテスト可能 |
 | `src/lib/transpiler/antlr/Processing.g4` | Processing 公式プリプロセッサの文法（Java 1.7/8 ベース + `color` 型、`#RRGGBB`、`int()` 等の変換関数、静的/アクティブ/Java モード） |
@@ -51,15 +57,18 @@ PApplet → g: PGraphicsJava2D（PGraphics の Canvas 2D 実装。キャンバ�
 | `src/lib/runtime/PImage.ts` | `pixels`（ARGB の Int32Array）とキャンバス（OffscreenCanvas があればそれ）。loadPixels/updatePixels は getImageData/putImageData |
 | `src/lib/runtime/PFont.ts` | CSS のフォントファミリ。同梱の Processing Sans Pro を FontFace で遅延読み込み |
 | `src/lib/runtime/PConstants.ts` | Processing の定数（値は本家と同じ） |
-| `src/lib/runtime/runner/DefaultRunner.ts` | フレームループとイベントキュー（`Runner` 抽象クラスもここ） |
+| `src/lib/runtime/runner/DefaultRunner.ts` | フレームループとイベントキュー（`Runner` 抽象クラス、ホストの抽象 `RunnerHost`、遅延読み込みの `loadModules()` もここ） |
+| `src/lib/runtime/worker/` | Worker 実行: `WorkerRunner.ts`（ページ側）、`entry.ts`（Worker のスクリプト）、`protocol.ts`（メッセージ）、`createWorker.ts` |
+| `src/lib/runtime/assetURLs.ts` | ランタイムが自分で読むファイル（既定フォント・Worker のスクリプト）の URL。ビルドでは literal に書き換える（下の「ビルドと配布」） |
 | `src/lib/runtime/util/` | ArrayList（Array 継承）、HashMap（Map ラッパ）、PVector、関数型インタフェース、noise、配列関数 |
-| `src/lib/runtime/io/` | スケッチのファイル（`SketchFiles`: 事前 fetch・画像の事前デコード・保存）と TIFF/TGA のエンコーダ |
+| `src/lib/runtime/io/` | スケッチのファイル（`SketchFiles`: 事前 fetch・画像の事前デコード・保存）、TIFF/TGA のエンコーダ、SVG/OBJ の読み込み、DOMParser の無い所（Worker）用の小さな XML リーダ（`xmlLite.ts`） |
 | `src/main.ts`, `src/highlight.ts`, `src/style.css`, `index.html` | デモ用ライブエディタ（textarea + 正規表現ハイライタ） |
 | `public/samples/` | デモのサンプル（Processing 公式 examples の一部。`src/scripts/samples.json` は dev サーバ起動時に自動生成） |
 | `tools/vt/` | 視覚/出力回帰テスト CLI（[TESTING.md](TESTING.md)） |
+| `tools/aot/` | 事前変換と配布の E2E テスト（`npm run test:aot`。TESTING.md） |
 | `tools/lang/` | 新コンパイラの stdout 適合テスト（`npm run test:lang`）。描画しないスタブの PApplet で Node 上で実行する |
 | `tests/visual/` | 視覚テストのケースと参照画像 |
-| `dist/`, `library.js` | **コミットされたビルド成果物**（npm 配布用 / CDN 版 Pixi を使う単一ファイル版） |
+| `dist/`, `library.js` | **コミットされたビルド成果物**（npm 配布用 / 単一ファイル版。現在コミットされているのは P2-1 以前の Pixi 版で、次のリリースで作り直す） |
 
 ## 新コンパイラ（`src/compiler/`）
 
@@ -222,10 +231,54 @@ ANTLR4 の Processing 文法（`antlr/Processing.g4`、生成物 `antlr/parser/`
 - すべて fetch なので Service Worker でキャッシュでき、オフラインでも動く（`vt run --offline`）。
 - 保存（saveStrings/saveBytes/saveJSON*/save/saveFrame）はスケッチフォルダ相対の名前でメモリに置き（同じ実行中に読み戻せる。画像は保存時の画素を控える）、`SketchManager.addEventListener("save", ...)` に `{path, data, mime}` を渡す。PNG/JPEG はキャンバスでエンコード（非同期）、TIFF/TGA は `io/imageEncode.ts`。requestImage は実行時に fetch する（読み込み中は width 0、失敗で -1）。
 
+## 公開 API と事前変換（AOT）
+
+- `SketchPlayer`（`/runtime`）は実行だけ: `mountPApplet(canvas)` → `run(sketch)`。`sketch` は `SketchManager.transpileSketch()` の `CompiledSketch`（コードは文字列）か、事前変換した `PrecompiledSketch`（コードは関数）。`SketchManager`（`.`）はその派生で、.pde の読み込みと変換（`transpileSketch`/`transpileSketchCached`/`runSketch`）、変換キャッシュ、`warmUp()` を足す。
+- **事前変換したモジュール**（`src/compiler/module.ts` の `sketchModule()`）:
+
+  ```js
+  // MySketch: compiled by processing-ts 0.2.0 from MySketch.pde, Ball.pde
+  import $url0 from "/abs/MySketch/data/a.png?url";   // Vite プラグインのとき（data/ のファイル・既定フォント）
+  export function sketch($rt, __renderer__) {
+  "use strict";
+  …（コンパイラの生成コードそのもの。上の「生成コードの形」）
+  }
+  export default { name: "MySketch", sketch, usesText: true, files: ["a.png"], listed: ["data/a.png"],
+                   urls: { "data/a.png": $url0 }, opengl: false, shapes: false, font: $font };
+  ```
+
+  `listed`（data/ の一覧）が data のマニフェストで、`SketchFiles` は `urls` にある名前をその URL から読む（バンドラが名前を変えたアセット）。`opengl`/`shapes` はコードを見ずに遅延読み込みを決めるための印。ソースマップはコンパイラのものを関数の見出しの行数だけずらす。
+- **CLI**（`src/aot/build.ts`）: `index.html`（キャンバスと、`SketchPlayer` で `sketch.js` を動かすモジュールスクリプト）・`sketch.js`(+map)・`processing-ts/`（standalone ランタイム）・`data/`・名前で読まれるフォルダ直下のファイル。`--sw` は全ファイルを install 時にキャッシュする cache-first の Service Worker（キャッシュ名は出力の内容のハッシュ）。
+- **Vite プラグイン**（`src/aot/vite.ts`）: `resolveId` が `…/?pde`（と `.pde`）をフォルダの id にし、`load` がフォルダを読んで変換したモジュールを返す（タブは `addWatchFile`、エラーは `this.error`）。`config` でパッケージを dev サーバの事前バンドルから外す（D4）。
+
+## Worker 実行（`thread: "worker"`）
+
+```
+ページ（SketchPlayer + WorkerRunner）                          Worker（worker/entry.ts + DefaultRunner）
+  freshCanvas() → transferControlToOffscreen()  ── init ──▶  OffscreenCanvas をホストに DefaultRunner.init()
+  DOM イベント（とキャンバスの位置）             ── event ─▶  on_pointermove() など → イベントキュー
+  focus / blur / resize / step / flush / capture ──────────▶
+                                                 ◀── ready ──  setup() の後
+  キャンバスの CSS の大きさ                       ◀── size ───  __init_surface__() の後（surface_ready()）
+  log / error / save リスナー                    ◀───────────  println・例外・保存したファイル
+  canvas.style.cursor / document.title           ◀───────────  PSurface のホスト（setSurfaceHost）
+  stopSketch(): terminate() → freshCanvas()
+```
+
+- Worker の中は `DefaultRunner` そのもので、ページの状態に当たるものだけを差し替える（`element_rect()`・`device_pixel_ratio()`・`has_focus()` はページから届いた値、`surface_ready()` で大きさを返す）。マウス座標の変換もメインスレッドと同じコード（イベントと一緒に届いたキャンバスの位置で計算）。
+- 事前変換した関数は `toString()` したソースで送り、Worker で関数に戻す（関数は引数の 2 つしか使わない）。URL（スケッチフォルダ・`urls`・既定フォント）はページで絶対 URL にしてから送る（Worker では相対 URL がスクリプトの位置からになるため）。
+- ページ側の `WorkerRunner` は最初の Worker 実行のときに動的 import する（メインスレッドだけのページは読み込まない）。
+- requestAnimationFrame は Worker にもある（無ければ 60Hz のタイマー）。既定フォントは Worker の `self.fonts`、SVG は `xmlLite.ts`。
+
 ## ビルドと配布
 
-- `npm run build` = `vite build`（ライブラリモード, `src/lib/index.ts`）+ `tsc`（型定義のみ `dist/types`）。
-- `vite-plugin-externalize-deps` で依存（@lezer/common・@lezer/lr）を外部化。ライブラリ（最初の読み込み gzip 約 168 KiB、`npm run size`）は新コンパイラ（約 119 KiB。うちライブラリモデル 36 KiB、Lezer 30 KiB）とランタイム（2D + 言語ランタイムで約 48 KiB）を含み、OpenGL レンダラ・PShader・PShape（約 40 KiB）は別のチャンクで必要なときだけ読み込む。libtess は依存パッケージ（外部化）。EVALUATION.md の目標構成ではコンパイラを別のサブパスにする。
-- 既定フォントは `src/lib/runtime/fonts/` を独自プラグイン（`copy-fonts`）が `dist/fonts/` にライセンス文ごとコピーし、`PFont.ts` が実行時に `new URL("./fonts/…", import.meta.url)` で読む（URL を文字列リテラルで書くと Vite のライブラリモードが base64 で埋め込み、gzip で +170 KiB になるので、わざと連結にしている）。
-- 独自プラグイン（`single-file-library`）が `dist/index.js` を esbuild で依存ごと 1 ファイルにまとめて `dist/library.js` を生成する（バンドラなしで `import` できる形。既定フォントは同じく `fonts/` から読む）。ルートの `library.js` はそのコピーで README からダウンロードさせている（コミット済みのものは P2-1 以前の Pixi 版。次のリリースで置き換える）。
+- `npm run build` = `vite build`（ライブラリモード、ES モジュールだけ）+ `tsc -p tsconfig.build.json`（`dist/types/lib/`）+ `tsc -p src/aot …`（`dist/types/aot/`）。
+- `vite build` のエントリは `index`（SketchManager）・`runtime`（SketchPlayer）・`compiler`・`webgl`。共有部分はチャンク（OpenGL・PShape・WorkerRunner は動的 import のチャンク）。`vite-plugin-externalize-deps` で依存（@lezer/common・@lezer/lr・libtess）は外部化。ライブラリの最初の読み込みは gzip 約 170 KiB（新コンパイラ 120 KiB を含む）、ランタイム単体は約 50 KiB（`npm run size`）。
+- 同じ `vite build` の独自プラグイン（vite.config.ts）:
+  - `copy-fonts`: 既定フォント（`src/lib/runtime/fonts/`）をライセンス文ごと `dist/fonts/` へ。
+  - `literal-asset-urls`: `assetURLs.ts` を literal な `new URL("./fonts/ProcessingSansPro-Regular.ttf", import.meta.url)`・`new URL("./worker.js", import.meta.url)` に置き換える（Vite のアセット処理の後 = `enforce: "post"`。ソースでは literal にしない: Vite のライブラリビルドがフォントを base64 で埋め込み +170 KiB gz になるため）。出力が literal なので、パッケージを取り込む利用者のバンドラはフォントと worker.js をアセットとしてコピーする。
+  - `node-tools`: `src/aot/cli.ts`・`vite.ts` を esbuild で Node 用の `dist/cli.js`・`dist/vite.js` に（コンパイラを含め、依存パッケージは外部。Node は node_modules の中の .ts の型を除去しないので JS で配る）。`dist/worker.js`（Worker のスクリプトを依存ごと 1 ファイルに。バンドラはコピーするだけでよい）。`dist/client.d.ts`。
+  - `standalone-runtime`: `dist/standalone/`（runtime.js・webgl.js・worker.js とチャンク・fonts。依存ごと esbuild でコード分割。`processing-ts build` がコピーする。リポジトリでは CLI が `src/` から都度ビルドする）。
+  - `single-file-library`: `dist/index.js` を esbuild で依存ごと 1 ファイルの `dist/library.js` に（バンドラなしで `import` できる形。隣に fonts/ と worker.js が要る）。ルートの `library.js` はそのコピー（コミット済みのものは P2-1 以前の Pixi 版。次のリリースで置き換える）。
+- パッケージの `exports` は ROADMAP P4-2、`bin` は `processing-ts`（`dist/cli.js`）。
 - dev サーバ（`npm run dev`, port 8080, base `/processing-ts/`）起動時に `public/samples/*/*/sketch.properties` から `src/scripts/samples.json` を生成（カテゴリ/名前順）。ライブラリのビルドでは `public/` を出力に含めない（`copyPublicDir: false`）。

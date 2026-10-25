@@ -5,16 +5,16 @@
 ## 現在地（2026-10-25 時点。セッションの終わりに更新する）
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
-- **P0〜P3 は完了**（P0-8 の CI だけ任意で未着手）。P3（WebGL2 の P2D/P3D・PShader・PShape）が入り、視覚テスト 76 ケースすべて PASS、互換性コーパスは 254 本中 239 本が完走（JAVA2D 95% / P2D 93% / P3D 93%）、決定的なスケッチの見た目は JAVA2D 120/120・P2D/P3D 39/43 が本物と一致。
-- 2026-10-25 のセッション（コミット 76a9139〜）: P3-1〜P3-8。PMatrix3D（本物と値まで一致）、PGraphicsOpenGL（即時モードは目の座標、MSAA、既定シェーダー、ライト、box/sphere、カメラ・投影は print* の桁まで一致）、P2D の線の規則（1px の水平・垂直線）、PShader（GLSL ES 3.00 への変換、filter、ppixels、attrib*）、PShape（全レンダラ。SVG/OBJ、P2D/P3D では GPU に保持）、OpenGL と PShape の遅延読み込み（2D のランタイムは 48 KiB gz のまま）、`vt bench` と tests/perf、corpus --ref の P2D/P3D 対応、参照生成で OpenGL のフレームをフレーム内で読むように変更（TESTING.md）。
+- **P0〜P4 は完了**。P4（配布と性能）で、事前変換（`processing-ts build` と Vite プラグイン）、サブパス export、変換キャッシュ、Worker 実行モード、CI（P0-8 と P4-5）が入った。視覚テスト 76 ケースは 3 つの実行経路（メインスレッド・Worker・事前変換）のすべてで PASS、`npm run test:aot` の 45 件（CLI の出力・オフライン・Vite のビルドと dev サーバ・Worker・ビルドしたパッケージを入れたアプリ）も PASS。
+- 2026-10-25 のセッション（後半、コミット d3cb116〜）: P4-1〜P4-5 と C4。`SketchPlayer`（コンパイラなしで実行）と `SketchManager`（その派生）、`PrecompiledSketch`（コードを関数で持つ ES モジュール、`src/compiler/module.ts`）、`src/aot/`（CLI・Vite プラグイン・standalone ランタイム）、`CompileCache`（メモリ + IndexedDB）、`thread: "worker"`（`src/lib/runtime/worker/`）、`assetURLs.ts`（ビルドでフォントと worker.js を literal な URL にして利用者のバンドラにコピーさせる）、`SketchManager.warmUp()`、vt の `--exec worker|aot`、`tools/aot/test.ts`、`.github/workflows/ci.yml`。
 - **次にやること**（優先度は「進め方」の方針どおり: 速さ ＞ P2D/P3D・PShader ＞ その他の API）:
-  1. **P5 の API**: IntList/IntDict/FloatList…・Table・XML・createWriter/createReader・sketchPath・thread/method（名前でスケッチのメソッドを呼ぶ仕組み。selectInput/selectOutput もこれと java.io.File が必要）、delay、clip/noClip、mask() の GL 版。コーパスの残りの失敗の大半はこれ（tests/corpus/report.md の「多いエラー」）。
-  2. **P3 の残り（STATUS.md R21〜R29）**: P2D の丸い端・継ぎ目の分割数と miter の上限の照合、テキストをグリフのテクスチャにする（R22）、保持モードの部分更新（R24）、ライトの既定値の照合（R25）、ImageMask/BlurFilter の最初のフレーム（R27）。低レベル GL（PGL）は要検討。
-  3. 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。P4 の AOT・コード分割（P3-8 で遅延読み込みの仕組みはできた）。
+  1. **リリースの準備**: `npm run build` で dist/ と library.js を作り直し（現在コミットされているのは P2-1 以前の PixiJS 版）、README を新しい使い方（サブパス export・CLI・Vite プラグイン・Worker 実行）に書き直す（P6 の README の項目を前倒し）。CI は GitHub に push したことがなく未確認（`.github/workflows/ci.yml`）。初回の実行で落ちた所を直す。
+  2. **P5 の API**: IntList/IntDict/FloatList…・Table・XML（`io/xmlLite.ts` を土台にできる）・createWriter/createReader・sketchPath・thread/method（名前でスケッチのメソッドを呼ぶ仕組み。selectInput/selectOutput もこれと java.io.File が必要）、delay（Worker 実行なら Atomics.wait で本当に止められる）、clip/noClip、mask() の GL 版。コーパスの残りの失敗の大半はこれ（tests/corpus/report.md の「多いエラー」）。
+  3. **P3 の残り（STATUS.md R21〜R29）**: P2D の丸い端・継ぎ目の分割数と miter の上限の照合、テキストをグリフのテクスチャにする（R22）、保持モードの部分更新（R24）、ライトの既定値の照合（R25）、ImageMask/BlurFilter の最初のフレーム（R27）。低レベル GL（PGL）は要検討。
   - 本物の挙動を調べるときの道具: `npm run vt -- shot <dir> --ref`（println と画像。`--frames n`、フレーム時間も出る）、`node tools/vt/zoom.ts`、vt.json の `input`。P2D/P3D の詳細は `createShape(…).getTessellation()` の頂点や、`loadPixels()` した画素を println すると調べやすい（楕円・球・四角形の分割はこれで決めた）。LGPL の Processing のコードは見ずに、出力から決める。
   - 注意: Processing 4.5.2 は handleDraw() の後に OpenGL の画面を読むと不安定（白・黒になる）。本物の画素を調べるスケッチは draw() の中か registerMethod("draw") で loadPixels() する。
-- ランタイムの構成: `PApplet`（`src/lib/runtime/PApplet.ts`）は描画 API を `g`（`PGraphicsJava2D` または `PGraphicsOpenGL`）へ委譲（`DELEGATED`）。OpenGL レンダラと PShape は `openglModule.ts` 経由で遅延読み込み（`DefaultRunner.init` が生成コードから判定）。生成コードとの約束は ARCHITECTURE.md の「生成コードの形」と `codegen.ts`（`$rt = { lang, PApplet, classes }`、イベントは `_mousePressed` など、float 版の色関数は `fillF` など（PShape にも）、`text(char)` は `textChar`）。ファイルは `SketchFiles`（setup() 前に fetch。OBJ の .mtl とテクスチャも）。
-- 基準値: 視覚テスト 76 PASS、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 239/254（94%）、文法一致 1,289/1,289、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ 168 KiB gz（最初の読み込み）、ランタイム単体 48.1 KiB gz（予算 50）+ 必要なときだけ 39.5 KiB gz、API カバレッジ 217/253。
+- ランタイムの構成: `PApplet`（`src/lib/runtime/PApplet.ts`）は描画 API を `g`（`PGraphicsJava2D` または `PGraphicsOpenGL`）へ委譲（`DELEGATED`）。OpenGL レンダラと PShape は `openglModule.ts` 経由で遅延読み込み（`loadModules()`。事前変換したスケッチは `opengl`/`shapes` の印で、ページで変換したものは生成コードから判定）。生成コードとの約束は ARCHITECTURE.md の「生成コードの形」と `codegen.ts`（`$rt = { lang, PApplet, classes }`、イベントは `_mousePressed` など、float 版の色関数は `fillF` など（PShape にも）、`text(char)` は `textChar`）。ファイルは `SketchFiles`（setup() 前に fetch。OBJ の .mtl とテクスチャも。`urls` でバンドラが付けた名前にも対応）。公開 API は `SketchPlayer`（実行）と、その派生の `SketchManager`（読み込みと変換も）。Worker 実行ではページ側が `WorkerRunner`、Worker 側は `DefaultRunner` そのもの（`worker/entry.ts`）。
+- 基準値: 視覚テスト 76 PASS（`--exec worker`・`--exec aot` でも 76 PASS）、`npm run test:aot` 45 PASS、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 239/254（94%）、文法一致 1,289/1,289、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ 170 KiB gz（最初の読み込み）、ランタイム単体 49.6 KiB gz（予算 50）+ 必要なときだけ 40.2 KiB gz（OpenGL・PShape）/ 1.8 KiB gz（Worker 実行）、Worker のスクリプト 49.2 KiB gz、変換（ブラウザ・199 行）: コールド 22ms・warmUp() の後 11.5ms・ウォーム 3ms・キャッシュから 0.9〜1.8ms、API カバレッジ 217/253。
 
 ## 進め方
 
@@ -57,8 +57,9 @@
   - [x] (a) GPL の `Processing.g4`/`JavaParser.g4` 由来の生成パーサ → 推奨構成の採用により P1 で Lezer（MIT）+ 自作拡張に置き換える。置き換えまでは現状のまま。ANTLR 版は開発時専用のオラクルとしてのみ残す。
   - [x] (b) 既定フォント `ProcessingSansPro-Regular.ttf` → **同梱する**（2026-10-04 ユーザー決定）。SIL OFL 1.1（Adobe の Source Sans を Processing が改名したもの。Reserved Font Name は "Source"）。core 4.5.2 から無改変でコピーし、`src/lib/runtime/fonts/` にライセンス文と一緒に置いた。表記は [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
   - [x] (c) Processing core / p5.js（LGPL）のコードはコピー・移植しない（CLAUDE.md の作業ルール 6）。
-- [ ] **P0-8 CI**（S、任意）
+- [x] **P0-8 CI**（S、任意）
   GitHub Actions で `npm ci` → `npx playwright-core install chromium` → `npm run typecheck` → `npm run test:visual`（参照はコミット済みなので Processing は不要）。
+  → 結果（2026-10-25）: P4-5 と合わせて `.github/workflows/ci.yml`。まだ GitHub で実行したことはない（「現在地」）。
 
 ## P1: 新コンパイラ（速さと Java 意味論）
 
@@ -188,11 +189,24 @@ createFont/loadFont(.vlw)/textFont/textSize/textAlign（縦方向も）/textLead
 
 ## P4: 配布と性能
 
-- [ ] **P4-1 AOT**: CLI `processing-ts build <sketchDir>`（JS + data マニフェスト + 任意で Service Worker 雛形）と Vite プラグイン（`import sketch from "./MySketch/?pde"`）。
-- [ ] **P4-2 サブパス export とコード分割**（compiler / runtime / webgl / vite）。`library.js`（単一ファイル版）の生成方法を新構成に合わせて更新。
-- [ ] **P4-3 変換結果のキャッシュ**（エディタ向け、ソースのハッシュ → IndexedDB）。
-- [ ] **P4-4 Worker 実行モード**（OffscreenCanvas、停止ボタンで terminate、入力の転送）。
-- [ ] **P4-5 サイズ予算と性能の回帰チェックを CI に追加**。
+- [x] **P4-1 AOT**: CLI `processing-ts build <sketchDir>`（JS + data マニフェスト + 任意で Service Worker 雛形）と Vite プラグイン（`import sketch from "./MySketch/?pde"`）。
+  → 結果（2026-10-25）: 事前変換したスケッチは ES モジュール（`src/compiler/module.ts` の `sketchModule()`）で、既定のエクスポートが `PrecompiledSketch`（`src/lib/types.ts`）: コードは関数 `sketch($rt, __renderer__)`（`new Function` が要らないので strict な CSP でも動く）、`files`（コンパイラが見つけた名前）・`listed`（data/ の一覧 = マニフェスト）・`urls`（バンドラが付けた名前）・`opengl`/`shapes`（遅延読み込みの要否）・`font`。ソースマップは関数の見出しの分だけずらしたコンパイラの対応表。実行はコンパイラなしの `SketchPlayer.run()`。
+  - CLI（`src/aot/cli.ts`、パッケージの `bin`）: `build` は `index.html`・`sketch.js`(+map)・`processing-ts/`（standalone ランタイム: runtime.js・webgl.js・worker.js・チャンク・fonts）・`data/`・スケッチの隣にあって名前で読まれるファイルを書く。`--sw`（全ファイルをキャッシュする Service Worker）、`--worker`、`--runtime <url>`（ランタイムをコピーせず CDN などから）、`--sketch-only`、`--title`。`check` はコンパイルエラーだけを出す。既定の出力は `<sketch>/web-export`。
+  - Vite プラグイン（`src/aot/vite.ts`、`/vite`）: フォルダか .pde を `?pde` で import（.pde はそのままでも）。data/ のファイルと既定フォントを `?url` の import にする（ビルドでは名前の変わったアセットになる）。コンパイルエラーは Vite のエラー（タブ・行・列）、タブの編集で再読み込み。TypeScript 用の型は `/client`。パッケージを Vite の dev サーバの事前バンドルから外す（fonts/ と worker.js がモジュールの隣にあるため）。
+  - 検証: `vt run --exec aot` で全 76 ケース PASS（Node で作ったモジュールをページが import して `SketchPlayer` で実行）。`npm run test:aot` の cli・offline・vite・dev・package（下）が本物の Processing の参照と一致。単体テスト `tests/unit/aot.test.ts`。
+- [x] **P4-2 サブパス export とコード分割**（compiler / runtime / webgl / vite）。`library.js`（単一ファイル版）の生成方法を新構成に合わせて更新。
+  → 結果: `package.json` の `exports`: `.`（SketchManager。互換レイヤ）・`/runtime`（SketchPlayer。コンパイラなし）・`/compiler`（compileSketch・sketchModule）・`/webgl`（OpenGL レンダラと PShape を静的に読み込んで登録。1 つのバンドルにまとめたいとき）・`/vite`・`/client`（型）・`/library.js`・`/fonts/*`。`bin: processing-ts`。`vite build` はこの 4 エントリをチャンクを共有して出し、Node 用の cli.js・vite.js（Node は node_modules の .ts の型を除去しないので JS で出す）、`dist/worker.js`（Worker 実行のスクリプトを 1 ファイルに）、`dist/standalone/`（CLI がコピーするバンドラなし用のランタイム）、`library.js`（esbuild で全部 1 ファイル。隣に fonts/ と worker.js が要る）を書く。型は `tsconfig.build.json` と `src/aot` から `dist/types/`（`.ts` の import のままだが、strict な利用側のプロジェクトで解決できることを確認）。
+  - 利用者のバンドラ向け: 既定フォントと worker.js の URL はソースでは literal にしない（Vite のライブラリビルドがフォントを base64 で埋め込むため）が、ビルドの出力では literal な `new URL("./…", import.meta.url)` に書き換える（`src/lib/runtime/assetURLs.ts`、vite.config.ts の `literal-asset-urls`）。利用者の Vite はこれをアセットとしてコピーする。
+  - 検証: `npm run test:aot -- package package-dev`: `vite build` したパッケージを node_modules に置いたアプリが、パッケージ名で SketchManager（メインスレッド・Worker）と `?pde` を使い、Vite でビルドしても dev サーバでも本物の参照と一致（16 件）。サイズ: ランタイムの最初の読み込み 49.6 KiB gz（予算 50）。
+- [x] **P4-3 変換結果のキャッシュ**（エディタ向け、ソースのハッシュ → IndexedDB）。
+  → 結果: `CompileCache`（`src/lib/CompileCache.ts`）: タブの名前と内容（メインタブが先頭）と `COMPILER_VERSION` の 106 ビットのハッシュをキーに、エラーの無い変換結果をメモリ（LRU）と IndexedDB に置く（最大 50 件、古いものから消す）。`SketchSettings.cache: true`（または自前の CompileCache）で有効、`transpileSketch()` はメモリだけ、`transpileSketchCached()` と `runSketch()` は IndexedDB も見る。デモは本番ビルドだけで有効。生成コードを変えたら `src/compiler/index.ts` の `COMPILER_VERSION` を変える。199 行のスケッチは新しいページで IndexedDB から 0.9〜1.8ms（コールド変換 22ms、`npm run bench` の cached 列）。
+- [x] **P4-4 Worker 実行モード**（OffscreenCanvas、停止ボタンで terminate、入力の転送）。
+  → 結果: `SketchSettings.thread: "worker"`。最初の実行で `WorkerRunner`（`src/lib/runtime/worker/`。必要なときだけ読み込む 1.8 KiB gz）に替わり、キャンバスを `transferControlToOffscreen()` して Worker（`worker/entry.ts`。中身はメインスレッドと同じ `DefaultRunner`）で実行する。ページは DOM イベント（とその時のキャンバスの位置）・フォーカス・リサイズ・step を送り、Worker は println・エラー・保存したファイル・窓の大きさ・cursor()・surface.setTitle() を返す（`protocol.ts`）。`stopSketch()` は Worker を terminate する（draw() の無限ループでも止まる）ので、キャンバスは同じ位置に作り直した新しいもの（1 つのキャンバスは 1 度しか移せない。`target_element` が替わる）。事前変換した関数はソース文字列で渡す。`SketchPlayer.capture()` はどちらのモードでもキャンバスを画像にする。Worker には DOMParser が無いので SVG は `io/xmlLite.ts` で読む。デモは `?thread=worker` で使える。
+  - 検証: `vt run --exec worker` で全 76 ケース PASS（入力スクリプトのマウス・キーもページから転送）。`npm run test:aot -- worker`: 無限ループ中もページが応答し（タイマーの遅れ 200ms 未満）、stopSketch() で止まり、次の実行が新しいキャンバスに描き、cursor/title がページに届く。`cli-worker`: `processing-ts build --worker` の出力が参照と一致。
+- [x] **P4-5 サイズ予算と性能の回帰チェックを CI に追加**。
+  → 結果: `.github/workflows/ci.yml`（Windows のランナー。参照を作った開発機と同じく、Chromium の文字のラスタライズを合わせるため）: typecheck・`npm test`・`test:lang`・`test:visual`（main・worker・aot）・`test:aot`・`npm run size`（サイズの予算は厳密）・`npm run bench -- --slack 2`（時間の予算は共有ランナー向けに 2 倍）。失敗時は出力を成果物に残す。`npm run size` は遅延読み込みの部分を種類ごと（OpenGL・PShape / Worker 実行）に分け、Worker のスクリプトも測る。
+- [x] **速度の宿題（STATUS.md C4）**: 199 行のコールド変換 22ms（目標 20ms）。
+  → 結果: 新しいページの最初の変換の内訳はほとんどが JIT の立ち上がり（Lezer の解析 6ms・型検査 4ms。空のスケッチでも型検査 2.5ms。ライブラリモデルの展開は 2.7ms）。そこで `SketchManager` が作られた後のアイドル時間に小さなスケッチを 1 回変換しておく（`warmUp()`、`warm_up: false` で無効）: エディタで Run を押したときの最初の変換は 11.5ms（小さいスケッチは 1〜4ms）。ページを開いてすぐ変換する場合のコールド 22ms は変わらない（そういうページは事前変換かキャッシュを使う）。
 
 ## P5: API の完全化
 
@@ -223,3 +237,6 @@ CodeMirror 6 + Lezer Processing 文法のデモエディタ（ハイライト、
 | 済 (P2-8) | vt の入力スクリプト | フレームごとのマウス/キー操作を Processing 側（`java.awt.Robot` ではなくイベント関数の直接呼び出しを注入）と processing-ts 側の両方で再生して比較 |
 | 済 (P2-9) | vt `--offline` | Service Worker + オフラインでの data/ 読み込み確認 |
 | 済 (P3) | `tests/perf/` + vt `bench` | フレーム時間の計測（SwiftShader / GPU） |
+| 済 (P4) | vt `--exec worker` / `--exec aot` | 同じケースと参照で、Worker 実行と事前変換の経路を確かめる |
+| 済 (P4) | `npm run test:aot`（tools/aot） | CLI の出力・オフライン・Vite のビルドと dev サーバ・Worker の停止・ビルドしたパッケージを入れたアプリ |
+| 済 (P4) | `.github/workflows/ci.yml` | push / pull request ごとの回帰チェック（サイズと時間の予算を含む） |

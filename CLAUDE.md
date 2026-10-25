@@ -21,10 +21,13 @@ Processing.js（古い Processing が対象・構文解析エラー・シェー�
 ```sh
 npm install
 npm run dev                  # デモ（ライブエディタ）: http://localhost:8080/processing-ts/
-npm run typecheck            # 型チェック（src/lib・src/compiler・src/runtime・tools・tests。何も書き出さない）。`npx tsc` を直接使うと dist/types が書き換わるので使わない
+npm run typecheck            # 型チェック（src/lib・src/compiler・src/runtime・src/aot・tools・tests。何も書き出さない）。`npx tsc` を直接使うと dist/types が書き換わるので使わない
 npm test                     # 単体テスト（Vitest, tests/unit/。Node で動くものだけ）
 npm run test:visual          # 視覚/出力回帰テスト（全ケース、約 10 秒）。終了コード 0 = 回帰なし
 npm run test:visual -- <名前の前方一致...> [--tag 2d]
+npm run test:visual -- --exec worker   # 同じケースを Worker 実行で（--exec aot: 事前変換したモジュールを SketchPlayer で）
+npm run test:aot             # 事前変換と配布の E2E（CLI の出力・オフライン・Vite のビルド/dev・Worker の停止・ビルドしたパッケージ。約 3 分）
+node src/aot/cli.ts build <sketchDir> [--out dir] [--sw] [--worker]   # processing-ts build（静的サイトに事前変換）
 npm run test:visual:ref -- <case>   # 本物の Processing で参照画像と stdout を作り直す（ケースを変えたとき）
 npm run vt -- shot <sketchDir> --ref --frames 30   # 任意のスケッチを processing-ts と Processing の両方で撮って比較
 npm run vt -- list           # テストケースと既知の問題の一覧
@@ -39,7 +42,7 @@ npm run gen:manifest         # 本物の core jar から API マニフェスト�
 npm run coverage             # リファレンスに対する実装済み API の一覧 → docs/api-coverage.md
 npm run bench                # 変換時間（Node の旧構文解析 + 新コンパイラのフロントエンド + ブラウザでの変換全体）。予算超過で終了コード 1
 npm run size                 # バンドルサイズ（min / gzip / brotli）。予算: tools/bench/budget.json
-npm run build                # リリース時のみ（dist/ と library.js はコミットされた成果物）
+npm run build                # リリース時のみ（dist/ と library.js はコミットされた成果物）。確かめるだけなら npx vite build --outDir <一時フォルダ>
 ```
 
 結果は `tests/visual/out/` に出る。**`tests/visual/out/<case>/composite.png`（左: Processing / 中: processing-ts / 右: 差分）を Read ツールで開いて目で確認する**。変換後の JS は同じフォルダの `transpiled.js`。
@@ -55,7 +58,9 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 
 ## 構成（要点）
 
-- `src/lib/SketchManager.ts` … 公開 API（読み込み → 変換 → 実行）
+- `src/lib/SketchManager.ts` … 公開 API（読み込み → 変換 → 実行）。実行の部分は `SketchPlayer.ts`（コンパイラなし。パッケージの `/runtime`）。サブパスのエントリは `src/lib/{index,runtime,compiler,webgl}.ts`
+- `src/aot/` … 事前変換（Node）: CLI `processing-ts build`（`cli.ts`/`build.ts`）、Vite プラグイン（`vite.ts`、`import sketch from "./MySketch/?pde"`）、バンドラなし用のランタイム（`standalone.ts`）。モジュールの形は `src/compiler/module.ts`
+- `src/lib/runtime/worker/` … Worker 実行（`thread: "worker"`）: ページ側 `WorkerRunner`、Worker 側 `entry.ts`（中身は DefaultRunner）
 - `src/compiler/` … コンパイラ（P1。`SketchManager` が使う）。`index.ts` の `compileSketch()` が解析 → 型付き AST（`ast.ts`）→ 型検査（`check.ts`）→ JS 生成（`codegen.ts`）を行い、コードと診断を返す。DOM 非依存（[ARCHITECTURE.md](docs/ARCHITECTURE.md) の「新コンパイラ」）
 - `src/runtime/lang/` … 新コンパイラの生成コードが使う Java 言語ランタイム（数値・文字列・例外・ボックス・java.util の一部）。DOM 非依存
 - `src/compiler/grammar/` … 新コンパイラ用の Lezer 文法（`processing.grammar` を編集 → `npm run gen:grammar`。`parser.ts` は生成物なので手で編集しない）
@@ -63,6 +68,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 - `src/lib/runtime/` … PApplet（API。描画は `g` へ委譲）, PGraphics（レンダラ非依存の抽象クラス）, PGraphicsJava2D（Canvas 2D）, PImage, PShape, DefaultRunner（フレームループ）
 - `src/lib/runtime/opengl/` … P2D/P3D の WebGL2 レンダラ（PGraphicsOpenGL）と PShader。PShape・PMatrix3D とともに必要なときだけ動的 import（`openglModule.ts`）
 - `src/main.ts` ほか … デモ用エディタ。`public/samples/` はデモのサンプル
+- `tools/aot/` … 事前変換・配布の E2E テスト（`npm run test:aot`）
 - `tools/vt/` … 視覚テスト CLI。`tests/visual/cases/<name>/` がケース、`tests/visual/refs/` が Processing の参照（コミットする）
 - `docs/research/` … 調査・計測の生データと再現スクリプト
 
@@ -86,3 +92,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 - `src/compiler/`・`src/runtime/` と `tools/` は Node の型除去でそのまま実行されるので、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など変換が必要な TS 構文を使わない。import には `.ts` 拡張子を付ける。
 - Processing は Java と挙動が違うことがある（例: テキストブロックは字下げを除去しない）。Java の仕様から推測せず本物で確かめる。
 - Git Bash の heredoc で `'` を含む長い内容を書くと失敗することがある。ファイル作成は Write ツールを使う。
+- 生成コードやランタイムとの約束を変えたら `src/compiler/index.ts` の `COMPILER_VERSION` を上げる（変換キャッシュ `CompileCache` のキー）。
+- ランタイムが自分で読むファイル（既定フォント・worker.js）の URL は `src/lib/runtime/assetURLs.ts` だけで作る。ソースでは literal な `new URL("./…", import.meta.url)` にしない（Vite のライブラリビルドが埋め込む）。ビルドが literal に書き換える。
+- Node は node_modules の中の .ts の型を除去しない。配るツール（CLI・Vite プラグイン）は `vite build` が JS にする（`dist/cli.js`・`dist/vite.js`）。
+- Worker 実行では実行のたびにキャンバスが作り直される（`SketchPlayer.target_element` を使う）。ページからは Worker のキャンバスを読めないので、画像は `SketchPlayer.capture()`。

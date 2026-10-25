@@ -1,6 +1,6 @@
 # 現状と既知の問題（2026-10-25 時点）
 
-スケッチの変換は新コンパイラ（`src/compiler/`、ROADMAP P1、P1-9 で切り替え）。ランタイムは PApplet + レンダラ非依存の PGraphics + Canvas 2D の JAVA2D レンダラ（P2-1。PixiJS は外した）と WebGL2 の P2D/P3D レンダラ（P3。必要なときだけ読み込む）に Java 言語ランタイム（`src/runtime/lang/`）を組み合わせている。
+スケッチの変換は新コンパイラ（`src/compiler/`、ROADMAP P1、P1-9 で切り替え）。ページで変換する（`SketchManager`）ほか、事前変換（`processing-ts build`・Vite プラグイン。P4）したものをコンパイラなしで実行できる（`SketchPlayer`）。ランタイムは PApplet + レンダラ非依存の PGraphics + Canvas 2D の JAVA2D レンダラ（P2-1。PixiJS は外した）と WebGL2 の P2D/P3D レンダラ（P3。必要なときだけ読み込む）に Java 言語ランタイム（`src/runtime/lang/`）を組み合わせている。
 数値の根拠は [research/2026-10-measurements/RESULTS.md](research/2026-10-measurements/RESULTS.md) と `npm run test:visual` の結果。
 
 ## サマリ
@@ -11,7 +11,9 @@
 | 意味解析（型） | 型検査器（`src/compiler/check.ts`）。本物の Processing の `cli --build` と 2,381/2,384 件一致、見逃し 0（`npm run test:check`。不一致 3 件はすべて `java.awt`） |
 | コード生成 | 静的型を使って Java の意味を保つ（整数演算、float、char、キャスト、オーバーロード、ボクシング、例外、ラムダ…）。java.util の互換層あり。`lang` タグの 24 ケースすべてで println 出力が本物の Processing と完全一致（ブラウザの `npm run test:visual`。Node の `npm run test:lang` は random() を持たないスタブなので random_seed を除く 23 件） |
 | モード | 静的・アクティブ・Java モード。`size()`/`smooth()`/`pixelDensity()` などの `settings()` への移動も Processing と同じ規則 |
-| 変換速度 | ブラウザで 199 行のコールド変換 22ms、ウォーム 3ms。5k 行のウォーム 41ms（`npm run bench`） |
+| 変換速度 | ブラウザで 199 行のコールド変換 22ms、`SketchManager.warmUp()`（ページがアイドルのときに自動）の後の最初の変換 11.5ms、ウォーム 3ms、変換キャッシュ（IndexedDB）から 0.9〜1.8ms。5k 行のウォーム 40ms（`npm run bench`） |
+| 配布 | サブパス export（`.`・`/runtime`・`/compiler`・`/webgl`・`/vite`・`/client`）。CLI `processing-ts build`（静的サイト。`--sw` でオフライン、`--worker`）と Vite プラグイン（`import sketch from "./MySketch/?pde"`）。どちらも本物の参照と一致（`npm run test:aot`、ビルドしたパッケージを入れたアプリでも） |
+| 実行スレッド | メインスレッド（既定）と Web Worker（`thread: "worker"`。OffscreenCanvas。stopSketch() で無限ループも止まる）。視覚テスト 76 ケースはどちらでも、事前変換でも PASS |
 | 2D 描画 | Canvas 2D の JAVA2D レンダラ。図形・各モード・strokeCap/Join・beginShape の全種別と contour・bezier/curve・変換（shear/applyMatrix）・colorMode（RGB/HSB）・blendMode・tint・createGraphics。Java2D のストローク正規化も再現。2d タグの視覚ケースはすべて PASS |
 | P2D / P3D | WebGL2 の自作レンダラ（`src/lib/runtime/opengl/`、ARCHITECTURE.md「OpenGL レンダラ」）。カメラ・投影・行列は本物と値まで一致、図形・線・点・テクスチャ・ライト・材質・box/sphere・blendMode・hint・createGraphics(P2D/P3D)・loadPixels/get/set。3d/p2d タグの視覚ケースはすべて PASS（許容差 2%） |
 | PShader | loadShader/shader/resetShader/filter(PShader)/set()、Processing の uniform・属性名、GLSL 1.x → GLSL ES 3.00 の自動変換、ppixels、attrib*()。同梱のシェーダー examples 18 本中 15 本が動く（残りは PGL・java.nio を使う低レベル GL の例） |
@@ -19,8 +21,9 @@
 | 画像 / pixels | `pixels` は ARGB の Int32Array（普通の PImage では pixels が正で、半透明の画素も書いた値のまま）。loadPixels/updatePixels/get/set/copy/mask/resize/save（png/jpg/tif/tga）、filter（全種類。BLUR の半径の上限など本物の癖も再現）、blend/blendColor（SOFT_LIGHT 以外は本物と全件一致）。loadImage は setup() 前に事前デコードした画像を同期で返す |
 | ファイル IO | `SketchFiles`: スケッチが読むファイル（コンパイラが見つけた定数の名前とホストの一覧）を setup() の前に fetch。`data/` → スケッチフォルダの順。Service Worker でオフラインでも動く（`vt run --offline`）。保存はメモリ + ホストへの通知 |
 | 互換性コーパス | Processing 同梱 examples 254 本中 **239 本（94%）** がエラーなく完走（JAVA2D 95% / P2D 93% / P3D 93%）。決定的なスケッチの見た目は JAVA2D 120/120、P2D/P3D 39/43 が本物と一致（`npm run vt -- corpus --ref`）。変換できないのは 1 本（`java.awt`）だけで、残りの失敗は P5 の未実装 API（IntList/IntDict/Table/XML/thread/createWriter/sketchPath）、低レベル GL（PGL・java.nio）、複数ウィンドウ。内訳は [tests/corpus/report.md](../tests/corpus/report.md) |
-| 視覚テスト | 76 ケースすべて PASS（[TESTING.md](TESTING.md)）。フレーム時間は `npm run vt -- bench`（tests/perf） |
-| 単体テスト | Vitest（`npm test`、`tests/unit/`）。CI と lint はなし。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
+| 視覚テスト | 76 ケースすべて PASS（[TESTING.md](TESTING.md)。`--exec worker`・`--exec aot` でも）。フレーム時間は `npm run vt -- bench`（tests/perf） |
+| 単体テスト | Vitest（`npm test`、`tests/unit/`）。型検査は `npm run test:check`、生成コードの実行結果は `npm run test:lang`（どちらも本物の Processing と比較） |
+| CI | `.github/workflows/ci.yml`（Windows。型・単体・lang・視覚 3 種・test:aot・サイズと時間の予算）。まだ GitHub で実行していない。lint はなし |
 
 ## 実装済み API（ランタイム）
 
@@ -71,7 +74,7 @@
 | C1 | ジェネリックメソッドの型引数の推論は上下限つきの単一化まで。実引数の位置にあるジェネリック呼び出し（`Collections.emptyList()` など）は外側の引数の型から推論しないので Object になり、`List<String>` の引数に渡すと誤ってエラーになる | `check.ts`（instantiate / unify） |
 | C2 | final 変数への 2 回目の代入（definite unassignment）と blank final フィールドの初期化漏れを検出しない | `definite.ts` |
 | C3 | キャプチャ変換をしない（ワイルドカードは境界として読む）。`List<? super T>` への書き込みなど一部で Java より緩い | `typesystem.ts` |
-| C4 | 変換速度: ブラウザで 199 行のコールド変換が 22ms（目標 20ms をわずかに超える。ライブラリモデルの初回展開と JIT のウォームアップ）。5k 行のウォームは 40ms（目標 50ms 以内）で、そのうち Lezer の解析が約 20ms | `grammar/processing.grammar`, `library.ts` |
+| C4 | 変換速度: ページを開いてすぐの最初の変換は 199 行で 22ms（目標 20ms をわずかに超える。ほとんどが JIT の立ち上がりで、Lezer の解析 6ms・型検査 4ms・ライブラリモデルの展開 2.7ms）。エディタの場合はアイドル時間の `warmUp()` で 11.5ms、事前変換なら 0、キャッシュなら 1ms 前後なので、残るのは「開いてすぐ変換するページ」だけ。5k 行のウォームは 40ms（目標 50ms 以内）で、そのうち Lezer の解析が約 20ms | `grammar/processing.grammar`, `library.ts` |
 | C5 | `java.awt` など JDK のモデル外のクラスは使えない（`unsupported` で報告。同梱 examples では Yellowtail の `java.awt.Polygon` のみ） | `tools/manifest/ManifestGen.java`（LIBRARY_ROOTS） |
 | C6 | long は JS の number（double）で表すため、絶対値が 2^53 を超える値の演算と表示が不正確（`9007199254740993L` → `9007199254740992`）。`Long.MAX_VALUE`/`MIN_VALUE` の表示と飽和キャストは正しい | `runtime/lang/numbers.ts`, `codegen.ts` |
 | C7 | `Float.toString` の JDK 17 の再現が 4e25〜7.5e25 付近の一部の値で異なる（Java 17 で出力したランダムな float 30 万個のうち 81 個、double 20 万個のうち 4 個（3e25 付近））。非正規化数の 2 の累乗の一部も異なる | `runtime/lang/numbers.ts` |
@@ -91,20 +94,34 @@
 - JPEG のデコーダはブラウザのもの（Java の ImageIO と画素値が ±1 程度ずれることがある）。PNG の gAMA/ICC は無視する（`colorSpaceConversion: "none"`）。
 - selectInput/selectOutput/selectFolder、createReader/createWriter/createInput/createOutput は未実装（java.io の互換層とコールバックの名前呼び出しが必要。P5）。
 
+## 既知の問題（配布 / Worker 実行）
+
+| # | 問題 | 場所 |
+|---|---|---|
+| D1 | Worker 実行（`thread: "worker"`）では、実行のたびにキャンバスを同じ位置に作り直す（`transferControlToOffscreen()` は 1 つのキャンバスに 1 度だけ）。ホストが持っている元のキャンバスへの参照は古くなるので、`SketchPlayer.target_element` を使う（id・class・属性は引き継ぐが、ホストが後から付けたイベントリスナーは付かない） | `SketchPlayer.freshCanvas` |
+| D2 | Worker 実行で使えないもの: `addDependency()` で足したクラス（コンストラクタは Worker に送れない）、`focused` の初期値以外の document の状態、`delay()`（未実装。Worker なら Atomics.wait で実装できる）。生成コードは Worker の中で `new Function` するので、CSP で `unsafe-eval` を禁じたページでは動かない（事前変換したスケッチをメインスレッドで実行すれば `new Function` は要らない） | `worker/entry.ts` |
+| D3 | Worker 実行は OffscreenCanvas の 2D/WebGL2 とモジュール Worker が要る（Chromium・Firefox・Safari 17 以降）。無い環境への自動の切り替えはしない | `WorkerRunner` |
+| D4 | Vite の dev サーバの事前バンドル（optimizeDeps）はパッケージを node_modules/.vite に移すので、隣の fonts/ と worker.js が見つからなくなる。Vite プラグインを使えば自動で外すが、プラグインなしで SketchManager だけを使う場合は `optimizeDeps.exclude` に入れるか `workerURL` を渡す。webpack など Vite 以外のバンドラでの確認はしていない | `src/aot/vite.ts`, `assetURLs.ts` |
+| D5 | `processing-ts build` は data/ の全ファイルと、スケッチが定数の名前で読むフォルダ直下のファイルだけをコピーする（実行時に組み立てた名前のフォルダ直下のファイルは含まれない）。Service Worker（`--sw`）は全ファイルを最初にキャッシュするので、data/ が大きいと初回の読み込みが重い | `src/aot/build.ts` |
+| D6 | 変換キャッシュのキーは `COMPILER_VERSION`（手で変える）とソースだけ。生成コードやランタイムとの約束を変えたのに版を上げ忘れると、古い生成コードが使われる（デモは本番ビルドだけでキャッシュを使う） | `src/compiler/index.ts`, `CompileCache.ts` |
+
 ## 既知の問題（ビルド / リポジトリ）
 
-- `dist/` と `library.js` がコミットされている（ビルド成果物。現在コミットされているのは P2-1 以前の PixiJS 版で、README の手順（CDN の Pixi を読み込む）もそれに合わせたまま。次のリリースで両方を更新する）。`tsc` を実行すると `dist/types` が書き換わるので注意（型チェックは `npm run typecheck` を使う）。
-- README の「Processing 4.4 までの構文をサポート」は実態より強い表現。
+- `dist/` と `library.js` がコミットされている（ビルド成果物。現在コミットされているのは P2-1 以前の PixiJS 版で、README の手順（CDN の Pixi を読み込む）もそれに合わせたまま。次のリリースで `npm run build` して両方を更新する。ビルドの設定は P4 の構成（サブパス export・cli.js・vite.js・worker.js・standalone/）に更新済みで、一時フォルダへのビルドで確認した）。`tsc` を実行すると `dist/types` が書き換わるので注意（型チェックは `npm run typecheck` を使う）。
+- ルートの `library.js`（単一ファイル版）は、Worker 実行と既定フォントのために隣に `worker.js` と `fonts/` が要る（README で配るときは一緒に配る）。
+- README の「Processing 4.4 までの構文をサポート」は実態より強い表現。使い方の説明も旧版のまま（P6）。
 
 ## バンドルサイズ（現状）
 
-`npm run size`（esbuild でコード分割してバンドルし minify。2026-10-25、P3 の後）。「最初の読み込み」はエントリから静的 import でたどれる部分、「必要なときだけ」は動的 import の部分（P2D/P3D・PShader・PShape。生成コードが使うときだけ読み込む）。
+`npm run size`（esbuild でコード分割してバンドルし minify。2026-10-25、P4 の後）。「最初の読み込み」はエントリから静的 import でたどれる部分、「必要なときだけ」は動的 import の部分（P2D/P3D・PShader・PShape は生成コードが使うときだけ、WorkerRunner は Worker 実行のときだけ読み込む）。
 
 | 成果物 | min | gzip |
 |---|---:|---:|
-| ライブラリ全体（`src/lib/index.ts`、@lezer を含む）: 最初の読み込み | 682 KiB | 168 KiB |
-| ランタイム単体（2D の PApplet・レンダラ・言語ランタイム。コンパイラなし）: 最初の読み込み | 148 KiB | 48 KiB |
-| 　+ 必要なときだけ（OpenGL レンダラ・PShader・PShape・PMatrix3D・libtess） | 118 KiB | 40 KiB |
+| ライブラリ全体（`src/lib/index.ts` = SketchManager、@lezer を含む）: 最初の読み込み | 688 KiB | 170 KiB |
+| ランタイム単体（`src/lib/runtime.ts` = SketchPlayer。2D の PApplet・レンダラ・言語ランタイム。コンパイラなし）: 最初の読み込み | 153 KiB | 49.6 KiB |
+| 　+ 必要なときだけ（OpenGL レンダラ・PShader・PShape・PMatrix3D・libtess） | 120 KiB | 40.2 KiB |
+| 　+ 必要なときだけ（Worker 実行のページ側 WorkerRunner） | 4.5 KiB | 1.8 KiB |
+| Worker のスクリプト（`worker/entry.ts`。+ OpenGL は上と同じ 40 KiB を必要なときだけ） | 151 KiB | 49.2 KiB |
 | コンパイラ（`src/compiler/index.ts`） | 531 KiB | 120 KiB |
 | 言語ランタイム（`src/runtime/lang`） | 64 KiB | 19 KiB |
 
