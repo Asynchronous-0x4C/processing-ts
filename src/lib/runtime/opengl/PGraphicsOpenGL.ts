@@ -8,6 +8,7 @@ import { filterPixels } from "../util/imageOps";
 import { exceptions } from "../../../runtime/lang/index.ts";
 import { GLContext, type GLProgram } from "./GLContext";
 import { PShader, ShaderKind } from "./PShader";
+import type { PShape } from "../PShape";
 import * as S from "./shaders";
 import { tessellate, ellipseSegments, ellipsePoints, strokePolygons, unionPolygons, cosLUT, sinLUT, SINCOS_LENGTH } from "./tess";
 
@@ -78,6 +79,36 @@ type ShapeVertex={
   /** 0 vertex, 1 bezier, 2 quadratic, 3 curve; contours start with `brk` */
   code:number,c?:number[],brk?:boolean,
 };
+
+/** A shape's tessellation in GPU buffers. */
+type GPUGeometry={vbo:WebGLBuffer,ibo:WebGLBuffer,count:number};
+/** Geometry drawn with one texture. */
+type Segment={tex:PImage|null,repeat:boolean,polys:GPUGeometry|null,lines:GPUGeometry|null,points:GPUGeometry|null};
+type ShapeCache={glc:GLContext,version:number,is3D:boolean,detail:number,segments:Segment[]};
+
+/** a × b as a column-major Float32Array (for a uniform). */
+function mul4(a:PMatrix3D,b:PMatrix3D):Float32Array{
+  const A=[a.m00,a.m01,a.m02,a.m03,a.m10,a.m11,a.m12,a.m13,a.m20,a.m21,a.m22,a.m23,a.m30,a.m31,a.m32,a.m33];
+  const B=[b.m00,b.m01,b.m02,b.m03,b.m10,b.m11,b.m12,b.m13,b.m20,b.m21,b.m22,b.m23,b.m30,b.m31,b.m32,b.m33];
+  const out=new Float32Array(16);
+  for(let r=0;r<4;r++)for(let c=0;c<4;c++){
+    out[c*4+r]=A[r*4]*B[c]+A[r*4+1]*B[4+c]+A[r*4+2]*B[8+c]+A[r*4+3]*B[12+c];
+  }
+  return out;
+}
+
+/** The inverse transpose of a matrix's 3×3 part, column-major (normals into eye space). */
+function normalMatrixOf(m:PMatrix3D):Float32Array{
+  const a=m.m00,b=m.m01,c=m.m02,d=m.m10,e=m.m11,f2=m.m12,g=m.m20,h=m.m21,i=m.m22;
+  const A=e*i-f2*h,B=-(d*i-f2*g),C=d*h-e*g;
+  const det=a*A+b*B+c*C||1;
+  // the cofactors over the determinant are the inverse transpose; column-major
+  return new Float32Array([
+    A/det,-(b*i-c*h)/det,(b*f2-c*e)/det,
+    B/det,(a*i-c*g)/det,-(a*f2-c*d)/det,
+    C/det,-(a*h-b*g)/det,(a*e-b*d)/det,
+  ]);
+}
 
 type Light={type:number,pos:number[],normal:number[],ambient:number[],diffuse:number[],specular:number[],falloff:number[],spot:number[]};
 const AMBIENT_LIGHT=0,DIRECTIONAL=1,POINT_LIGHT=2,SPOT=3;
@@ -1785,22 +1816,63 @@ export class PGraphicsOpenGL extends PGraphics{
   }
 
   private flushPolys(){
+    if(this.capturing){
+      this.closeSegment();
+      return;
+    }
+    this.drawPolys(this.polys,null,this.batchTexture,this.batchTextureRepeat,null);
+    this.polys.clear();
+    this.drawCount++;
+  }
+
+  private flushLines(){
+    if(this.capturing){
+      this.closeSegment();
+      return;
+    }
+    this.drawLines(this.lines,null,null);
+    this.lines.clear();
+  }
+
+  private flushPoints(){
+    if(this.capturing){
+      this.closeSegment();
+      return;
+    }
+    this.drawPoints(this.points,null,null);
+    this.points.clear();
+  }
+
+  /** Bind the vertices and indices to draw: streamed from a batch, or a shape's cached buffers. */
+  private bindGeometry(b:Batch,cached:GPUGeometry|null):number{
     const glc=this.glc!,gl=glc.gl;
-    const b=this.polys;
-    const tex=this.batchTexture;
+    gl.bindVertexArray(glc.vao);
+    this.resetAttribs();
+    if(cached){
+      gl.bindBuffer(gl.ARRAY_BUFFER,cached.vbo);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,cached.ibo);
+      return cached.count;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER,glc.vbo);
+    gl.bufferData(gl.ARRAY_BUFFER,b.f.subarray(0,b.words),gl.STREAM_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,glc.ibo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,b.idx.subarray(0,b.nidx),gl.STREAM_DRAW);
+    return b.nidx;
+  }
+
+  /** Draw polygons (eye space with mv = null, else model space through mv). */
+  private drawPolys(b:Batch,cached:GPUGeometry|null,tex:PImage|null,repeat:boolean,mv:PMatrix3D|null){
+    const glc=this.glc!,gl=glc.gl;
     const lit=this.is3DRenderer&&this.lightsList.length>0;
     let texInfo:{tex:WebGLTexture,flip:boolean}|null=null;
     this.prepare();
     if(tex){
       gl.activeTexture(gl.TEXTURE0);
-      texInfo=this.textureOf(tex,this.batchTextureRepeat);
+      texInfo=this.textureOf(tex,repeat);
     }
     const {prog,custom}=this.choosePolyShader(!!texInfo,lit);
     gl.useProgram(prog.program);
-    gl.bindVertexArray(glc.vao);
-    this.resetAttribs();
-    gl.bindBuffer(gl.ARRAY_BUFFER,glc.vbo);
-    gl.bufferData(gl.ARRAY_BUFFER,b.f.subarray(0,b.words),gl.STREAM_DRAW);
+    const count=this.bindGeometry(b,cached);
     const st=PV*4;
     this.attrib(prog,["position","vertex"],3,gl.FLOAT,false,st,0);
     this.attrib(prog,["color"],4,gl.UNSIGNED_BYTE,true,st,12);
@@ -1810,64 +1882,139 @@ export class PGraphicsOpenGL extends PGraphics{
     this.attrib(prog,["specular"],4,gl.UNSIGNED_BYTE,true,st,40);
     this.attrib(prog,["emissive"],4,gl.UNSIGNED_BYTE,true,st,44);
     this.attrib(prog,["shininess"],1,gl.FLOAT,false,st,48);
-    this.uniforms(prog,custom,texInfo,tex);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,glc.ibo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,b.idx.subarray(0,b.nidx),gl.STREAM_DRAW);
-    gl.drawElements(gl.TRIANGLES,b.nidx,gl.UNSIGNED_INT,0);
-    b.clear();
-    this.drawCount++;
+    this.uniforms(prog,custom,texInfo,tex,mv);
+    gl.drawElements(gl.TRIANGLES,count,gl.UNSIGNED_INT,0);
   }
 
-  private flushLines(){
+  private drawLines(b:Batch,cached:GPUGeometry|null,mv:PMatrix3D|null){
     const glc=this.glc!,gl=glc.gl;
-    const b=this.lines;
     this.prepare();
     let prog:GLProgram|null=null;
     const custom=this.lineShader;
     if(custom)prog=custom.program(glc);
     prog??=glc.program(S.LINE_VERT,S.LINE_FRAG);
     gl.useProgram(prog.program);
-    gl.bindVertexArray(glc.vao);
-    this.resetAttribs();
-    gl.bindBuffer(gl.ARRAY_BUFFER,glc.vbo);
-    gl.bufferData(gl.ARRAY_BUFFER,b.f.subarray(0,b.words),gl.STREAM_DRAW);
+    const count=this.bindGeometry(b,cached);
     const st=LV*4;
     this.attrib(prog,["position","vertex"],3,gl.FLOAT,false,st,0);
     this.attrib(prog,["color"],4,gl.UNSIGNED_BYTE,true,st,12);
     this.attrib(prog,["direction"],4,gl.FLOAT,false,st,16);
-    this.uniforms(prog,custom,null,null);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,glc.ibo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,b.idx.subarray(0,b.nidx),gl.STREAM_DRAW);
-    gl.drawElements(gl.TRIANGLES,b.nidx,gl.UNSIGNED_INT,0);
-    b.clear();
+    this.uniforms(prog,custom,null,null,mv);
+    gl.drawElements(gl.TRIANGLES,count,gl.UNSIGNED_INT,0);
   }
 
-  private flushPoints(){
+  private drawPoints(b:Batch,cached:GPUGeometry|null,mv:PMatrix3D|null){
     const glc=this.glc!,gl=glc.gl;
-    const b=this.points;
     this.prepare();
     let prog:GLProgram|null=null;
     const custom=this.pointShader;
     if(custom)prog=custom.program(glc);
     prog??=glc.program(S.POINT_VERT,S.POINT_FRAG);
     gl.useProgram(prog.program);
-    gl.bindVertexArray(glc.vao);
-    this.resetAttribs();
-    gl.bindBuffer(gl.ARRAY_BUFFER,glc.vbo);
-    gl.bufferData(gl.ARRAY_BUFFER,b.f.subarray(0,b.words),gl.STREAM_DRAW);
+    const count=this.bindGeometry(b,cached);
     const st=QV*4;
     this.attrib(prog,["position","vertex"],3,gl.FLOAT,false,st,0);
     this.attrib(prog,["color"],4,gl.UNSIGNED_BYTE,true,st,12);
     this.attrib(prog,["offset"],2,gl.FLOAT,false,st,16);
-    this.uniforms(prog,custom,null,null);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,glc.ibo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,b.idx.subarray(0,b.nidx),gl.STREAM_DRAW);
-    gl.drawElements(gl.TRIANGLES,b.nidx,gl.UNSIGNED_INT,0);
-    b.clear();
+    this.uniforms(prog,custom,null,null,mv);
+    gl.drawElements(gl.TRIANGLES,count,gl.UNSIGNED_INT,0);
+  }
+
+  // --- retained shapes: a PShape tree tessellated once, kept on the GPU ---------------------------------
+
+  private capturing=false;
+  private segments:Segment[]=[];
+
+  /** End the current captured segment (the texture changes or the capture ends). */
+  private closeSegment(){
+    const glc=this.glc!,gl=glc.gl;
+    const upload=(b:Batch):GPUGeometry|null=>{
+      if(b.empty())return null;
+      const vbo=gl.createBuffer()!,ibo=gl.createBuffer()!;
+      gl.bindVertexArray(null);
+      gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+      gl.bufferData(gl.ARRAY_BUFFER,b.f.subarray(0,b.words),gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,b.idx.subarray(0,b.nidx),gl.STATIC_DRAW);
+      const g={vbo,ibo,count:b.nidx};
+      b.clear();
+      return g;
+    };
+    const seg:Segment={tex:this.batchTexture,repeat:this.batchTextureRepeat,polys:upload(this.polys),lines:upload(this.lines),points:upload(this.points)};
+    if(seg.polys||seg.lines||seg.points)this.segments.push(seg);
+  }
+
+  private disposeCache(c:ShapeCache|null){
+    if(!c||c.glc!==this.glc)return;
+    const gl=this.glc.gl;
+    for(const s of c.segments){
+      for(const g of [s.polys,s.lines,s.points]){
+        if(g){gl.deleteBuffer(g.vbo);gl.deleteBuffer(g.ibo);}
+      }
+    }
+  }
+
+  /**
+   * shape() on P2D/P3D: the shape tree is tessellated once in its own coordinates and kept in GPU
+   * buffers until it changes (PShape versions), then drawn with the modelview as a uniform, as
+   * Processing's retained shapes. Shapes with disableStyle() somewhere draw immediately.
+   */
+  __drawRetained__(sh:PShape):boolean{
+    if(this.capturing||!this.glc||!sh.__styled__())return false;
+    let c=sh.__cache__ as ShapeCache|null;
+    if(!c||c.glc!==this.glc||c.version!==sh.__version__||c.is3D!==this.is3DRenderer||c.detail!==this.bezierDetail_){
+      this.disposeCache(c);
+      c=this.captureShape(sh);
+      sh.__cache__=c;
+    }
+    this.flush();
+    const mv=this.modelview;
+    for(const seg of c.segments){
+      if(seg.polys)this.drawPolys(this.polys,seg.polys,seg.tex,seg.repeat,mv);
+      if(seg.lines)this.drawLines(this.lines,seg.lines,mv);
+      if(seg.points)this.drawPoints(this.points,seg.points,mv);
+    }
+    this.dirty=true;
+    this.drawCount++;
+    return true;
+  }
+
+  private captureShape(sh:PShape):ShapeCache{
+    this.flush();
+    const saved={polys:this.polys,lines:this.lines,points:this.points,mv:new PMatrix3D(this.modelview),tex:this.batchTexture,repeat:this.batchTextureRepeat,
+      normal:[this.normalX,this.normalY,this.normalZ]};
+    this.polys=new Batch(PV);
+    this.lines=new Batch(LV);
+    this.points=new Batch(QV);
+    this.batchTexture=null;
+    this.modelview.reset();
+    this.changed();
+    this.capturing=true;
+    this.segments=[];
+    const matrix=sh.matrix;
+    sh.matrix=null;
+    try{
+      sh.draw(this);
+      this.closeSegment();
+    }finally{
+      sh.matrix=matrix;
+      this.capturing=false;
+      this.polys=saved.polys;
+      this.lines=saved.lines;
+      this.points=saved.points;
+      this.batchTexture=saved.tex;
+      this.batchTextureRepeat=saved.repeat;
+      this.modelview.set(saved.mv);
+      this.changed();
+      [this.normalX,this.normalY,this.normalZ]=saved.normal;
+    }
+    const segments=this.segments;
+    this.segments=[];
+    return {glc:this.glc!,version:sh.__version__,is3D:this.is3DRenderer,detail:this.bezierDetail_,segments};
   }
 
   /** Processing's uniforms by name (either spelling), the lights, then the sketch's set() values. */
-  private uniforms(prog:GLProgram,custom:PShader|null,texInfo:{tex:WebGLTexture,flip:boolean}|null,tex:PImage|null){
+  private uniforms(prog:GLProgram,custom:PShader|null,texInfo:{tex:WebGLTexture,flip:boolean}|null,tex:PImage|null,mv:PMatrix3D|null){
     const gl=this.glc!.gl;
     const U=prog.uniforms;
     const get=(...names:string[])=>{
@@ -1880,10 +2027,11 @@ export class PGraphicsOpenGL extends PGraphics{
     const mat4=(m:PMatrix3D)=>new Float32Array([m.m00,m.m10,m.m20,m.m30,m.m01,m.m11,m.m21,m.m31,m.m02,m.m12,m.m22,m.m32,m.m03,m.m13,m.m23,m.m33]);
     const identity=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
     let l:WebGLUniformLocation|null;
-    if((l=get("transformMatrix","transform")))gl.uniformMatrix4fv(l,false,mat4(this.projection));
-    if((l=get("modelviewMatrix","modelview")))gl.uniformMatrix4fv(l,false,identity);
+    // immediate mode: the vertices are in eye space; retained shapes: in model space, through mv
+    if((l=get("transformMatrix","transform")))gl.uniformMatrix4fv(l,false,mv?mul4(this.projection,mv):mat4(this.projection));
+    if((l=get("modelviewMatrix","modelview")))gl.uniformMatrix4fv(l,false,mv?mat4(mv):identity);
     if((l=get("projectionMatrix","projection")))gl.uniformMatrix4fv(l,false,mat4(this.projection));
-    if((l=get("normalMatrix")))gl.uniformMatrix3fv(l,false,new Float32Array([1,0,0,0,1,0,0,0,1]));
+    if((l=get("normalMatrix")))gl.uniformMatrix3fv(l,false,mv?normalMatrixOf(mv):new Float32Array([1,0,0,0,1,0,0,0,1]));
     if((l=get("texMatrix"))){
       gl.uniformMatrix4fv(l,false,texInfo?.flip?new Float32Array([1,0,0,0,0,-1,0,0,0,0,1,0,0,1,0,1]):identity);
     }
@@ -1899,7 +2047,7 @@ export class PGraphicsOpenGL extends PGraphics{
     // lights
     const L=this.lightsList;
     if((l=get("lightCount")))gl.uniform1i(l,L.length);
-    if(L.length&&U.has("lightPosition")||U.has("lightNormal")||U.has("lightAmbient")||U.has("lightDiffuse")){
+    if(U.has("lightPosition")||U.has("lightNormal")||U.has("lightAmbient")||U.has("lightDiffuse")){
       const arr=(k:keyof Light,n:number)=>{
         const a=new Float32Array(8*n);
         L.forEach((li,i)=>a.set((li[k] as number[]).slice(0,n),i*n));

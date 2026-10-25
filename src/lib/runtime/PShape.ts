@@ -546,12 +546,36 @@ export class PShape extends PConstants{
 
   // --- drawing ----------------------------------------------------------------------------------------
 
+  /**
+   * Bumped when the shape or a descendant changes (geometry, style, children, their transformations):
+   * the OpenGL renderers keep the tessellated tree on the GPU until then.
+   */
+  __version__=0;
+  /** Renderer caches of the tessellated shape (see PGraphicsOpenGL). */
+  __cache__:unknown=null;
+
+  touch(){
+    this.__version__++;
+    this.parent?.touch();
+  }
+
+  /** Whether the shape draws with its own styles all the way down (so that it can be cached). */
+  __styled__():boolean{
+    return this.styleEnabled&&this.children.every((c)=>c.__styled__());
+  }
+
   /** Draw the shape with a renderer (shape() calls this). */
   draw(g:PGraphics){
     if(!this.visible)return;
     g.pushMatrix();
     if(this.matrix){
       if(g.is3D()||!this.matrix.isIdentity())(g.applyMatrix as (...a:number[])=>void)(...matrixArgs(this.matrix,g.is3D()));
+    }
+    // a renderer that keeps shapes (P2D/P3D) draws the whole tree at once
+    const retained=(g as {__drawRetained__?:(s:PShape)=>boolean}).__drawRetained__;
+    if(retained&&retained.call(g,this)){
+      g.popMatrix();
+      return;
     }
     if(this.styleEnabled){
       g.pushStyle();
@@ -642,6 +666,29 @@ export class PShape extends PConstants{
 
   beginTessellation(){}
   endTessellation(){}
+}
+
+// Changes reach the renderers' caches: methods that change a shape bump its version (and its parents');
+// a transformation changes how the parent draws the shape.
+for(const name of ["endShape","vertex","bezierVertex","quadraticVertex","curveVertex","beginContour","normal","texture","textureMode","noTexture",
+  "fill","fillF","noFill","stroke","strokeF","noStroke","strokeWeight","strokeCap","strokeJoin","tint","tintF","noTint","ambient","specular","emissive","shininess",
+  "setFill","setStroke","setStrokeWeight","setStrokeCap","setStrokeJoin","setTint","setTexture","setTextureMode","setTextureUV",
+  "setAmbient","setSpecular","setEmissive","setShininess","disableStyle","enableStyle","setVertex","setNormal","setPath",
+  "addChild","removeChild","setVisible","setKind","setFamily","set3D"] as const){
+  const f=PShape.prototype[name] as (...a:unknown[])=>unknown;
+  (PShape.prototype as unknown as Record<string,unknown>)[name]=function(this:PShape,...a:unknown[]){
+    const r=f.apply(this,a);
+    this.touch();
+    return r;
+  };
+}
+for(const name of ["translate","rotate","rotateX","rotateY","rotateZ","scale","resetMatrix","applyMatrix"] as const){
+  const f=PShape.prototype[name] as (...a:unknown[])=>unknown;
+  (PShape.prototype as unknown as Record<string,unknown>)[name]=function(this:PShape,...a:unknown[]){
+    const r=f.apply(this,a);
+    this.parent?.touch();
+    return r;
+  };
 }
 
 /** applyMatrix() arguments for a renderer: 16 values in 3D, the 2D part (6) otherwise. */

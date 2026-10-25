@@ -30,6 +30,7 @@ export function toGLSL3(src:string,stage:"vertex"|"fragment"):string{
   s=s.replace(/\btexture\b(?!\s*\()/g,"texMap");
   s=s.replace(/\btexture2D\s*\(/g,"texture(").replace(/\btextureCube\s*\(/g,"texture(");
   for(const w of RESERVED_ES3)s=s.replace(new RegExp(`\\b${w}\\b`,"g"),`${w}_`);
+  s=hoistGlobalInitializers(s);
   if(stage==="vertex"){
     s=s.replace(/\battribute\b/g,"in").replace(/\bvarying\b/g,"out");
   }else{
@@ -41,6 +42,84 @@ export function toGLSL3(src:string,stage:"vertex"|"fragment"):string{
     }
   }
   return "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n#line 1\n"+s;
+}
+
+/**
+ * Desktop GLSL lets global variables be initialized with any expression (`vec3 r = vec3(resolution, 0.0);`
+ * from a uniform); GLSL ES only with constants. Such initializers move to the start of main(), in order.
+ */
+function hoistGlobalInitializers(src:string):string{
+  const decl=/^\s*((?:(?:highp|mediump|lowp)\s+)?(?:float|int|uint|bool|[biu]?vec[234]|mat[234](?:x[234])?))\s+(\w+)\s*=([\s\S]*)$/;
+  const moved:string[]=[];
+  let out="";
+  let depth=0;
+  let stmt="";
+  let i=0;
+  const flushStmt=(end:string)=>{
+    const m=decl.exec(stmt);
+    if(depth===0&&m&&!/^\s*(const|uniform|in|out|attribute|varying)\b/.test(stmt)&&!hasTopLevelComma(m[3])){
+      // (the line count stays: error messages name the lines of the original)
+      out+=`${stmt.slice(0,stmt.indexOf(m[1]))}${m[1]} ${m[2]}${end}${"\n".repeat((m[3].match(/\n/g)??[]).length)}`;
+      moved.push(`${m[2]} =${m[3].replace(/\s*\n\s*/g," ")};`);
+    }else out+=stmt+end;
+    stmt="";
+  };
+  while(i<src.length){
+    const c=src[i];
+    // comments and preprocessor lines pass through
+    if(c==="/"&&src[i+1]==="/"){
+      const e=src.indexOf("\n",i);
+      const j=e<0?src.length:e;
+      stmt+=src.slice(i,j);
+      i=j;
+      continue;
+    }
+    if(c==="/"&&src[i+1]==="*"){
+      const e=src.indexOf("*/",i+2);
+      const j=e<0?src.length:e+2;
+      stmt+=src.slice(i,j);
+      i=j;
+      continue;
+    }
+    if(c==="#"&&/(^|\n)[ \t]*$/.test(src.slice(Math.max(0,i-80),i))){
+      const e=src.indexOf("\n",i);
+      const j=e<0?src.length:e;
+      out+=stmt+src.slice(i,j);
+      stmt="";
+      i=j;
+      continue;
+    }
+    if(c==="{"){
+      if(depth===0){out+=stmt+c;stmt="";}
+      else stmt+=c;
+      depth++;
+    }else if(c==="}"){
+      depth--;
+      if(depth===0){out+=stmt+c;stmt="";}
+      else stmt+=c;
+    }else if(c===";"&&depth===0){
+      flushStmt(";");
+    }else if(depth===0){
+      stmt+=c;
+    }else stmt+=c;
+    i++;
+  }
+  out+=stmt;
+  if(!moved.length)return src;
+  const main=/\bvoid\s+main\s*\(\s*(?:void\s*)?\)\s*\{/.exec(out);
+  if(!main)return src;
+  const at=main.index+main[0].length;
+  return out.slice(0,at)+" "+moved.join(" ")+out.slice(at);
+}
+
+function hasTopLevelComma(s:string):boolean{
+  let d=0;
+  for(const c of s){
+    if(c==="("||c==="[")d++;
+    else if(c===")"||c==="]")d--;
+    else if(c===","&&d===0)return true;
+  }
+  return false;
 }
 
 /**

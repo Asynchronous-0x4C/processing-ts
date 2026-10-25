@@ -384,7 +384,7 @@ async function cmdShot() {
   }
   composite(flags.ref ? [ref, actual, diff] : [actual], path.join(outDir, "composite.png"));
   fs.writeFileSync(path.join(outDir, "transpiled.js"), run.code ?? "");
-  console.log(`phase: ${run.phase}  ok: ${run.ok}  size: ${run.width}x${run.height}  transpile: ${run.transpileMs.toFixed(1)}ms  setup: ${run.setupMs.toFixed(1)}ms`);
+  console.log(`phase: ${run.phase}  ok: ${run.ok}  size: ${run.width}x${run.height}  transpile: ${run.transpileMs.toFixed(1)}ms  setup: ${run.setupMs.toFixed(1)}ms${run.frameMs.length ? `  frame: avg ${(run.frameMs.reduce((x, y) => x + y, 0) / run.frameMs.length).toFixed(1)}ms, median ${[...run.frameMs].sort((x, y) => x - y)[run.frameMs.length >> 1].toFixed(1)}ms` : ""}`);
   if (run.logs.length) console.log("println:\n  " + run.logs.join("\n  "));
   if (run.errors.length) console.log("errors:\n  " + run.errors.join("\n  "));
   console.log(`output: ${path.relative(ROOT, outDir)} (composite.png, actual.png, transpiled.js${flags.ref ? ", ref.png, diff.png" : ""})`);

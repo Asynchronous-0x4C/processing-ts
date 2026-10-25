@@ -148,10 +148,12 @@ export function injectForReference(
   if (redirect && mode === "static") code = redirect + " " + code;
 
   const out = javaPath(outPng);
-  // OpenGL frames are saved from their pixels, and loadPixels() is called once after setup(): without that,
-  // Processing 4.5.2 reads an empty (white) frame after a draw() that used filter(PShader) (save(), get()
-  // and loadPixels() alike), although the window shows the filtered frame.
-  const save = `if (g instanceof processing.opengl.PGraphicsOpenGL) { loadPixels(); PImage __vtImg = createImage(pixelWidth, pixelHeight, RGB); arrayCopy(pixels, __vtImg.pixels); __vtImg.updatePixels(); __vtImg.save("${out}"); } else { save("${out}"); }`;
+  // OpenGL frames are read inside the frame (a registered "draw" method runs right after draw()) and
+  // saved from their pixels: after handleDraw(), Processing 4.5.2 reads the OpenGL surface unreliably
+  // (an empty frame after filter(PShader), black frames with translucent textures) although the window
+  // shows the frame.
+  const saveGL = `loadPixels(); PImage __vtImg = createImage(pixelWidth, pixelHeight, RGB); arrayCopy(pixels, __vtImg.pixels); __vtImg.updatePixels(); __vtImg.save("${out}");`;
+  const save = `if (g instanceof processing.opengl.PGraphicsOpenGL) { ${saveGL} } else { save("${out}"); }`;
   if (mode === "active") {
     // handleDraw(): frameCount is 0 during setup(), 1 during the first draw(), and is incremented
     // after each call, so "frameCount > frames" right after super.handleDraw() means `frames`
@@ -164,12 +166,25 @@ boolean __vtRedirectStdout() {
   ${redirect}
   return true;
 }
-` : ""}@Override
+` : ""}boolean __vtCaptured = false;
+public class __VtCapture {
+  public void draw() {
+    if (!__vtCaptured && g instanceof processing.opengl.PGraphicsOpenGL && (frameCount >= ${frames} || !isLooping())) {
+      ${saveGL}
+      __vtCaptured = true;
+    }
+  }
+}
+boolean __vtRegistered = __vtRegister();
+boolean __vtRegister() {
+  registerMethod("draw", new __VtCapture());
+  return true;
+}
+@Override
 public void handleDraw() {
   super.handleDraw();
-  if (frameCount == 1 && g instanceof processing.opengl.PGraphicsOpenGL) loadPixels();
-  if (frameCount > ${frames} || (!isLooping() && frameCount > 1)) {
-    ${save}
+  if (__vtCaptured || (!(g instanceof processing.opengl.PGraphicsOpenGL) && (frameCount > ${frames} || (!isLooping() && frameCount > 1)))) {
+    if (!__vtCaptured) save("${out}");
     System.out.println("${DONE_MARKER}");
     exit();
   }${input?.length ? " else {\n    __vtInput(frameCount - 1);\n  }" : ""}
