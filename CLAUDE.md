@@ -28,7 +28,8 @@ npm run test:visual -- <名前の前方一致...> [--tag 2d]
 npm run test:visual:ref -- <case>   # 本物の Processing で参照画像と stdout を作り直す（ケースを変えたとき）
 npm run vt -- shot <sketchDir> --ref --frames 30   # 任意のスケッチを processing-ts と Processing の両方で撮って比較
 npm run vt -- list           # テストケースと既知の問題の一覧
-npm run vt -- corpus         # Processing 同梱 examples 254 本の互換性集計（約 5 分）→ tests/corpus/report.md
+npm run vt -- corpus         # Processing 同梱 examples 254 本の互換性集計（約 5 分）→ tests/corpus/report.md（--ref で本物と画像比較）
+npm run vt -- bench          # tests/perf のフレーム時間（SwiftShader。--gpu で GPU）
 npm run test:grammar         # Lezer 文法と公式文法（ANTLR）の受理/拒否の一致を確認（文法を変えたら必ず実行）
 npm run test:check           # 新コンパイラの型検査を本物の Processing（cli --build）と比較（型検査を変えたら実行。初回のみ約 40 分）
 npm run test:lang            # 新コンパイラの生成コードを Node で実行し、lang タグのケースの println を Processing の参照と比較（約 1 秒）
@@ -59,7 +60,8 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 - `src/runtime/lang/` … 新コンパイラの生成コードが使う Java 言語ランタイム（数値・文字列・例外・ボックス・java.util の一部）。DOM 非依存
 - `src/compiler/grammar/` … 新コンパイラ用の Lezer 文法（`processing.grammar` を編集 → `npm run gen:grammar`。`parser.ts` は生成物なので手で編集しない）
 - `src/lib/transpiler/` … 旧トランスパイラ（ANTLR4。P1-9 で実行パスから外した。`npm run test:grammar` と bench の比較対象として残す。生成物の `antlr/parser/*` は **手で編集しない**）
-- `src/lib/runtime/` … PApplet（API。描画は `g` へ委譲）, PGraphics（レンダラ非依存の抽象クラス）, PGraphicsJava2D（Canvas 2D）, PImage, DefaultRunner（フレームループ）
+- `src/lib/runtime/` … PApplet（API。描画は `g` へ委譲）, PGraphics（レンダラ非依存の抽象クラス）, PGraphicsJava2D（Canvas 2D）, PImage, PShape, DefaultRunner（フレームループ）
+- `src/lib/runtime/opengl/` … P2D/P3D の WebGL2 レンダラ（PGraphicsOpenGL）と PShader。PShape・PMatrix3D とともに必要なときだけ動的 import（`openglModule.ts`）
 - `src/main.ts` ほか … デモ用エディタ。`public/samples/` はデモのサンプル
 - `tools/vt/` … 視覚テスト CLI。`tests/visual/cases/<name>/` がケース、`tests/visual/refs/` が Processing の参照（コミットする）
 - `docs/research/` … 調査・計測の生データと再現スクリプト
@@ -79,6 +81,7 @@ npm run build                # リリース時のみ（dist/ と library.js は�
 
 - Processing 4.5 は HiDPI 画面で既定 `pixelDensity(2)`。参照生成では `pixelDensity(1)` を注入している。
 - Windows では P2D/P3D の小さいウィンドウが OS に広げられる（200px 幅 → 232px）。テストは幅 320 以上で作る。
+- Processing 4.5.2 の P2D/P3D は handleDraw() の後に画面を読むと不安定（filter(PShader) の後は白、半透明テクスチャでは黒）。本物の画素を調べるときは draw() の中で loadPixels() する（vt の参照生成は registerMethod("draw") で読む。TESTING.md）。種なしの noise() は Processing でも実行ごとに変わる。
 - `SketchManager` は新コンパイラ（`compileSketch`）で変換し、`DefaultRunner` が `$rt = { lang, PApplet, classes }` で実行する。生成コードが呼ぶ PApplet のメソッド名・型を変えるときは `src/compiler/codegen.ts`/`intrinsics.ts` との約束（ARCHITECTURE.md の「生成コードの形」）を確認する。
 - `src/compiler/`・`src/runtime/` と `tools/` は Node の型除去でそのまま実行されるので、`enum`・`namespace`・コンストラクタ引数のプロパティ宣言など変換が必要な TS 構文を使わない。import には `.ts` 拡張子を付ける。
 - Processing は Java と挙動が違うことがある（例: テキストブロックは字下げを除去しない）。Java の仕様から推測せず本物で確かめる。

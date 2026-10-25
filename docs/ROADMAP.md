@@ -2,19 +2,19 @@
 
 2026-10-04 作成。方針の根拠は [EVALUATION.md](EVALUATION.md)、現状の問題は [STATUS.md](STATUS.md)（T*/R* は STATUS.md の問題 ID）。
 
-## 現在地（2026-10-07 時点。セッションの終わりに更新する）
+## 現在地（2026-10-25 時点。セッションの終わりに更新する）
 
 - ブランチ: `feat/next-gen-foundation`（main には未マージ）。
-- **P0〜P2 は完了**（P0-8 の CI だけ任意で未着手）。P1（新コンパイラ）と P2（Canvas 2D の JAVA2D ランタイム）が揃い、互換性コーパスの決定的な JAVA2D スケッチ 115 本は **すべて本物と見た目が一致**（`npm run vt -- corpus --ref`）。
-- 2026-10-07 のセッション（コミット fb9cfc0〜）: P2-7 noise（ユーザー決定: LGPL のコードを見ずに出力から再実装）、P2-8 イベントと rAF ループ（vt の入力スクリプト）、P2-9 VFS（fetch で事前読み込み・同期 XHR 廃止・`--offline`）、P2-5 filter/blend（出力から式を決定）と PImage の pixels を正にする同期、P2-3 point/arc、P2-2 色の int/float、P2-4 PMatrix2D（float）と JDK 17 の 2 の累乗の表示、P2-6 .vlw と矩形内の折り返しと image() の座標の切り捨て、P2-10 コーパスの画像比較。新ケース 13 件（noise_values・events_*・files_*・image_filter・image_blend・shapes_detail・color_calc・matrix_api・font_vlw）。
+- **P0〜P3 は完了**（P0-8 の CI だけ任意で未着手）。P3（WebGL2 の P2D/P3D・PShader・PShape）が入り、視覚テスト 76 ケースすべて PASS、互換性コーパスは 254 本中 239 本が完走（JAVA2D 95% / P2D 93% / P3D 93%）、決定的なスケッチの見た目は JAVA2D 120/120・P2D/P3D 39/43 が本物と一致。
+- 2026-10-25 のセッション（コミット 76a9139〜）: P3-1〜P3-8。PMatrix3D（本物と値まで一致）、PGraphicsOpenGL（即時モードは目の座標、MSAA、既定シェーダー、ライト、box/sphere、カメラ・投影は print* の桁まで一致）、P2D の線の規則（1px の水平・垂直線）、PShader（GLSL ES 3.00 への変換、filter、ppixels、attrib*）、PShape（全レンダラ。SVG/OBJ、P2D/P3D では GPU に保持）、OpenGL と PShape の遅延読み込み（2D のランタイムは 48 KiB gz のまま）、`vt bench` と tests/perf、corpus --ref の P2D/P3D 対応、参照生成で OpenGL のフレームをフレーム内で読むように変更（TESTING.md）。
 - **次にやること**（優先度は「進め方」の方針どおり: 速さ ＞ P2D/P3D・PShader ＞ その他の API）:
-  1. **P3-1〜（WebGL2: P2D/P3D/PShader）**: `PGraphics` のフック（drawPath/drawPoint/backgroundImpl/drawImage/drawTextLine/…/applyMatrixToRenderer/applyBlendMode）を実装する 2 つ目のレンダラとして作る。PMatrix3D と 3D の行列スタックは `PGraphics` の拡張が必要（2D の行列は double の内部クラス `Matrix2D`、スケッチ向けは float の `PMatrix2D`）。コーパスの失敗の大半（createShape・loadShader・lights・rotateX/Y/Z…）がここ。
-  2. **P3-6 PShape**（loadShape の SVG/OBJ）: JAVA2D でも残る失敗 5 本の原因。
-  3. **P5 の API**: IntList/IntDict・Table・XML・createWriter/createReader・sketchPath・thread/method（名前でスケッチのメソッドを呼ぶ仕組み。selectInput/selectOutput もこれと java.io.File が必要）。JAVA2D の残りの失敗 9 本はこれ。
-  4. 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。
-  - 本物の挙動を調べるときの道具: `npm run vt -- shot <dir> --ref`（println と画像）、`node tools/vt/zoom.ts`（画素の拡大比較）、vt.json の `input`（マウス/キー）。LGPL の Processing のコードは見ずに、出力に式を当てはめて決める（noise・filter・blend・点の被覆はこの方法で全件一致）。
-- ランタイムの構成: `PApplet`（`src/lib/runtime/PApplet.ts`）は描画 API を `g: PGraphicsJava2D` へ委譲（`DELEGATED`）。生成コードとの約束は ARCHITECTURE.md の「生成コードの形」と `codegen.ts`（`$rt = { lang, PApplet, classes }`、イベントは `_mousePressed` など、float 版の色関数は `fillF` など、`text(char)` は `textChar`）。ファイルは `SketchFiles`（setup() 前に fetch）。
-- 基準値: 視覚テスト 57 PASS / 2 XFAIL（XFAIL は p3d_box・pshader_filter）、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 161/254（63%。JAVA2D 92%、決定的な JAVA2D 115 本の見た目は 100% 一致）、文法一致 1,289/1,289、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ全体 164.8 KiB gz（うちコンパイラ 119.5 KiB）、ランタイム単体 45.1 KiB gz（予算 50）。
+  1. **P5 の API**: IntList/IntDict/FloatList…・Table・XML・createWriter/createReader・sketchPath・thread/method（名前でスケッチのメソッドを呼ぶ仕組み。selectInput/selectOutput もこれと java.io.File が必要）、delay、clip/noClip、mask() の GL 版。コーパスの残りの失敗の大半はこれ（tests/corpus/report.md の「多いエラー」）。
+  2. **P3 の残り（STATUS.md R21〜R29）**: P2D の丸い端・継ぎ目の分割数と miter の上限の照合、テキストをグリフのテクスチャにする（R22）、保持モードの部分更新（R24）、ライトの既定値の照合（R25）、ImageMask/BlurFilter の最初のフレーム（R27）。低レベル GL（PGL）は要検討。
+  3. 速度の宿題（STATUS.md C4）: 199 行のコールド変換 22ms（目標 20ms）。P4 の AOT・コード分割（P3-8 で遅延読み込みの仕組みはできた）。
+  - 本物の挙動を調べるときの道具: `npm run vt -- shot <dir> --ref`（println と画像。`--frames n`、フレーム時間も出る）、`node tools/vt/zoom.ts`、vt.json の `input`。P2D/P3D の詳細は `createShape(…).getTessellation()` の頂点や、`loadPixels()` した画素を println すると調べやすい（楕円・球・四角形の分割はこれで決めた）。LGPL の Processing のコードは見ずに、出力から決める。
+  - 注意: Processing 4.5.2 は handleDraw() の後に OpenGL の画面を読むと不安定（白・黒になる）。本物の画素を調べるスケッチは draw() の中か registerMethod("draw") で loadPixels() する。
+- ランタイムの構成: `PApplet`（`src/lib/runtime/PApplet.ts`）は描画 API を `g`（`PGraphicsJava2D` または `PGraphicsOpenGL`）へ委譲（`DELEGATED`）。OpenGL レンダラと PShape は `openglModule.ts` 経由で遅延読み込み（`DefaultRunner.init` が生成コードから判定）。生成コードとの約束は ARCHITECTURE.md の「生成コードの形」と `codegen.ts`（`$rt = { lang, PApplet, classes }`、イベントは `_mousePressed` など、float 版の色関数は `fillF` など（PShape にも）、`text(char)` は `textChar`）。ファイルは `SketchFiles`（setup() 前に fetch。OBJ の .mtl とテクスチャも）。
+- 基準値: 視覚テスト 76 PASS、stdout 適合 23 PASS / 1 XFAIL（`npm run test:lang`）、互換性コーパス 239/254（94%）、文法一致 1,289/1,289、型検査の一致 2,381/2,384（`npm run test:check`）、サイズ: ライブラリ 168 KiB gz（最初の読み込み）、ランタイム単体 48.1 KiB gz（予算 50）+ 必要なときだけ 39.5 KiB gz、API カバレッジ 217/253。
 
 ## 進め方
 
@@ -167,15 +167,24 @@ createFont/loadFont(.vlw)/textFont/textSize/textAlign（縦方向も）/textLead
 
 ## P3: WebGL2（P2D / P3D / PShader）
 
-- [ ] **P3-1 GL の基盤**（M）コンテキスト、バッファ、シェーダープログラムのキャッシュ、FBO、テクスチャ管理。PMatrix3D、camera/perspective/ortho/frustum、modelview/projection スタック、`screenX/modelX` 等。
-- [ ] **P3-2 テッセレーション**（L）libtess による塗り（穴・巻き方向）、LINE シェーダー（`direction`）による線、POINT シェーダー（`offset`）による点、フレーム単位のバッチ。
-- [ ] **P3-3 既定シェーダーとライト**（L）COLOR/LIGHT/TEXTURE/TEXLIGHT、最大 8 灯（ambient/directional/point/spot、falloff、specular）、マテリアル、normal、texture/textureMode/textureWrap。
-- [ ] **P3-4 3D 図形**（M）box、sphere、sphereDetail、3D の beginShape（法線・UV）。完了条件: p3d_box が PASS。
-- [ ] **P3-5 PShader**（L）loadShader、shader()/resetShader()、`set()` の全オーバーロード、種別判定、GLSL → GLSL ES 3.00 変換、`filter(PShader)`、`ppixels`。.glsl の行番号付きエラー。完了条件: pshader_filter が PASS。同梱 examples のシェーダー 18 本が実行時エラーなし。
-- [ ] **P3-6 PShape（保持型）**（M）createShape/GROUP/子要素、GPU バッファ保持、loadShape（OBJ/SVG）。
-- [ ] **P3-7 その他**（M）createGraphics(P2D/P3D)、hint()、GL での blendMode、smooth（MSAA）、グリフアトラスによる text。
-- [ ] **P3-8 遅延読み込み**（S）P2D/P3D を使うときだけ `processing-ts/webgl` を動的 import。
+- [x] **P3-1 GL の基盤**（M）コンテキスト、バッファ、シェーダープログラムのキャッシュ、FBO、テクスチャ管理。PMatrix3D、camera/perspective/ortho/frustum、modelview/projection スタック、`screenX/modelX` 等。
+  → 結果（2026-10-25）: `src/lib/runtime/opengl/`（GLContext・PGraphicsOpenGL・shaders・PShader・tess）。PMatrix3D は全メソッドが本物と値まで一致（ケース matrix3d_api）。本物で確かめた規則: 即時モードは頂点を CPU で目の座標にしてシェーダーの modelview は単位行列（カスタムシェーダーで確認）、P3D の既定のカメラ・投影（y 反転、ortho() の near は 0）、P2D は単位行列のカメラと ortho(0, w, -h, 0, -1, 1)、画面で時計回りの面が表、既定の MSAA は 2 サンプル。camera/perspective/ortho/frustum/print*/screenX/Y/Z/modelX/Y/Z が float の表示まで一致（ケース p3d_camera・p2d_matrices）。createGraphics(P2D/P3D) はコンテキストを共有。
+- [x] **P3-2 テッセレーション**（L）libtess による塗り（穴・巻き方向）、LINE シェーダー（`direction`）による線、POINT シェーダー（`offset`）による点、フレーム単位のバッチ。
+  → 結果: libtess 1.2.2（SGI-B-2.0、THIRD_PARTY_NOTICES.md）。楕円は 0.5° の表から 2π·対角線/10（20〜200）分割（`getTessellation()` で測定）、QUAD_STRIP の対角線、P2D の線は CPU で輪郭（太さ 1 の水平・垂直な線だけの図形は半ピクセルずらす、を画素の測定で決定）、P3D の線は LINE シェーダー。ケース p2d_shapes_basic・p2d_stroke_styles・p2d_shape_vertex と P3D 版。
+- [x] **P3-3 既定シェーダーとライト**（L）COLOR/LIGHT/TEXTURE/TEXLIGHT、最大 8 灯（ambient/directional/point/spot、falloff、specular）、マテリアル、normal、texture/textureMode/textureWrap。
+  → 結果: 既定シェーダーは OpenGL の固定機能のモデルで自作（GLSL ES 3.00、Processing と同じ名前）。normal() の状態は図形をまたいで残り、呼ばない beginShape() は面法線（本物で確認）。ケース p3d_lights・p3d_texture。
+- [x] **P3-4 3D 図形**（M）box、sphere、sphereDetail、3D の beginShape（法線・UV）。完了条件: p3d_box が PASS。
+  → 結果: p3d_box は差分 0.00%。球は本物の `getTessellation()` の並び（+y の極から、0.5° の表）。box/sphere は単位メッシュから直接バッチへ（CubicGridImmediate 125 → 29ms/フレーム）。
+- [x] **P3-5 PShader**（L）loadShader、shader()/resetShader()、`set()` の全オーバーロード、種別判定、GLSL → GLSL ES 3.00 変換、`filter(PShader)`、`ppixels`。.glsl の行番号付きエラー。完了条件: pshader_filter が PASS。同梱 examples のシェーダー 18 本が実行時エラーなし。
+  → 結果: pshader_filter は PASS（本物の参照が真っ白だったのは参照の取り方の問題で、vt を直した: TESTING.md）。同梱のシェーダー 18 本中 15 本が完走（残り 3 本は PGL・java.nio を使う低レベル GL の例。STATUS R23）。GLSL の変換に、定数でないグローバルの初期化子を main() へ移す処理と、int → float の自動修正を追加（Landscape）。attrib*() の独自属性（MeshTweening）。
+- [x] **P3-6 PShape（保持型）**（M）createShape/GROUP/子要素、GPU バッファ保持、loadShape（OBJ/SVG）。
+  → 結果: `PShape.ts`（全レンダラ共通。OpenGL の図形の変換は親の原点の周りに後から掛かる）、`io/shapeLoaders.ts`（SVG のパス・図形・スタイル・transform、OBJ + MTL）。P2D/P3D の shape() は木を一度テッセレーションして GPU に保持（CubicGridRetained 130 → 1ms/フレーム）。ケース shape_svg・p2d_createshape・p3d_shape_obj。
+- [x] **P3-7 その他**（M）createGraphics(P2D/P3D)、hint()、GL での blendMode、smooth（MSAA）、グリフアトラスによる text。
+  → 結果: createGraphics(P2D/P3D)（ケース pgraphics_gl。本物は JAVA2D のウィンドウに P2D の createGraphics を作ると止まる）、hint（深度テスト・深度マスク・線の遠近）、blendMode（ケース p2d_blend）、smooth(n)。テキストは行ごとのテクスチャ（グリフアトラスではない。STATUS R22、ケース p2d_text_image）。
+- [x] **P3-8 遅延読み込み**（S）P2D/P3D を使うときだけ `processing-ts/webgl` を動的 import。
+  → 結果: `DefaultRunner` が生成コードを見て `opengl/index.ts`（P2D/P3D・PShader）と `shapes/index.ts`（PShape・SVG/OBJ・PMatrix3D）を動的 import。ランタイムの最初の読み込みは 48.1 KiB gz（予算 50）、必要なときだけ 39.5 KiB gz。`npm run size` はコード分割して両方を出す。サブパス export（`processing-ts/webgl`）は P4-2 で。
   完了条件（フェーズ全体）: 3d / shader タグのケースが PASS（SwiftShader、許容差あり）。コーパスの P2D/P3D/シェーダー examples の実行時エラーなし 90% 以上、視覚一致 70% 以上。性能ベンチ（`tests/perf/`、1 万頂点/フレーム）が SwiftShader で計測でき、GPU（`--gpu`）で 60fps。
+  → 結果（2026-10-25）: 3d/p2d/shader タグのケースはすべて PASS。コーパスの P2D/P3D は 88 本中 82 本（93%）が完走、決定的な 43 本中 39 本（91%）が見た目も一致。`npm run vt -- bench`（tests/perf の 4 本）: 1 万頂点の即時モードが中央値 1.4ms（JS 側。GPU は非同期）で 60fps を大きく上回る。
 
 ## P4: 配布と性能
 
@@ -213,4 +222,4 @@ CodeMirror 6 + Lezer Processing 文法のデモエディタ（ハイライト、
 | 済 (P1-5) | `npm run test:lang` | 描画しない stdout 適合テストを Node で高速実行（`--corpus` で全スケッチの変換確認） |
 | 済 (P2-8) | vt の入力スクリプト | フレームごとのマウス/キー操作を Processing 側（`java.awt.Robot` ではなくイベント関数の直接呼び出しを注入）と processing-ts 側の両方で再生して比較 |
 | 済 (P2-9) | vt `--offline` | Service Worker + オフラインでの data/ 読み込み確認 |
-| P3 | `tests/perf/` + vt `bench` | フレーム時間の計測（SwiftShader / GPU） |
+| 済 (P3) | `tests/perf/` + vt `bench` | フレーム時間の計測（SwiftShader / GPU） |

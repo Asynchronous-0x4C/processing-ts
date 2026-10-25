@@ -21,6 +21,7 @@ JS（関数本体）
    │  print/println は lang.setOutput 経由で log listener へ（1 行ずつ）。捕捉されない例外は Java 形式で error listener へ送り、スケッチを止める
    ▼
 PApplet → g: PGraphicsJava2D（PGraphics の Canvas 2D 実装。キャンバスに即時描画）
+          または PGraphics2D / PGraphics3D（size(w, h, P2D|P3D)。WebGL2 の PGraphicsOpenGL、必要なときだけ読み込む）
 ```
 
 旧トランスパイラ（`src/lib/transpiler/`、ANTLR4）は P1-9 で実行パスから外した。構文の判定基準（`npm run test:grammar`）と速度比較（`npm run bench` の parse）のためにリポジトリに残している（antlr4 は devDependency）。
@@ -42,6 +43,11 @@ PApplet → g: PGraphicsJava2D（PGraphics の Canvas 2D 実装。キャンバ�
 | `src/lib/runtime/PGraphics.ts` | レンダラ非依存の抽象クラス（`PImage` を継承）: スタイル/行列スタック、色の計算、図形のパス化、beginShape、image/text のレイアウト |
 | `src/lib/runtime/PGraphicsJava2D.ts` | JAVA2D レンダラ（Canvas 2D）。`PGraphics` のフックを実装 |
 | `src/lib/runtime/PMatrix2D.ts` | 2D アフィン行列（Processing と同じく右から掛ける） |
+| `src/lib/runtime/PMatrix3D.ts` | 4×4 行列（float 演算。本物と値まで一致。OpenGL レンダラの modelview/camera/projection もこれ） |
+| `src/lib/runtime/opengl/` | **OpenGL レンダラ**（P2D/P3D、WebGL2）: `PGraphicsOpenGL.ts`（レンダラ本体）、`GLContext.ts`（共有の WebGL2 コンテキスト・プログラム/テクスチャのキャッシュ）、`shaders.ts`（既定のシェーダー）、`PShader.ts`（PShader と GLSL → GLSL ES 3.00 変換）、`tess.ts`（libtess による多角形分割・P2D の線・楕円の表）。下の「OpenGL レンダラ」 |
+| `src/lib/runtime/PShape.ts`, `io/shapeLoaders.ts` | PShape（GROUP・PRIMITIVE・PATH・GEOMETRY。全レンダラ共通）と loadShape() の SVG/OBJ 読み込み |
+| `src/lib/runtime/openglModule.ts`, `opengl/index.ts`, `shapes/index.ts` | 遅延読み込みする 2 つのモジュール（OpenGL レンダラ・PShape と PMatrix3D）の登録と、生成コードから必要かを判定する `usesOpenGL()`/`usesShapes()` |
+| `src/lib/runtime/text.ts` | テキストの計測（textWidth/textAscent/textDescent）と .vlw の描画。JAVA2D と OpenGL で共用 |
 | `src/lib/runtime/PImage.ts` | `pixels`（ARGB の Int32Array）とキャンバス（OffscreenCanvas があればそれ）。loadPixels/updatePixels は getImageData/putImageData |
 | `src/lib/runtime/PFont.ts` | CSS のフォントファミリ。同梱の Processing Sans Pro を FontFace で遅延読み込み |
 | `src/lib/runtime/PConstants.ts` | Processing の定数（値は本家と同じ） |
@@ -192,11 +198,26 @@ ANTLR4 の Processing 文法（`antlr/Processing.g4`、生成物 `antlr/parser/`
 - `createGraphics()` は密度 1 の `PGraphicsJava2D`（透明で始まる）。
 - image() は Java2D と同じく四隅を int に切り捨ててから描く。.vlw フォント（`PFont.fromVLW`）の文字は、グリフのビットマップを fill 色で塗った画像として同じ規則で描く。point() は Java2D（Marlin）の被覆をキャッシュした被覆パターンで描く（STATUS R20）。
 - 色は ARGB の int。1〜2 引数の color/fill/stroke/background/tint は、引数が float の呼び出しをコンパイラが `colorF`/`fillF`/… に振り分ける（float は常に灰色、int は ARGB か灰色かを判定。JS の数値では 300.0 と 300 を区別できないため）。色の int は Processing と同じ ARGB（`#RRGGBB` は `0xFFRRGGBB`）。fill(x) などの 1 引数は、アルファのビットが無く範囲内なら灰色、それ以外は ARGB。メインの画面は灰色（204）で始まる。
-- P2D/P3D、シェーダー、ライト、カメラは未実装（`size(w,h,P3D)` の第 3 引数は無視）。
+- P2D/P3D は下の「OpenGL レンダラ」。JAVA2D で rotateX() や lights() などを呼ぶと本物と同じ警告を標準エラーに 1 回だけ出す（`PGraphics` の既定実装）。
+
+### OpenGL レンダラ（P2D/P3D、`src/lib/runtime/opengl/`）
+
+`PGraphicsOpenGL`（`PGraphics2D`/`PGraphics3D` はその 2 つの形）は `PGraphics` を継承した WebGL2 のレンダラ。Processing の OpenGL レンダラの**見える振る舞い**（シェーダーに渡る行列・属性名・uniform 名、実際の出力）に合わせて書いた（Processing のコードは見ていない。規則は本物の出力から決めた）。
+
+- **即時モードは目の座標**: 図形は CPU でテッセレーションし、modelview を掛けた目の座標の頂点をバッチ（多角形・線・点の 3 種類、`Batch`）に積む。シェーダーには modelview = 単位行列、transformMatrix = projection を渡す（本物で確認: 即時モードのシェーダーが受け取る modelviewMatrix は単位行列）。法線も CPU で目の座標へ（逆転置）。テクスチャ・ブレンド・シェーダー・ライト・hint が変わるとき、フレームの終わり、画素を読むときにバッチを描く（`flush()`）。P3D は多角形 → 線 → 点の順に描き深度テスト（LEQUAL）、P2D は深度テストなしで線も点も多角形のバッチに入れて描いた順を保つ。
+- **カメラと投影**: P3D の既定は Processing と同じ（目は (w/2, h/2, (h/2)/tan(30°))、視野 60°、near = cameraZ/10、far = cameraZ×10、y を反転する投影）。P2D はカメラが単位行列で ortho(0, w, -h, 0, -1, 1) 相当。camera()/perspective()/ortho()/frustum()/beginCamera()/screenX/Y/Z/modelX/Y/Z と print* は float 演算で本物の表示まで一致（ケース p3d_camera・p2d_matrices）。画面で時計回りの面が表（frontFace(CW)）。
+- **図形**: 楕円は 0.5° 刻みの sin/cos 表から点を取り、分割数は画面上の外接矩形の対角線から 2π·d/10（20〜200）。rect などの凸な輪郭は扇形、それ以外と beginShape() の POLYGON は libtess（GLU の分割器、非ゼロ規則）。曲線は bezierDetail/curveDetail で分割。box()/sphere() は単位メッシュ（球は本物の `getTessellation()` で調べた並び）をそのままバッチへ。normal() を呼ばない beginShape() は三角形ごとの面法線。
+- **線**: P3D は線分ごとの四角形を LINE シェーダー（属性 `direction` = 相手の端へのベクトルと符号付きの半幅）で画面上の太さにし、面より少し手前（scale 0.99）に寄せる。端と継ぎ目は描かない（本物と同じ見た目）。P2D は CPU で輪郭を作る（線分の四角形・継ぎ目 MITER/BEVEL/ROUND・端 ROUND/SQUARE/PROJECT。1 本の線分は 1 つの凸多角形。半透明の折れ線は重なりを libtess で合成）。太さがちょうど 1 ピクセルで全部の線分が水平か垂直な図形は、本物と同じく半ピクセルずらして端を半ピクセル延ばす（ピクセルにぴったり乗る）。
+- **ライトと材質**: 既定のシェーダー（LIGHT/TEXLIGHT）は OpenGL の固定機能と同じ頂点単位の照明（ambient/directional/point/spot、lightFalloff、Blinn-Phong の specular、両面）。ライトの位置・向きは呼んだ時点の modelview で目の座標にし、各フレームの初めに消える。fill() は ambient() を呼ぶまで ambient を兼ねる。
+- **面**: マルチサンプル（既定 2 サンプル = 本物の smooth の既定と同じ被覆の段数）のフレームバッファに描き、`resolve()` でテクスチャ（`colorTex`）に解決する。メイン画面はフレームの終わりにそれをキャンバスへ描く。loadPixels()/get()/save() は解決したテクスチャを readPixels、updatePixels() はテクスチャにして上書き、set(x, y, c) は scissor 付きの clear。createGraphics(P2D/P3D) はウィンドウと同じ WebGL2 コンテキスト（JAVA2D のウィンドウなら隠しキャンバスのもの）を共有し、image() ではそのテクスチャをそのまま使う。JAVA2D から描くときは画素を 2D キャンバスに写す（`__native__()`）。
+- **テキスト**: 行ごとに Canvas 2D で白い文字を描いたテクスチャ（キャッシュ）を fill の色で描く。
+- **PShader**: loadShader() のソース（デスクトップ GLSL 1.x）を GLSL ES 3.00 に変換して使う: attribute/varying → in/out、texture2D() → texture()、`texture` という名前の uniform → texMap、gl_FragColor → 出力変数、精度はすべて highp、ES で予約語になった名前の変更、定数でないグローバルの初期化子を main() の先頭へ移す、int → float の暗黙変換は GL のエラーが出た行の整数リテラルを小数にして再試行。種別は `#define PROCESSING_*_SHADER`、無ければ宣言された属性・uniform で決め、無い方のシェーダーは既定のものを使う。uniform は名前で探し、set() の値はシェーダー側の型に合わせて設定する（int と float を区別できないため）。filter(PShader) はフレームのコピーを `texture` にして全面を描く。`ppixels` は前のフレーム。attrib*() の独自属性も渡す。
+- **保持モード（shape()）**: PShape の木を一度だけ単位行列でテッセレーションして GPU バッファ（テクスチャごとの区間）に置き、modelview を uniform にして描く（normalMatrix・transformMatrix もそれに合わせる）。PShape の変更（メソッド呼び出し）は版番号を親へ伝え、版が変わったら作り直す。disableStyle() の図形は即時モードで描く。
+- **遅延読み込み**: `DefaultRunner.init` が生成コードを見て（P2D/P3D は `"processing.opengl.PGraphics3D"` のような文字列定数になる）、`opengl/index.ts`（P2D/P3D・PShader）と `shapes/index.ts`（PShape・SVG/OBJ・PMatrix3D）を動的 import してから実行する。2D だけのスケッチはどちらも読み込まない。
 
 ### ファイル（`SketchFiles`）
 
-- Processing のファイル関数は同期なので、使うファイルを **setup() の前にまとめて fetch** する（`DefaultRunner.init`）: コンパイラが見つけた定数のファイル名（`CompileResult.files`。loadImage/loadStrings/loadBytes/loadJSON*/loadTable/loadXML/loadFont/loadShape/loadShader/createInput/createReader の String 引数）、ホストの一覧（`SketchData.files`・sketch.properties の `resources`）、ホストがメモリで渡したファイル（`SketchManager.addFile()`）。画像は `createImageBitmap`（色変換と premultiply なし）でデコードまで済ませ、loadImage はそこから同期で PImage を作る（JPEG は RGB、他は半透明の画素があれば ARGB）。
+- Processing のファイル関数は同期なので、使うファイルを **setup() の前にまとめて fetch** する（`DefaultRunner.init`）: コンパイラが見つけた定数のファイル名（`CompileResult.files`。loadImage/loadStrings/loadBytes/loadJSON*/loadTable/loadXML/loadFont/loadShape/loadShader/createInput/createReader の String 引数）、ホストの一覧（`SketchData.files`・sketch.properties の `resources`）、ホストがメモリで渡したファイル（`SketchManager.addFile()`）。読み込んだ .obj が参照する .mtl（mtllib）と .mtl が参照するテクスチャ（map_Kd など）も続けて読む。画像は `createImageBitmap`（色変換と premultiply なし）でデコードまで済ませ、loadImage はそこから同期で PImage を作る（JPEG は RGB、他は半透明の画素があれば ARGB）。
 - 名前の解決は Processing と同じ: URL はそのまま、それ以外は `<base_uri>data/<name>` → `<base_uri><name>`。見つからなければ `The file "x" is missing or inaccessible, …` を標準エラー（`lang.printError`）に出して null。開発サーバの index.html へのフォールバック（text/html）は見つからない扱い。
 - すべて fetch なので Service Worker でキャッシュでき、オフラインでも動く（`vt run --offline`）。
 - 保存（saveStrings/saveBytes/saveJSON*/save/saveFrame）はスケッチフォルダ相対の名前でメモリに置き（同じ実行中に読み戻せる。画像は保存時の画素を控える）、`SketchManager.addEventListener("save", ...)` に `{path, data, mime}` を渡す。PNG/JPEG はキャンバスでエンコード（非同期）、TIFF/TGA は `io/imageEncode.ts`。requestImage は実行時に fetch する（読み込み中は width 0、失敗で -1）。
@@ -204,7 +225,7 @@ ANTLR4 の Processing 文法（`antlr/Processing.g4`、生成物 `antlr/parser/`
 ## ビルドと配布
 
 - `npm run build` = `vite build`（ライブラリモード, `src/lib/index.ts`）+ `tsc`（型定義のみ `dist/types`）。
-- `vite-plugin-externalize-deps` で依存（@lezer/common・@lezer/lr）を外部化。ライブラリ（gzip 155 KiB、`npm run size`）は新コンパイラ（約 119 KiB。うちライブラリモデル 36 KiB、Lezer 30 KiB）とランタイム（2D + 言語ランタイムで約 36 KiB）を含む。EVALUATION.md の目標構成ではコンパイラを別のサブパスにする。
+- `vite-plugin-externalize-deps` で依存（@lezer/common・@lezer/lr）を外部化。ライブラリ（最初の読み込み gzip 約 168 KiB、`npm run size`）は新コンパイラ（約 119 KiB。うちライブラリモデル 36 KiB、Lezer 30 KiB）とランタイム（2D + 言語ランタイムで約 48 KiB）を含み、OpenGL レンダラ・PShader・PShape（約 40 KiB）は別のチャンクで必要なときだけ読み込む。libtess は依存パッケージ（外部化）。EVALUATION.md の目標構成ではコンパイラを別のサブパスにする。
 - 既定フォントは `src/lib/runtime/fonts/` を独自プラグイン（`copy-fonts`）が `dist/fonts/` にライセンス文ごとコピーし、`PFont.ts` が実行時に `new URL("./fonts/…", import.meta.url)` で読む（URL を文字列リテラルで書くと Vite のライブラリモードが base64 で埋め込み、gzip で +170 KiB になるので、わざと連結にしている）。
 - 独自プラグイン（`single-file-library`）が `dist/index.js` を esbuild で依存ごと 1 ファイルにまとめて `dist/library.js` を生成する（バンドラなしで `import` できる形。既定フォントは同じく `fonts/` から読む）。ルートの `library.js` はそのコピーで README からダウンロードさせている（コミット済みのものは P2-1 以前の Pixi 版。次のリリースで置き換える）。
 - dev サーバ（`npm run dev`, port 8080, base `/processing-ts/`）起動時に `public/samples/*/*/sketch.properties` から `src/scripts/samples.json` を生成（カテゴリ/名前順）。ライブラリのビルドでは `public/` を出力に含めない（`copyPublicDir: false`）。

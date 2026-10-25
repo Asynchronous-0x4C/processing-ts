@@ -112,6 +112,7 @@ tests/visual/refs/<name>.png / .stdout.txt / .meta.json   ← `ref` が生成。
    - `size(...)` の直後に `pixelDensity(1);`（Processing 4.5 は HiDPI 画面で既定 2 になるため。プリプロセッサが settings() に移動してくれる）。size が無ければ `settings()` を追加。
    - アクティブモード: `handleDraw()` をオーバーライドし、`frames` 回の draw() 後に `save()` → `exit()`。
      （`sketchPixelDensity()` は final でオーバーライドできない。`noLoop()` のスケッチは 1 回目の draw 後に保存）
+   - P2D/P3D（OpenGL）のフレームは **フレームの中で** 読む: `registerMethod("draw", …)` で登録したメソッド（draw() の直後、フレームの終わりの前に呼ばれる）で `loadPixels()` し、`pixels[]` から画像を作って保存する。Processing 4.5.2 は handleDraw() の後に OpenGL の画面を読むと不安定（filter(PShader) を使ったフレームの後は真っ白、半透明のテクスチャでは真っ黒など。ウィンドウには正しく出ている）なため。draw() の無いスケッチは setup() の直後のフレームを保存する。
    - 静的モード: 末尾に `save(); exit();` を追記。
    - スケッチの `System.out` を一時ファイルへ UTF-8 で出す（フィールド初期化子 / 静的モードは先頭の文）。Windows のコンソールは MS932 なので、そのままでは日本語が化け、`é` などは `?` になる。
 2. `Processing.exe cli --sketch=<dir> --output=<dir> --force --run` を実行（画面に一瞬ウィンドウが出る）。
@@ -150,20 +151,20 @@ pixelmatch（`includeAA: false` でアンチエイリアス差を無視）で不
 
 ## 現在のケースと状態
 
-`npm run vt -- list` で最新状態を確認すること。2026-10-04 時点: 38 ケース中 29 PASS / 9 XFAIL。XFAIL はすべてランタイム（描画・noise）の未実装か不一致で、`vt.json` の `knownIssue` と [STATUS.md](STATUS.md) の R 番号に対応する。`lang` タグの 23 件は `npm run test:lang`（Node）でも 22 件 PASS（`random_seed` は Node のスタブに random() が無いので XFAIL）。
-各 XFAIL の原因は `vt.json` の `knownIssue` と [STATUS.md](STATUS.md) にある。
+`npm run vt -- list` で最新状態を確認すること。2026-10-25 時点: 76 ケースすべて PASS（XFAIL なし）。タグ: 2d・p2d・3d（P3D と OpenGL 全般）・shader・shape・image・text・color・lang・events・api など。`lang` タグの 24 件は `npm run test:lang`（Node）でも 23 件 PASS（`random_seed` は Node のスタブに random() が無いので XFAIL）。
+既知の不一致は `vt.json` の `knownIssue` と [STATUS.md](STATUS.md) の R 番号に対応させる。
 
 ## 互換性コーパス（Processing 同梱 examples）
 
 ```sh
 npm run vt -- corpus                         # 254 本すべて（約 5 分）。tests/corpus/report.md を更新（コミットして進捗を追う）
 npm run vt -- corpus --filter Basics/Shape   # 絞り込み（結果は tests/corpus/out/ にだけ書く）
-npm run vt -- corpus --ref                   # 決定的な JAVA2D のスケッチを本物の Processing のフレームと画像比較（初回は参照生成で +5 分程度）
+npm run vt -- corpus --ref                   # 決定的なスケッチを本物の Processing のフレームと画像比較（初回は参照生成で +10 分程度）
 ```
 
 - 例は `<Processing>/app/resources/modes/java/examples` から読む（リポジトリにはコピーしない）。`--examples <dir>` で指定も可。
 - 各スケッチを変換し、setup + draw を `--frames`（既定 5）回実行して「ok / 変換エラー / setup エラー / draw エラー / タイムアウト」に分類する。
-- `--ref` を付けると、JAVA2D で完走したスケッチのうち決定的なもの（種なしの random()/noise()、時刻、frameRate、ネットワークを使わない。`corpus.ts` の `isDeterministic`）を本物の Processing の同じフレームと比べる（視覚テストと同じ基準。参照は `node_modules/.cache/processing-ts-corpus/` にソースのハッシュでキャッシュ）。不一致のものは `tests/corpus/out/visual/<名前>.png` に合成画像（左: Processing / 中: processing-ts / 右: 差分）を書く。
+- `--ref` を付けると、完走したスケッチのうち決定的なもの（種なしの random()/noise()、時刻、frameRate、ネットワークを使わない。`corpus.ts` の `isDeterministic`）を本物の Processing の同じフレームと比べる（視覚テストと同じ基準: 不一致ピクセル JAVA2D 1%・P2D/P3D 2% 以下。参照は `node_modules/.cache/processing-ts-corpus/` にソースのハッシュでキャッシュ）。不一致のものは `tests/corpus/out/visual/<名前>.png` に合成画像（左: Processing / 中: processing-ts / 右: 差分）を書く。
 - report.md の「多いエラー」は実行時エラーを正規化して集計したもので、未実装 API の優先順位付けに使える。
 
 ## stdout 適合テスト（新コンパイラ、tools/lang）
@@ -194,13 +195,26 @@ node tools/bench/cli.ts all --update-budget   # 意図した変更でサイズ/�
 - compile: 新コンパイラ全体（`compileSketch`: Lezer 解析 + 構文エラー + AST + 型検査 + コード生成）を同じ方法で測る。cold にはライブラリモデルの読み込みを含む。
 - transpile: ヘッドレス Chromium の新しいページで `SketchManager.transpileSketch`（新コンパイラ）を繰り返し、1 回目（cold）と 2 回目以降の中央値（warm）を出す。
 - parse: 旧トランスパイラの ANTLR パーサ（比較用。ライブラリには含まれない）。
+- サイズはコード分割（esbuild の splitting）で測り、エントリから静的 import でたどれる部分（最初に読み込まれる量）と、動的 import でだけ読み込まれる部分（「+ on demand」: P2D/P3D・PShader・PShape）を別の行に出す。
 - 予算: `tools/bench/budget.json`。超えると終了コード 1（回帰検出用）。サイズは +5%、時間は +50%（最低 5ms）の余裕で `--update-budget` が書き換える。
 - 結果: `tests/bench/out/<command>.md` と `.json`（gitignore 済み）。
 
 2026-10-04 時点の主な値（P1-9 の後）: ブラウザでの変換は `simple_shooter_game`（199 行）が cold 22ms・warm 3ms、`synthetic-5k` が cold 84ms・warm 40ms（旧トランスパイラは 199 行の cold が約 170ms）。Node の compile は `synthetic-5k` の warm 54〜64ms（うち Lezer の解析 約 20ms）。バンドル（P2-10 の後）: ライブラリ 155 KiB gz（PixiJS は P2-1 で削除）、ランタイム単体（2D + 言語ランタイム、コンパイラなし）36 KiB gz、うち新コンパイラ 119 KiB gz（フロントエンド 40.6 KiB、Lezer パーサ単体 30.5 KiB、ライブラリモデル 36 KiB）、言語ランタイム 19 KiB gz。
 
+## フレーム時間（tests/perf、vt bench）
+
+```sh
+npm run vt -- bench              # tests/perf/<名前>/ のスケッチを 30 フレーム実行し、最初の 5 フレームを除いた平均・中央値（SwiftShader）
+npm run vt -- bench --gpu        # 実際の GPU で
+npm run vt -- bench lines --frames 60
+```
+
+- 測っているのはフレームの JavaScript 側の時間（draw() + テッセレーション + WebGL の呼び出し）。WebGL は非同期なので GPU の処理時間は含まない。
+- ケース: `triangles10k`（即時モードの 1 万頂点、ライトあり）、`lines10k`（P2D の線 1 万本、半透明）、`boxes2k`（box() 2,000 個 = 4.8 万頂点、pushMatrix/popMatrix）、`retained20k`（PShape の GROUP に四角形 2 万個 = 8 万頂点、shape() で描く保持モード）。
+- 2026-10-25 の値（開発機の GPU、中央値）: triangles10k 1.4ms、lines10k 13ms、boxes2k 0.9ms、retained20k 0.4ms。任意のスケッチは `npm run vt -- shot <dir> --frames n` でもフレーム時間（平均・中央値）が出る。
+
 ## 今後追加すべきテスト（ROADMAP 参照）
 
 - トランスパイラの単体テスト（Vitest）: AST/型推論/コード生成のスナップショット
 - Processing 同梱 examples（`C:/Program Files/Processing/app/resources/modes/java/examples`、254 本）を流す互換性コーパス（ROADMAP P0-5）
-- 初回描画までの時間・フレーム時間の計測（tools/bench に追加）
+- 初回描画までの時間の計測（tools/bench に追加）。フレーム時間は `vt bench`（上）

@@ -17,13 +17,16 @@ const LANGUAGE_CATEGORIES = new Set(["Control", "Data", "structure"]);
 function runtimeMembers(): Set<string> {
   const src = fs.readFileSync(path.join(ROOT, "src/lib/runtime/PApplet.ts"), "utf8");
   const names = new Set<string>();
-  for (const m of src.matchAll(/^\s{2}(?:async\s+)?([A-Za-z_]\w*)\s*(?:\(|=|:)/gm)) {
+  for (const m of src.matchAll(/^\s{2}(?:async\s+)?([A-Za-z_]\w*)\s*(?:\(|=|:|<)/gm)) {
     const name = m[1];
     if (name === "constructor") continue;
     names.add(name);
     // Event handlers and overloaded APIs are stored with a leading underscore (_mousePressed, _frameRate).
     if (name.startsWith("_") && !name.startsWith("__")) names.add(name.slice(1));
   }
+  // Methods PApplet forwards to its renderer (the DELEGATED list).
+  const delegated = /const DELEGATED=\[([\s\S]*?)\]/.exec(src);
+  if (delegated) for (const m of delegated[1].matchAll(/"(\w+)"/g)) names.add(m[1]);
   // Constants come from PConstants.
   const constants = fs.readFileSync(path.join(ROOT, "src/lib/runtime/PConstants.ts"), "utf8");
   for (const m of constants.matchAll(/readonly\s+([A-Z_][A-Z0-9_]*)\s*=/g)) names.add(m[1]);
