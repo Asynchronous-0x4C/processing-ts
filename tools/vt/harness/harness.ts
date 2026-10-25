@@ -1,5 +1,5 @@
 // Browser side of the visual test runner. tools/vt/browser.ts calls window.__vt__.run().
-import { SketchManager } from "../../../src/lib/index.ts";
+import { CompileCache, SketchManager, SketchPlayer, type PrecompiledSketch } from "../../../src/lib/index.ts";
 
 type RunOptions = {
   main: string;
@@ -9,6 +9,11 @@ type RunOptions = {
   /** The files of data/, relative to the sketch folder ("data/a.png"). */
   dataFiles: string[];
   frames: number;
+  /** How the sketch runs: compiled in the page on the main thread (default), in a worker, or compiled ahead of time. */
+  exec?: "main" | "worker" | "aot";
+  /** exec "aot": the sketch's ES module (src/compiler/module.ts), or null with `compileErrors`. */
+  module?: string | null;
+  compileErrors?: string[];
 };
 
 type Phase = "transpile" | "setup" | "draw" | "capture" | "done";
@@ -35,9 +40,12 @@ class Session {
   code: string | undefined;
   timings: Record<string, number> | undefined;
   readonly canvas = document.createElement("canvas");
-  readonly manager = new SketchManager({ frameRate: 60, thread: "main", keep_aspect_ratio: false, manual_step: true });
+  readonly manager: SketchManager | SketchPlayer;
 
-  constructor(sketchBase: string) {
+  constructor(sketchBase: string, exec: RunOptions["exec"] = "main") {
+    const settings = { frameRate: 60, thread: exec === "worker" ? "worker" : "main", keep_aspect_ratio: false, manual_step: true } as const;
+    // Sketches compiled ahead of time need only the runtime (SketchPlayer, no compiler, no new Function).
+    this.manager = exec === "aot" ? new SketchPlayer(settings) : new SketchManager(settings);
     document.body.appendChild(this.canvas);
     this.manager.mountPApplet(this.canvas);
     this.manager.addEventListener("log", (args) => this.logs.push(format(args)));
@@ -47,8 +55,9 @@ class Session {
 
   /** Transpile and run setup(). False when the sketch did not compile. */
   async start(opts: RunOptions): Promise<boolean> {
+    if (opts.exec === "aot") return this.startModule(opts);
     const t0 = performance.now();
-    const transpiled = this.manager.transpileSketch({ main: opts.main, content: opts.files, files: opts.dataFiles });
+    const transpiled = (this.manager as SketchManager).transpileSketch({ main: opts.main, content: opts.files, files: opts.dataFiles });
     this.transpileMs = performance.now() - t0;
     this.code = transpiled.result;
     this.timings = transpiled.timings;
@@ -56,6 +65,25 @@ class Session {
     this.phase = "setup";
     const t1 = performance.now();
     await this.manager.runTranspiledSketch(transpiled);
+    this.setupMs = performance.now() - t1;
+    this.phase = "draw";
+    return true;
+  }
+
+  /** Run a precompiled module: imported from a blob URL, run by SketchPlayer. */
+  private async startModule(opts: RunOptions): Promise<boolean> {
+    if (!opts.module) {
+      for (const e of opts.compileErrors ?? ["no module"]) this.errors.push(`[transpile] ${e}`);
+      return false;
+    }
+    this.code = opts.module;
+    const url = URL.createObjectURL(new Blob([opts.module], { type: "text/javascript" }));
+    const t0 = performance.now();
+    const sketch = (await import(/* @vite-ignore */ url)).default as PrecompiledSketch;
+    this.transpileMs = performance.now() - t0;
+    this.phase = "setup";
+    const t1 = performance.now();
+    await this.manager.run({ ...sketch, listed: opts.dataFiles });
     this.setupMs = performance.now() - t1;
     this.phase = "draw";
     return true;
@@ -95,7 +123,7 @@ let session: Session | null = null;
 
 /** Run a sketch: setup, then `frames` draw() calls, then capture the canvas. */
 async function run(opts: RunOptions): Promise<Result> {
-  const s = new Session(opts.sketchBase);
+  const s = new Session(opts.sketchBase, opts.exec);
   try {
     if (!(await s.start(opts))) return s.result(false);
     for (let i = 0; i < opts.frames; i++) await s.step();
@@ -107,7 +135,7 @@ async function run(opts: RunOptions): Promise<Result> {
 
 /** Step-by-step variant of run(): start(), then step() per frame, then finish(). */
 async function start(opts: RunOptions): Promise<Result | null> {
-  session = new Session(opts.sketchBase);
+  session = new Session(opts.sketchBase, opts.exec);
   try {
     return (await session.start(opts)) ? null : session.result(false);
   } catch (e) {
@@ -154,5 +182,25 @@ function transpile(opts: { main: string; files: { name: string; content: string 
   return runs;
 }
 
-const api = { run, transpile, start, step, finish, canvasRect };
+/**
+ * Compile through a CompileCache in IndexedDB (database `db`): the time of transpileSketchCached() and
+ * whether the result came from the cache (its compile was not run). Used by tools/bench (transpile).
+ */
+async function transpileCached(opts: { main: string; files: { name: string; content: string }[] }, db: string, clear: boolean) {
+  const cache = new CompileCache({ name: db });
+  if (clear) await cache.clear();
+  const manager = new SketchManager({ manual_step: true, cache });
+  const data = { main: opts.main, content: opts.files };
+  const hit = (await cache.get(cache.key(data))) !== undefined;
+  const fresh = new SketchManager({ manual_step: true, cache: new CompileCache({ name: db }) });
+  const t = performance.now();
+  const r = await fresh.transpileSketchCached(data);
+  const ms = performance.now() - t;
+  // Let the background write finish before the page goes away.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  void manager;
+  return { ms, hit, ok: !r.error?.error };
+}
+
+const api = { run, transpile, transpileCached, start, step, finish, canvasRect };
 (window as unknown as { __vt__: typeof api }).__vt__ = api;

@@ -1,82 +1,26 @@
-import { compileSketch, formatDiagnostic, type SourceMapV3 } from "../compiler/index.ts";
-import { DefaultRunner, Runner } from "./runtime/runner/DefaultRunner";
-import type { SavedFile } from "./runtime/io/SketchFiles";
+import { compileSketch, formatDiagnostic } from "../compiler/index.ts";
+import { CompileCache } from "./CompileCache";
+import { SketchPlayer } from "./SketchPlayer";
+import { CompileErrors, type CompiledSketch, type SketchData, type SketchFile, type SketchSettings } from "./types";
+
+export { CompileCache } from "./CompileCache";
+export { SketchPlayer } from "./SketchPlayer";
+export { CompileErrors, type CompiledSketch, type PrecompiledSketch, type SketchData, type SketchFile, type SketchFunction, type SketchSettings } from "./types";
 
 /**
- * @property manual_step When true, the frame loop is not started automatically; advance frames with `SketchManager.step()`.
+ * Manage transpile and execution of sketch: loads .pde files, compiles them in the page and runs them
+ * (SketchPlayer). For sketches compiled ahead of time, SketchPlayer alone (processing-ts/runtime) is enough.
  */
-export type SketchSettings={frameRate?:number,thread?:"main",keep_aspect_ratio?:boolean,manual_step?:boolean};
-/**
- * @property files Other files of the sketch folder, relative to it ("data/a.png"): fetched before setup()
- *   so that names built at run time (loadImage("frame" + i + ".png")) are found too.
- */
-export type SketchData={main:string,content:{name:string,content:string}[],files?:string[]};
-export type SketchFile={base_uri:string,main_sketch:string,sketches:string[],resources?:string[]}
-
-/** Compile errors of a sketch, formatted like "Tab.pde:3:10: error: Missing ';'". */
-export class CompileErrors{
-  readonly messages:string[];
-  constructor(messages:string[]){
-    this.messages=messages;
-  }
-  get error():boolean{
-    return this.messages.length>0;
-  }
-  getErrorMessage():string{
-    return this.messages.join("\n");
-  }
-}
-
-/** A compiled sketch: `result` is the JavaScript run by the runner (see src/compiler/codegen.ts). */
-/**
- * @property files File names the sketch reads (constant strings found by the compiler).
- * @property listed SketchData.files.
- */
-export type CompiledSketch={result:string;error:CompileErrors|null;map?:SourceMapV3|null;timings?:{compile:number};usesText?:boolean;files?:string[];listed?:string[]};
-
-/**
- * Manage transpile and execution of sketch.
- */
-export class SketchManager{
-  runner:Runner;
-  settings:SketchSettings={
-    frameRate:60,
-    thread:"main",
-    keep_aspect_ratio:false
-  };
-
-  target_element:HTMLCanvasElement|null=null;
-
-  /** URL of the sketch folder: loadImage("a.png") reads <base_uri>data/a.png (or <base_uri>a.png). */
-  base_uri:string="";
-  /** Files added by the host (addFile()), relative to the sketch folder. */
-  provided_files=new Map<string,Uint8Array|string>();
+export class SketchManager extends SketchPlayer{
   /** sketch.properties `resources` / loadSketchString() resources. */
   private listed_files:string[]=[];
+  /** Compiled sketches by source (settings.cache). */
+  readonly cache:CompileCache|null;
 
   constructor(settings?:SketchSettings){
-    if(settings){
-      this.settings=settings;
-    }
-    switch(this.settings.thread){
-      case "main":
-        this.runner=new DefaultRunner(this);
-        break;
-      default:
-        this.runner=new DefaultRunner(this);
-        break;
-    }
-  }
-
-  /**
-   * Set canvas to draw sketch.
-   * @param target Canvas which you want to use.
-   */
-  mountPApplet(target:HTMLCanvasElement){
-    this.target_element=target;
-    window.addEventListener('focus',()=>{this.runner.on_focus();});
-    window.addEventListener('blur',()=>{this.runner.on_blur();});
-    this.initEvent(target);
+    super(settings);
+    const c=this.settings.cache;
+    this.cache=c instanceof CompileCache?c:c?new CompileCache():null;
   }
 
   /**
@@ -93,7 +37,7 @@ export class SketchManager{
     const sketch_names=typeof sketch_path==="string"?(m=sketch_property.match(/\n*(?<!#\s*)sketches\s*=((\s*\w+.pde)+)/))!=null?m[1].split(/[\s,]+/).map(s=>s.trim()):[main_sketch]:sketch_path.sketches;
     // resources = data/a.png, data/b.txt (paths relative to the sketch folder)
     const sketch_resources=typeof sketch_path==="string"?(m=sketch_property.match(/^[ \t]*resources[ \t]*=(.*)$/m))!=null?m[1].split(/[\s,]+/).map(s=>s.trim()):[]:sketch_path.resources??[];
-    
+
     this.listed_files=sketch_resources.filter(r=>r!=="");
 
     const sketch_content=await Promise.all(sketch_names.map(async(name)=>{
@@ -115,29 +59,34 @@ export class SketchManager{
   }
 
   /**
-   * Initialize key/pointer events.
-   * This method is called internally.
-   * @param target_element Canvas
-   */
-  initEvent(target_element:HTMLCanvasElement){
-    target_element.addEventListener("pointermove",e=>{if(this.runner.on_pointermove)this.runner.on_pointermove(e);});
-    target_element.addEventListener("pointerdown",e=>{if(this.runner.on_pointerdown)this.runner.on_pointerdown(e);});
-    target_element.addEventListener("pointerup",e=>{if(this.runner.on_pointerup)this.runner.on_pointerup(e)});
-    target_element.addEventListener("pointerenter",e=>{if(this.runner.on_pointerenter)this.runner.on_pointerenter(e)});
-    target_element.addEventListener("pointerleave",e=>{if(this.runner.on_pointerleave)this.runner.on_pointerleave(e)});
-    window.addEventListener("keydown",e=>{if(this.runner.on_keydown)this.runner.on_keydown(e)});
-    window.addEventListener("keyup",e=>{if(this.runner.on_keyup)this.runner.on_keyup(e);});
-    target_element.addEventListener("wheel",e=>{if(this.runner.on_wheel)this.runner.on_wheel(e);},{passive:true});
-    target_element.addEventListener("contextmenu",e=>{if(this.runner.on_contextmenu)this.runner.on_contextmenu(e)});
-  }
-
-  /**
    * Transpile sketch.
    * @param sketch_data Loaded sketch data
    * @returns Transpiled sketch.
    */
   transpileSketch(sketch_data:SketchData):CompiledSketch{
     const t0=performance.now();
+    const key=this.cache?.key(sketch_data);
+    const cached=key!==undefined?this.cache!.getSync(key):undefined;
+    if(cached)return {...cached,timings:{compile:performance.now()-t0},listed:sketch_data.files};
+    const compiled=this.compile(sketch_data,t0);
+    if(key!==undefined)this.cache!.put(key,compiled);
+    return compiled;
+  }
+
+  /**
+   * transpileSketch() that also looks in IndexedDB (settings.cache): a sketch compiled in an earlier
+   * visit is not compiled again.
+   */
+  async transpileSketchCached(sketch_data:SketchData):Promise<CompiledSketch>{
+    const t0=performance.now();
+    if(this.cache){
+      const cached=await this.cache.get(this.cache.key(sketch_data));
+      if(cached)return {...cached,timings:{compile:performance.now()-t0},listed:sketch_data.files};
+    }
+    return this.transpileSketch(sketch_data);
+  }
+
+  private compile(sketch_data:SketchData,t0:number):CompiledSketch{
     // The main tab first, as Processing does (it names the sketch class).
     const main=sketch_data.content.filter(f=>f.name===sketch_data.main);
     const tabs=[...main,...sketch_data.content.filter(f=>f.name!==sketch_data.main)].map(f=>({name:f.name,text:f.content}));
@@ -150,117 +99,16 @@ export class SketchManager{
   }
 
   /**
-   * Run transpiled sketch.
-   * @param sketch Transpiled sketch
-   */
-  async runTranspiledSketch(sketch:CompiledSketch){
-    this.stopSketch();
-    if(sketch.error!=null&&sketch.error.error)return;
-    await this.runner.init(sketch.result,sketch.map,{usesText:sketch.usesText,files:sketch.files,listed:sketch.listed});
-    if(this.settings.keep_aspect_ratio){
-      this.setAspectRatio();
-    }
-  }
-
-  /**
    * Transpile and run sketch.
    * @param sketch_data Loaded sketch data
-   * @returns 
+   * @returns
    */
   async runSketch(sketch_data:SketchData) {
     if(this.target_element==null){
       console.error("target_element is not set. Please call mountPApplet() before runSketch()");
       return;
     }
-    const sketch=this.transpileSketch(sketch_data);
+    const sketch=this.cache?await this.transpileSketchCached(sketch_data):this.transpileSketch(sketch_data);
     await this.runTranspiledSketch(sketch);
-  }
-
-  /**
-   * Stop running sketch.
-   */
-  stopSketch(){
-    this.runner.stop();
-  }
-
-  /**
-   * Send text printed without a final newline (print("x")) to the log listeners now.
-   */
-  flushOutput(){
-    this.runner.flushOutput();
-  }
-
-  /**
-   * Advance the sketch by the given number of frames.
-   * Intended for sketches started with `manual_step: true` (deterministic tests).
-   * @param frames Number of draw() calls to run.
-   */
-  async step(frames:number=1){
-    for(let i=0;i<frames;i++){
-      if(await this.runner.step()!=0)break;
-    }
-  }
-
-  getAspectRatio(){
-    return this.runner.get_aspect_ratio();
-  }
-
-  resize(){
-    if(this.runner.on_resize)this.runner.on_resize();
-    this.runner.set_scaling();
-    if(this.settings.keep_aspect_ratio){
-      this.setAspectRatio();
-    }
-  }
-
-  private setAspectRatio(){
-    const rect=this.target_element!.parentElement!.getBoundingClientRect();
-    const size=this.runner.get_applet_size();
-    if(size.w==0&&size.h==0)return;
-    if(this.runner.scaling.x<this.runner.scaling.y){
-      const scale=rect.height/size.h;
-      this.target_element!.style.width=`${size.w*scale}px`;
-      this.target_element!.style.height=`${size.h*scale}px`;
-    }else if(this.runner.scaling.y<this.runner.scaling.x){
-      const scale=rect.width/size.w;
-      this.target_element!.style.height=`${size.h*scale}px`;
-      this.target_element!.style.width=`${size.w*scale}px`;
-    }
-    this.runner.set_scaling();
-  }
-
-  /**
-   * Add dependent class which is necessary in your sketch.
-   * @param data The name and type of dependent class.
-   * @param override Whether to override the current dependency if the dependent class has a duplicated name.
-   */
-  addDependency(data:{name:string,type:any},override?:boolean){
-    this.runner.addDependency(data,override??false);
-  }
-
-  getDependentNames():string[]{
-    return this.runner.getDependentNames();
-  }
-
-  getDependentClasses():any[]{
-    return this.runner.getDependentClasses();
-  }
-
-  /**
-   * Add a file of the sketch folder in memory (e.g. an uploaded image as "data/a.png"); the sketch reads
-   * it before anything fetched from `base_uri`.
-   */
-  addFile(path:string,content:ArrayBuffer|Uint8Array|string){
-    this.provided_files.set(path,content instanceof ArrayBuffer?new Uint8Array(content):content);
-  }
-
-  /**
-   * "log": println output (one call per line). "error": compile errors and uncaught exceptions.
-   * "save": a file written by the sketch (saveStrings(), save(), saveFrame()...): {path, data, mime}.
-   */
-  addEventListener(type:"log"|"error",listener:(args:any[])=>void):void;
-  addEventListener(type:"save",listener:(file:SavedFile)=>void):void;
-  addEventListener(type:"log"|"error"|"save",listener:(arg:any)=>void){
-    this.runner.addEventListener(type,listener);
   }
 }

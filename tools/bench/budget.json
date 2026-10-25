@@ -3,11 +3,11 @@
     "library (src/lib/index.ts)": {
       "gzipKiB": 176.2
     },
-    "runtime (2D, no compiler: src/lib/runtime/runner)": {
+    "runtime (2D, no compiler: src/lib/runtime.ts)": {
       "gzipKiB": 50.5,
       "targetKiB": 50
     },
-    "runtime (2D, no compiler: src/lib/runtime/runner): + on demand (P2D/P3D, PShader, PShape)": {
+    "runtime (2D, no compiler: src/lib/runtime.ts): + on demand (P2D/P3D, PShader, PShape)": {
       "gzipKiB": 41.5,
       "targetKiB": 40
     },

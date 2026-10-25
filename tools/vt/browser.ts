@@ -5,6 +5,11 @@ import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer, type ViteDevServer } from "vite";
 import type { SketchSource } from "./sketch.ts";
 import { playInput, type InputAction } from "./input.ts";
+import { compileSketch, formatDiagnostic } from "../../src/compiler/index.ts";
+import { sketchModule } from "../../src/compiler/module.ts";
+
+/** How processing-ts runs a sketch: compiled in the page (main thread or worker), or ahead of time (aot). */
+export type Exec = "main" | "worker" | "aot";
 
 export type BrowserRunResult = {
   ok: boolean;
@@ -24,6 +29,14 @@ export type BrowserRunResult = {
 };
 
 export type BrowserOptions = { projectRoot: string; headed?: boolean; gpu?: boolean; extraFsAllow?: string[] };
+
+/** The sketch compiled ahead of time (as `processing-ts build` / the Vite plugin do). */
+function aotModule(sketch: SketchSource): { module: string | null; compileErrors?: string[] } {
+  const r = compileSketch(sketch.files.map((f) => ({ name: f.name, text: f.content })));
+  const errors = r.diagnostics.filter((d) => d.severity === "error").map((d) => formatDiagnostic(r.parse.source, d));
+  if (errors.length) return { module: null, compileErrors: errors };
+  return { module: sketchModule(r, { name: sketch.main.replace(/\.pde$/, "") }).code };
+}
 
 export class BrowserRunner {
   private server: ViteDevServer | null = null;
@@ -78,12 +91,37 @@ export class BrowserRunner {
   }
 
   /**
+   * The compile cache across visits: a fresh page compiles the sketch (miss, stored in IndexedDB), then
+   * another fresh page of the same origin gets it from IndexedDB. Returns both times.
+   */
+  async transpileCacheTimes(sketch: SketchSource): Promise<{ missMs: number; hitMs: number; hit: boolean }> {
+    const context = await this.browser!.newContext();
+    try {
+      const visit = async (clear: boolean) => {
+        const page = await context.newPage();
+        try {
+          await page.goto(`${this.baseUrl}/tools/vt/harness/index.html`, { waitUntil: "load" });
+          await page.waitForFunction(() => (window as any).__vt__ !== undefined);
+          return (await page.evaluate(([o, c]) => (window as any).__vt__.transpileCached(o, "vt-bench-cache", c), [{ main: sketch.main, files: sketch.files }, clear] as const)) as { ms: number; hit: boolean };
+        } finally {
+          await page.close();
+        }
+      };
+      const miss = await visit(true);
+      const hit = await visit(false);
+      return { missMs: miss.ms, hitMs: hit.ms, hit: hit.hit && !miss.hit };
+    } finally {
+      await context.close();
+    }
+  }
+
+  /**
    * Run one sketch in a fresh page. `frames` = number of draw() calls before capture; `input` is
    * replayed with real mouse/keyboard input between frames (input.ts). With `offline`, the page runs the
    * sketch once online under a caching Service Worker (harness/sw.js), goes offline, reloads and runs it
    * again: the result is the offline run's (the sketch's files must come from the cache).
    */
-  async run(sketch: SketchSource, frames: number, timeoutMs = 30_000, input?: InputAction[], offline = false): Promise<BrowserRunResult> {
+  async run(sketch: SketchSource, frames: number, timeoutMs = 30_000, input?: InputAction[], offline = false, exec: Exec = "main"): Promise<BrowserRunResult> {
     const context = await this.browser!.newContext({ viewport: { width: 1280, height: 1024 }, deviceScaleFactor: 1 });
     const page = await context.newPage();
     const consoleLines: string[] = [];
@@ -104,7 +142,7 @@ export class BrowserRunner {
       const dataFiles = fs.existsSync(dataDir)
         ? fs.readdirSync(dataDir, { recursive: true }).map(String).filter((f) => fs.statSync(path.join(dataDir, f)).isFile()).map((f) => "data/" + f.replace(/\\/g, "/"))
         : [];
-      const opts = { main: sketch.main, files: sketch.files, sketchBase, dataFiles, frames };
+      const opts = { main: sketch.main, files: sketch.files, sketchBase, dataFiles, frames, exec, ...(exec === "aot" ? aotModule(sketch) : {}) };
       const once = () => {
         const work = input?.length ? this.runWithInput(page, opts, input) : page.evaluate((o) => (window as any).__vt__.run(o), opts);
         return Promise.race([

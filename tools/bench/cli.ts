@@ -150,10 +150,12 @@ async function benchTranspile(): Promise<{ md: string; failed: boolean; data: un
       const runs = await runner.transpileTimes(input.sketch, Math.min(RUNS, 10) + 1);
       const cold = runs[0];
       const warm = runs.slice(1);
+      const cache = await runner.transpileCacheTimes(input.sketch);
       const r = {
         lines: input.lines,
         coldMs: cold.total,
         warmMs: median(warm.map((x) => x.total)),
+        cachedMs: cache.hit ? cache.hitMs : null,
         error: cold.error ?? null,
       };
       data[input.name] = r;
@@ -162,20 +164,20 @@ async function benchTranspile(): Promise<{ md: string; failed: boolean; data: un
       if (limit !== undefined && r.coldMs > limit) failed = true;
       rows.push({
         name: input.name,
-        values: { lines: r.lines, "cold ms": ms(r.coldMs), "warm ms": ms(r.warmMs), error: r.error ? "yes" : "" },
+        values: { lines: r.lines, "cold ms": ms(r.coldMs), "warm ms": ms(r.warmMs), "cached ms": r.cachedMs === null ? "-" : ms(r.cachedMs), error: r.error ? "yes" : "" },
         over,
       });
     }
   } finally {
     await runner.stop();
   }
-  return { md: table("transpile: SketchManager.transpileSketch with the new compiler (headless Chromium, cold = first run in a fresh page)", ["lines", "cold ms", "warm ms", "error"], rows), failed, data };
+  return { md: table("transpile: SketchManager.transpileSketch with the new compiler (headless Chromium, cold = first run in a fresh page; cached = transpileSketchCached() in a fresh page, from IndexedDB)", ["lines", "cold ms", "warm ms", "cached ms", "error"], rows), failed, data };
 }
 
 // --- size: esbuild bundles (minified ESM) and their gzip/brotli sizes
 const SIZE_ENTRIES = [
   { name: "library (src/lib/index.ts)", entry: "src/lib/index.ts", external: [] },
-  { name: "runtime (2D, no compiler: src/lib/runtime/runner)", entry: "src/lib/runtime/runner/index.ts", external: [] },
+  { name: "runtime (2D, no compiler: src/lib/runtime.ts)", entry: "src/lib/runtime.ts", external: [] },
   { name: "parser (antlr4 + generated)", entry: "src/lib/transpiler/SketchParser.ts", external: [] },
   { name: "parser (lezer, src/compiler/grammar)", entry: "src/compiler/grammar/parser.ts", external: [] },
   { name: "compiler front end (lezer + AST, src/compiler/parse.ts)", entry: "src/compiler/parse.ts", external: [] },

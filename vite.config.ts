@@ -3,6 +3,7 @@ import { build as esbuild } from "esbuild";
 import path, { resolve } from "path"
 import { defineConfig } from "vite"
 import { externalizeDeps } from 'vite-plugin-externalize-deps'
+import { buildStandaloneRuntime } from "./src/aot/standalone"
 
 const SAMPLES_DIR=path.join("public","samples");
 
@@ -32,10 +33,17 @@ export default defineConfig({
     target: 'esnext',
     // public/ holds the demo's samples; they must not end up in the published dist/.
     copyPublicDir: false,
+    // Subpath exports (package.json "exports"): the compatibility layer (SketchManager = compiler + runtime),
+    // the runtime alone, the compiler alone, and the OpenGL renderers imported statically. Shared code
+    // goes to chunks; the OpenGL renderers stay a chunk loaded on demand.
     lib:{
-      entry: resolve(__dirname, 'src/lib/index.ts'),
-      name: "processing-ts",
-      fileName: "index",
+      entry: {
+        index: resolve(__dirname, 'src/lib/index.ts'),
+        runtime: resolve(__dirname, 'src/lib/runtime.ts'),
+        compiler: resolve(__dirname, 'src/lib/compiler.ts'),
+        webgl: resolve(__dirname, 'src/lib/webgl.ts'),
+      },
+      formats: ["es"],
     },
   },
   server:{
@@ -70,6 +78,32 @@ export default defineConfig({
       apply: 'build',
       writeBundle(options){
         fs.cpSync(resolve(__dirname,'src/lib/runtime/fonts'),path.join(options.dir!,'fonts'),{recursive:true});
+      },
+    },
+    {
+      // Node tools: the CLI (dist/cli.js, "bin") and the Vite plugin (dist/vite.js), with the compiler bundled
+      // in (the dependencies stay imports). Node does not strip types under node_modules, so they ship as JS.
+      name: 'node-tools',
+      apply: 'build',
+      async writeBundle(options,bundle){
+        if(!bundle["index.js"])return;
+        for(const name of ["cli","vite"]){
+          await esbuild({
+            entryPoints:[resolve(__dirname,`src/aot/${name}.ts`)],
+            bundle:true, format:"esm", platform:"node", target:"node22", packages:"external",
+            outfile:path.join(options.dir!,`${name}.js`), logLevel:"warning",
+          });
+        }
+        fs.copyFileSync(resolve(__dirname,"src/aot/client.d.ts"),path.join(options.dir!,"client.d.ts"));
+      },
+    },
+    {
+      // dist/standalone/: the runtime as plain ES modules with its dependencies, copied by `processing-ts build`.
+      name: 'standalone-runtime',
+      apply: 'build',
+      async writeBundle(options,bundle){
+        if(!bundle["index.js"])return;
+        await buildStandaloneRuntime(__dirname,path.join(options.dir!,"standalone"));
       },
     },
     {

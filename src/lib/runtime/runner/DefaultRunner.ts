@@ -1,4 +1,5 @@
-import type { SketchManager } from "../../SketchManager";
+import type { SketchPlayer } from "../../SketchPlayer";
+import type { SketchFunction } from "../../types";
 import { Cursor } from "../awt/Cursor";
 import { PApplet } from "../PApplet";
 import { ArrayList } from "../util/ArrayList";
@@ -10,7 +11,7 @@ import { PVector } from "../util/PVector";
 import { HashMap } from "../util/HashMap";
 import { PImage } from "../PImage";
 import { PGraphics } from "../PGraphics";
-import { PFont, loadDefaultFont } from "../PFont";
+import { PFont, loadDefaultFont, setDefaultFontURL } from "../PFont";
 import { SketchFiles, type SavedFile } from "../io/SketchFiles";
 import { PMatrix2D } from "../PMatrix2D";
 import { PGraphicsJava2D } from "../PGraphicsJava2D";
@@ -56,8 +57,23 @@ function addOpenGLClasses(gl:OpenGLModule){
   });
 }
 
-/** What the compiler found out about the sketch (CompileResult), and the files the host listed. */
-export type RunOptions={usesText?:boolean;files?:string[];listed?:string[]};
+/** Load the on-demand modules the sketch needs (P2D/P3D and shaders, PShape) and register their classes. */
+export async function loadModules(sketch:string|SketchFunction,options:RunOptions){
+  const code=typeof sketch==="string"?sketch:"";
+  if(options.shapes??usesShapes(code)){
+    const shapes=await loadShapes();
+    addClasses({"processing.core.PShape":shapes.PShape,"processing.core.PMatrix3D":shapes.PMatrix3D});
+  }
+  if(options.opengl??usesOpenGL(code))addOpenGLClasses(await loadOpenGL());
+}
+
+/**
+ * What the compiler found out about the sketch (CompileResult), and the files the host listed.
+ * @property urls Where files of the sketch folder are served when not under the base URL (PrecompiledSketch.urls).
+ * @property opengl, shapes Whether to load the on-demand modules (found from the code when absent).
+ * @property font URL of the default font, when not next to the runtime.
+ */
+export type RunOptions={usesText?:boolean;files?:string[];listed?:string[];urls?:Record<string,string>;opengl?:boolean;shapes?:boolean;font?:string};
 
 export abstract class Runner{
   pre_count:number=-1;
@@ -69,7 +85,7 @@ export abstract class Runner{
 
   arg_classes:{name:string,type:any}[]=[{name:"PApplet",type:PApplet},{name:"PVector",type:PVector},{name:"ArrayList",type:ArrayList},{name:"HashMap",type:HashMap},{name:"Cursor",type:Cursor},{name:"Runnable",type:Runnable},{name:"Consumer",type:Consumer},{name:"Supplier",type:Supplier},{name:"Function",type:Function},{name:"FunctionalInterface",type:FunctionalInterface},];
 
-  abstract manager:SketchManager;
+  abstract manager:SketchPlayer;
 
   /** Text printed by the sketch that does not end with a newline yet. */
   private pending_output="";
@@ -106,7 +122,7 @@ export abstract class Runner{
     return classes;
   }
 
-  abstract init(sketch:string,map?:SourceMapV3|null,options?:RunOptions):void;
+  abstract init(sketch:string|SketchFunction,map?:SourceMapV3|null,options?:RunOptions):Promise<void>;
   abstract loop():void;
   abstract step():Promise<number>;
   abstract stop():void;
@@ -194,7 +210,7 @@ export class DefaultRunner extends Runner{
   pre_count: number=-1;
   initiated: boolean=false;
 
-  manager: SketchManager;
+  manager: SketchPlayer;
 
   /** Events waiting for the end of the next frame (Processing handles them after draw()). */
   event_queue:Array<MouseEvent|KeyEvent|{name:"_windowResized"}>;
@@ -212,33 +228,30 @@ export class DefaultRunner extends Runner{
   private press:{x:number,y:number,moved:boolean}|null=null;
   private last_press={time:-Infinity,x:0,y:0,button:0,count:0};
 
-  constructor(manager:SketchManager){
+  constructor(manager:SketchPlayer){
     super();
     this.manager=manager;
     this.event_queue=[];
   }
 
-  async init(sketch:string,_map?:SourceMapV3|null,options:RunOptions={}){
+  async init(sketch:string|SketchFunction,_map?:SourceMapV3|null,options:RunOptions={}){
     this.event_queue=[];
     this.flushOutput();
     lang.setOutput((text)=>this.write_output(text));
     // P2D/P3D and shaders: the WebGL renderer is a separate chunk, loaded only for sketches that use it.
-    if(usesShapes(sketch)){
-      const shapes=await loadShapes();
-      addClasses({"processing.core.PShape":shapes.PShape,"processing.core.PMatrix3D":shapes.PMatrix3D});
-    }
-    if(usesOpenGL(sketch))addOpenGLClasses(await loadOpenGL());
+    await loadModules(sketch,options);
     const rt={lang,PApplet,classes:this.runtime_classes()};
     // The sketch's files: what the host added, then what the sketch names and the host listed, fetched
     // (and images decoded) now so that loadImage() etc. can return at once, as in Processing.
-    const files=new SketchFiles(this.manager.base_uri);
+    const files=new SketchFiles(this.manager.base_uri,options.urls);
     for(const [path,content] of this.manager.provided_files)files.add(path,content);
     files.onSave=(f)=>this.save_listeners.forEach(l=>l(f));
+    if(options.font)setDefaultFontURL(options.font);
     const fonts=options.usesText?loadDefaultFont():null;
     await files.preload(options.files??[],options.listed??[]);
     const renderer={canvas:this.manager.target_element!,base_path:this.manager.base_uri,max_size:this.get_maximum_size(),files};
     try{
-      this.applet=new globalThis.Function("$rt","__renderer__",sketch)(rt,renderer) as PApplet;
+      this.applet=(typeof sketch==="string"?new globalThis.Function("$rt","__renderer__",sketch):sketch)(rt,renderer) as PApplet;
     }catch(e){
       this.report_error(e);
       return;

@@ -40,3 +40,6 @@ tests/check/out/
 
 # stdout conformance output (new compiler)
 tests/lang/out/
+
+# ahead-of-time (CLI / Vite plugin) end-to-end output
+tests/aot/out/

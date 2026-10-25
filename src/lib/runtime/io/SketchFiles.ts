@@ -64,9 +64,12 @@ export class SketchFiles {
   /** Keys that were fetched and not found. */
   private readonly absent = new Set<string>();
   onSave: ((file: SavedFile) => void) | null = null;
+  /** URLs of files of the sketch folder served elsewhere (bundled assets), by path ("data/a.png"). */
+  private readonly urls: Map<string, string>;
 
-  constructor(base: string) {
+  constructor(base: string, urls?: Record<string, string>) {
     this.base = base === "" || base.endsWith("/") ? base : base + "/";
+    this.urls = new Map(Object.entries(urls ?? {}).map(([k, v]) => [normalizePath(k), v]));
   }
 
   /** Where Processing looks for `name`, in order (keys of this store). */
@@ -170,7 +173,9 @@ export class SketchFiles {
   private async fetchURL(key: string): Promise<Uint8Array | null> {
     if (typeof fetch === "undefined") return null;
     try {
-      const url = isURL(key) ? key : new URL(key, new URL(this.base || "./", globalThis.document?.baseURI ?? "http://localhost/")).href;
+      const page = globalThis.document?.baseURI ?? globalThis.location?.href ?? "http://localhost/";
+      const mapped = this.urls.get(key);
+      const url = isURL(key) ? key : mapped !== undefined ? new URL(mapped, page).href : new URL(key, new URL(this.base || "./", page)).href;
       const res = await fetch(url);
       if (!res.ok) return null;
       // Dev servers answer unknown paths with the app's index.html.

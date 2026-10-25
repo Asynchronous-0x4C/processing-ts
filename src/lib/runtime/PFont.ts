@@ -5,6 +5,13 @@ export const DEFAULT_FONT_FAMILY="Processing Sans Pro";
 const DEFAULT_FONT_FILE="fonts/ProcessingSansPro-Regular.ttf";
 
 let defaultFontState:"idle"|"loading"|"ready"|"failed"="idle";
+/** Where the default font is served when not next to this module (a bundler's asset URL). */
+let defaultFontURL:string|null=null;
+
+/** Load the default font from `url` (before it starts loading: a bundled app moves the file). */
+export function setDefaultFontURL(url:string){
+  if(defaultFontState==="idle")defaultFontURL=url;
+}
 let defaultFontPromise:Promise<void>=Promise.resolve();
 
 /**
@@ -28,7 +35,8 @@ export function ensureDefaultFont(){
   defaultFontState="loading";
   try{
     // Not a string literal on purpose: Vite's library build would inline a literal `new URL(…, import.meta.url)` as base64 (+288 KB).
-    const url=new URL("./"+DEFAULT_FONT_FILE,import.meta.url);
+    const base=(globalThis as {document?:{baseURI:string}}).document?.baseURI??globalThis.location?.href;
+    const url=defaultFontURL!==null?new URL(defaultFontURL,base):new URL("./"+DEFAULT_FONT_FILE,import.meta.url);
     const face=new FontFace(DEFAULT_FONT_FAMILY,`url(${url.href})`);
     const fonts=(globalThis as unknown as {document?:{fonts:FontFaceSet}}).document?.fonts??(globalThis as unknown as {fonts?:FontFaceSet}).fonts;
     defaultFontPromise=face.load().then((f)=>{

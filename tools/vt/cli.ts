@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { BrowserRunner, type BrowserRunResult } from "./browser.ts";
+import { BrowserRunner, type BrowserRunResult, type Exec } from "./browser.ts";
 import { corpusReport, findExamples, runCorpus } from "./corpus.ts";
 import { compare, composite, pngFromDataUrl, readPng, writePng } from "./image.ts";
 import { findProcessing, renderReference } from "./processing.ts";
@@ -69,9 +69,11 @@ function usage(): never {
       Render cases in headless Chromium and compare with tests/visual/refs (made by real Processing).
       --update regenerates the references of the selected cases first (needs Processing).
       --offline runs each case offline, its files served by a Service Worker's cache.
+      --exec worker|aot runs the sketches in a Web Worker (OffscreenCanvas), or compiled ahead of time
+      (the module of processing-ts build / the Vite plugin, run by SketchPlayer). Default: main.
   node tools/vt/cli.ts ref  [case...] [--tag t] [--missing]
       (Re)generate reference images/stdout with Processing. --missing: only absent or stale refs.
-  node tools/vt/cli.ts shot <sketchDir> [--frames n] [--ref] [--out dir] [--offline]
+  node tools/vt/cli.ts shot <sketchDir> [--frames n] [--ref] [--out dir] [--offline] [--exec worker|aot]
       Ad-hoc: render any sketch folder; with --ref also render it with Processing and diff.
   node tools/vt/cli.ts bench [name...] [--frames n] [--gpu]
       Frame times of the performance sketches in tests/perf (SwiftShader, or the GPU with --gpu).
@@ -103,11 +105,22 @@ const { values: flags, positionals } = parseArgs({
     examples: { type: "string" },
     timeout: { type: "string" },
     offline: { type: "boolean", default: false },
+    exec: { type: "string", default: "main" },
     help: { type: "boolean", short: "h", default: false },
   },
 });
 
 const [command, ...args] = positionals;
+
+/** --exec: how processing-ts runs the sketches (main thread, worker, or compiled ahead of time). */
+function exec(): Exec {
+  const e = flags.exec;
+  if (e !== "main" && e !== "worker" && e !== "aot") {
+    console.error(`--exec must be main, worker or aot (got ${e})`);
+    process.exit(2);
+  }
+  return e;
+}
 const OUT_DIR = path.resolve(flags.out ?? path.join(ROOT, "tests/visual/out"));
 
 function listCases(names: string[]): { name: string; dir: string; config: CaseConfig }[] {
@@ -327,7 +340,7 @@ async function cmdRun() {
     for (const c of cases) {
       const sketch = readSketch(c.dir);
       const frames = flags.frames ? Number(flags.frames) : c.config.frames ?? DEFAULTS.frames;
-      const run = await runner.run(sketch, frames, undefined, c.config.input, flags.offline || c.config.offline);
+      const run = await runner.run(sketch, frames, undefined, c.config.input, flags.offline || c.config.offline, exec());
       const r = evaluate(c, run, path.join(OUT_DIR, c.name));
       results.push(r);
       if (!flags.json) {
@@ -362,7 +375,7 @@ async function cmdShot() {
   await runner.start();
   let run: BrowserRunResult;
   try {
-    run = await runner.run(sketch, frames, undefined, undefined, flags.offline);
+    run = await runner.run(sketch, frames, undefined, undefined, flags.offline, exec());
   } finally {
     await runner.stop();
   }

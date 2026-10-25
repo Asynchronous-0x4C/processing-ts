@@ -1,4 +1,10 @@
 // New Processing compiler (ROADMAP P1). DOM-free; runs in browsers, workers and Node.
+
+/**
+ * Identifies what the compiler generates: caches of compiled sketches (CompileCache in src/lib) are keyed
+ * with it. Change it whenever the generated code or the runtime's contract with it changes.
+ */
+export const COMPILER_VERSION = "0.2.0";
 export * as ast from "./ast.ts";
 export { checkSketch, type CheckResult } from "./check.ts";
 export { generate, type GenerateOptions, type GenerateResult } from "./codegen.ts";

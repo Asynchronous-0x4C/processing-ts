@@ -4,7 +4,38 @@
   "version": "0.1.0",
   "description": "A Processing to JavaScript transpiler for web applications.",
   "main": "dist/index.js",
-  "types": "dist/types/index.d.ts",
+  "types": "dist/types/lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/lib/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/types/lib/runtime.d.ts",
+      "import": "./dist/runtime.js"
+    },
+    "./compiler": {
+      "types": "./dist/types/lib/compiler.d.ts",
+      "import": "./dist/compiler.js"
+    },
+    "./webgl": {
+      "types": "./dist/types/lib/webgl.d.ts",
+      "import": "./dist/webgl.js"
+    },
+    "./vite": {
+      "types": "./dist/types/aot/vite.d.ts",
+      "import": "./dist/vite.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts"
+    },
+    "./library.js": "./dist/library.js",
+    "./fonts/*": "./dist/fonts/*",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "processing-ts": "dist/cli.js"
+  },
   "type": "module",
   "author": {
     "name": "async0x4c"
@@ -29,12 +60,12 @@
   "scripts": {
     "dev": "vite",
     "devh": "vite --host",
-    "build": "vite build && tsc",
+    "build": "vite build && tsc -p tsconfig.build.json && tsc -p src/aot --noEmit false --declaration --emitDeclarationOnly --declarationDir dist/types",
     "preview": "vite preview",
     "test:visual": "node tools/vt/cli.ts run",
     "test:visual:ref": "node tools/vt/cli.ts ref",
     "vt": "node tools/vt/cli.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false && tsc -p src/compiler && tsc -p src/runtime && tsc -p tools && tsc -p tests",
+    "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false && tsc -p src/compiler && tsc -p src/runtime && tsc -p src/aot && tsc -p tools && tsc -p tests",
     "test": "vitest run",
     "bench": "node tools/bench/cli.ts parse compile transpile",
     "size": "node tools/bench/cli.ts size",
@@ -42,6 +73,7 @@
     "test:grammar": "node tools/grammar/compare.ts",
     "test:check": "node tools/check/compare.ts",
     "test:lang": "node tools/lang/cli.ts",
+    "test:aot": "node tools/aot/test.ts",
     "gen:manifest": "node tools/manifest/generate.ts",
     "coverage": "node tools/manifest/coverage.ts"
   },

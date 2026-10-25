@@ -33,6 +33,11 @@ export async function loadOpenGL():Promise<OpenGLModule>{
   return gl;
 }
 
+/** Make PShape and PMatrix3D available. */
+export function registerShapes(m:ShapesModuleType){
+  shapes=m;
+}
+
 /** The shapes module; an error when the sketch needs it but it was not loaded. */
 export function requireShapes():ShapesModuleType{
   if(!shapes)throw new exceptions.RuntimeException("PShape is not loaded.");
@@ -45,15 +50,5 @@ export async function loadShapes():Promise<ShapesModuleType>{
   return shapes;
 }
 
-/**
- * Whether compiled code uses the OpenGL renderers or shaders: P2D/P3D (inlined as their class names),
- * processing.opengl classes, loadShader().
- */
-export function usesOpenGL(code:string):boolean{
-  return /processing\.opengl\.|\.loadShader\(/.test(code);
-}
-
-/** Whether compiled code uses PShape or PMatrix3D (OpenGL sketches always load them). */
-export function usesShapes(code:string):boolean{
-  return /processing\.core\.(PShape|PMatrix3D)|\.(createShape|loadShape|shape)\(/.test(code)||usesOpenGL(code);
-}
+// What the compiled code needs (shared with the ahead-of-time module, which records it).
+export { usesOpenGL, usesShapes } from "../../compiler/module.ts";

@@ -1,0 +1,6 @@
+{
+  // Declarations for the published entries (npm run build): dist/types/lib/*.d.ts.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "declarationDir": "./dist/types" },
+  "include": ["src/lib/index.ts", "src/lib/runtime.ts", "src/lib/compiler.ts", "src/lib/webgl.ts", "src/vite-env.d.ts", "src/lib/runtime/opengl/libtess.d.ts"]
+}

@@ -3,7 +3,9 @@ import { applySyntaxHighlighting } from "./highlight";
 import sample_data from "./scripts/samples.json";
 
 const manager: SketchManager = new SketchManager({
-  keep_aspect_ratio: true
+  keep_aspect_ratio: true,
+  // Compiled sketches are kept by source in IndexedDB (not in development: the compiler changes there).
+  cache: import.meta.env.PROD
 });
 manager.mountPApplet(document.getElementById("sketch-canvas")! as HTMLCanvasElement);
 // await manager.runSketch(await manager.loadSketch("./sketch/"));
